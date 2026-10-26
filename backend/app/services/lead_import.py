@@ -461,7 +461,10 @@ async def commit(session: AsyncSession, actor: User, scope: Scope, job_id: UUID,
     """Apply a previewed job in one transaction. Re-running it is a 409, never a second set of leads."""
     job = await get_job(session, job_id)
     if job.status is not ImportJobStatus.DRY_RUN:
-        raise Conflict(f"الاستيراد {job.status.value} بالفعل")
+        raise Conflict(
+            f"المهمة لم تعد معاينةً قابلة للتنفيذ — الحالة «{job.status.value}»، ولا تُقرأ صفوف الملف مرتين",
+            details={"status": job.status.value, "job_id": str(job.id)},
+        )
     if scope.can("leads.assign"):
         assigner_id: UUID | None = actor.id
     else:  # a viewer may not hand leads to a colleague through the side door of an import
