@@ -19,26 +19,33 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 DB = pathlib.Path(tempfile.gettempdir()) / "bh_smoke.db"
-os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{DB}")
-os.environ.setdefault("ENV", "dev")
+#: this file's contract is "a seeded throwaway database", so it owns `DATABASE_URL` rather than inheriting
+#: one: a CI job that exports a PostgreSQL DSN (for pytest) would otherwise send the smoke pass at an empty
+#: production-shaped database, where `create_dev_schema` and the seed are not what the run is about.
+#: `SMOKE_DATABASE_URL` is the way to point it somewhere else on purpose.
+os.environ["DATABASE_URL"] = os.environ.get("SMOKE_DATABASE_URL") or f"sqlite+aiosqlite:///{DB}"
+os.environ["ENV"] = "dev"
 os.environ.setdefault("INTEGRATIONS_DRIVER", "sim")
 os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "1")
+os.environ.setdefault("STORAGE_DIR", str(pathlib.Path(tempfile.gettempdir()) / "bh_media"))
 os.environ.setdefault("MEDIA_ROOT", str(pathlib.Path(tempfile.gettempdir()) / "bh_media"))
 
 
 def _prepare_db() -> None:
+    """Schema + seed in ONE loop: the engine is cached on the module, and a second `asyncio.run` would reuse
+    connections created by the first loop — which is how a smoke pass dies with "Event loop is closed"."""
     import asyncio
 
     from app.core.db import create_dev_schema, get_sessionmaker
 
-    asyncio.run(create_dev_schema())
-    from app.seed import seed
+    async def _build() -> None:
+        from app.seed import seed
 
-    async def _seed() -> None:
+        await create_dev_schema()
         async with get_sessionmaker()() as session:
             await seed(session)
 
-    asyncio.run(_seed())
+    asyncio.run(_build())
 
 
 # ---------------------------------------------------------------------------------------------
@@ -137,7 +144,9 @@ def _fill(path: str, params: dict[str, str]) -> str:
     return "" if "{" in out else out
 
 
-def exhaustive_pass(client: Any, headers: dict[str, str], admin_headers: dict[str, str], portal_headers: dict[str, str]) -> list[str]:
+def exhaustive_pass(
+    client: Any, headers: dict[str, str], admin_headers: dict[str, str], portal_headers: dict[str, str]
+) -> tuple[list[str], str]:
     """Ask every documented route for its documented behaviour.
 
     The rules are blunt on purpose: a GET whose instance the seed can name must answer 200 (a 403 means the
@@ -184,8 +193,9 @@ def exhaustive_pass(client: Any, headers: dict[str, str], admin_headers: dict[st
             print(f"{mark} {method.upper():6} {client_path} -> {response.status_code}")
             if not ok:
                 failures.append(f"{method.upper()} {client_path} -> {response.status_code} {response.text[:160]}")
-    print(f"\nexhaustive pass: {exercised} of {sum(len(v) for v in document['paths'].values())} documented calls answered")
-    return failures
+    total = sum(len(v) for v in document["paths"].values())
+    print(f"\nexhaustive pass: {exercised} of {total} documented calls answered")
+    return failures, f"{exercised}/{total}"
 
 
 def create_app_document() -> Any:
@@ -214,6 +224,7 @@ def main() -> int:
 
     if DB.exists():
         DB.unlink()
+    print(f"smoke database: {os.environ['DATABASE_URL']}")
     _prepare_db()
 
     from app.main import create_app
@@ -434,7 +445,8 @@ def main() -> int:
     if "sim" not in os.environ.get("INTEGRATIONS_DRIVER", "sim"):  # pragma: no cover - the file pins sim above
         failures.append("the smoke run must not talk to a real provider")
     portal = {"authorization": f"Bearer {portal_token}"} if portal_login.status_code == 200 else admin
-    failures += exhaustive_pass(client, admin, admin, portal)
+    smoke_failures, exercised_summary = exhaustive_pass(client, admin, admin, portal)
+    failures += smoke_failures
     for flag in opened:
         client.patch(f"/api/v1/feature-flags/{flag}", json={"enabled": False}, headers=admin)
     client.put(
@@ -448,7 +460,7 @@ def main() -> int:
         for line in failures:
             print(f"  - {line}")
         return 1
-    print("SMOKE OK — every read endpoint answered with seeded data")
+    print(f"SMOKE OK — {exercised_summary} documented calls answered, exemptions listed with a reason, on {os.environ['DATABASE_URL']}")
     return 0
 
 
