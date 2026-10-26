@@ -19,22 +19,39 @@ from pathlib import Path
 from typing import Any
 
 MAX_FAILURES = 40  # a comment body is capped at 65 536 chars by GitHub; this stays well inside
-MAX_MESSAGE = 1_400
+MAX_MESSAGE = 2_600
 
 
 def _one_line(text: str, limit: int) -> str:
-    """Playwright messages are ANSI-flecked multi-line dumps; the useful part is the first few lines."""
+    """Playwright messages are ANSI-flecked multi-line dumps.
+
+    The head of the message carries the locator and the expectation; the *tail* carries the call log — the
+    lines that say which element intercepted the pointer or why the scroll never settled. Cutting only the
+    head is what made three actionability timeouts un diagnosable from the digest, so the budget is split:
+    about two thirds from the top, the rest from the bottom, and the cut is marked.
+    """
     clean = "".join(ch for ch in text if ch == "\n" or ord(ch) >= 32)
     lines = [line.rstrip() for line in clean.splitlines() if line.strip()]
-    out: list[str] = []
+    if sum(len(line) for line in lines) <= limit:
+        return "\n".join(lines) if lines else "(empty)"
+    head_budget = int(limit * 0.66)
+    head: list[str] = []
     used = 0
-    for line in lines:
-        if used + len(line) > limit:
-            out.append("…")
+    index = 0
+    for index, line in enumerate(lines):
+        if used + len(line) > head_budget:
             break
-        out.append(line)
+        head.append(line)
         used += len(line)
-    return "\n".join(out) if out else "(empty)"
+    tail: list[str] = []
+    used = limit - used
+    for line in reversed(lines[index:]):
+        if used + len(line) > limit:
+            break
+        tail.insert(0, line)
+        used += len(line)
+    joined = "\n".join([*head, "… (منتصف الرسالة مقصوص — السطر التالية من ذيل الـ call log) …", *tail])
+    return joined if joined else "(empty)"
 
 
 def _walk(suite: dict[str, Any], trail: tuple[str, ...] = ()) -> list[dict[str, Any]]:
@@ -98,12 +115,17 @@ def main() -> int:
         body.append(f"| `{name}` | {count} |")
     body.append("")
 
-    for item in failures[:MAX_FAILURES]:
+    # the per-failure budget shrinks as the list grows, so a bad round keeps its header table *and* the
+    # call-log tails of every failure instead of losing the last ones to the 60 000-character cap
+    shown = failures[:MAX_FAILURES]
+    # 34 000 of message budget + ~250 chars of heading per failure keeps the whole comment inside the cap
+    per_failure = max(700, min(MAX_MESSAGE, 34_000 // max(1, len(shown))))
+    for item in shown:
         body.append(f"**`{item['file']}:{item['line']}` · {item['title']}**  ")
         body.append(f"_project: `{item['project']}` · {item['duration']} ms_")
         body.append("")
         body.append("```text")
-        body.append(_one_line(item["message"], MAX_MESSAGE))
+        body.append(_one_line(item["message"], per_failure))
         body.append("```")
         body.append("")
     if len(failures) > MAX_FAILURES:
