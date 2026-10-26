@@ -54,31 +54,66 @@ test.describe("insured persons import (screen 11)", () => {
     await expect(page.getByText("منى فؤاد").first()).toBeVisible({ timeout: 20_000 });
   });
 
-  test("a non-xlsx file is refused, and the report separates the bad row", async ({ request }) => {
+  test("a non-xlsx file is refused, and the report separates new rows from duplicates", async ({ request }) => {
+    /*
+     * The workbook holds 4 rows: two clean inserts, one row with an invalid mobile, and one row that
+     * duplicates another inside the sheet. The old assertion demanded exactly that from whichever client
+     * the seed returned first — after the commit in the test above those two people already exist, so the
+     * same file legitimately reported 0 creates. A test about import semantics must own its data: this
+     * one creates a client, then proves the second half of the rule — re-importing is idempotent.
+     */
     const auth = await apiLogin(request, MANAGER);
-    const clientId = (await (await request.get("/api/v1/clients?limit=1", { headers: auth })).json()).items[0].id as string;
+    const fresh = await request.post("/api/v1/clients", {
+      headers: auth,
+      data: { name: `شركة اختبار الاستيراد ${Date.now()}`, type: "company", status: "active" },
+    });
+    expect([200, 201]).toContain(fresh.status());
+    const clientId = (await fresh.json()).id as string;
 
     const refused = await request.post(`/api/v1/clients/${clientId}/insured/import`, {
       headers: auth,
       multipart: { file: { name: "not-excel.csv", mimeType: "text/csv", buffer: await read(FAKE) } },
     });
     expect(refused.status()).toBe(422);
-    const rejection = await refused.json();
-    expect(JSON.stringify(rejection)).toContain("xlsx");
+    expect(JSON.stringify(await refused.json())).toContain("xlsx");
 
-    const dry = await request.post(`/api/v1/clients/${clientId}/insured/import`, {
-      headers: auth,
-      multipart: {
-        file: { name: "insured.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: await read(SHEET) },
-      },
-    });
+    const uploadWorkbook = async () =>
+      request.post(`/api/v1/clients/${clientId}/insured/import`, {
+        headers: auth,
+        multipart: {
+          file: {
+            name: "insured.xlsx",
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            buffer: await read(SHEET),
+          },
+        },
+      });
+
+    const rosterTotal = async () => {
+      const body = await (await request.get(`/api/v1/clients/${clientId}/insured?limit=1`, { headers: auth })).json();
+      return body.page.total as number;
+    };
+
+    expect(await rosterTotal(), "a brand-new client has no roster yet").toBe(0);
+
+    const dry = await uploadWorkbook();
     expect(dry.status(), await dry.text()).toBe(201);
     const report = await dry.json();
-    // the sheet holds 4 rows: two clean inserts, one bad mobile, one duplicate of the first row
-    expect(report.total_rows).toBe(4);
-    expect(report.stats.rejected).toBe(2);
-    expect(report.stats.will_create).toBe(2);
     expect(report.status).toBe("dry_run");
+    expect(report.total_rows).toBe(4);
+    expect(report.stats.will_create).toBe(2);
+    expect(report.stats.will_update).toBe(0);
+    expect(report.stats.rejected).toBe(2);
     expect(JSON.stringify(report.error_report)).toContain("mobile");
+    expect(await rosterTotal(), "a dry run must not write").toBe(0);
+
+    const committed = await request.post(report.commit_url, { headers: auth });
+    expect(committed.ok(), await committed.text()).toBe(true);
+    expect(await rosterTotal()).toBe(2);
+
+    const replay = await (await uploadWorkbook()).json();
+    expect(replay.stats.will_create).toBe(0);
+    expect(replay.stats.will_update).toBe(2);
+    expect(await rosterTotal(), "the same file must not double the roster").toBe(2);
   });
 });

@@ -9,33 +9,33 @@ import {
   Settings,
   Users,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
+import { navItemsFor, openBadge, type NavItemModel } from "@/app/navModel";
 import { Avatar, SearchInput } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth";
 import { changeLanguage } from "@/lib/i18n";
 
-interface NavItem {
-  to: string;
-  labelKey: string;
-  icon: ReactNode;
-  perm?: string;
-  badge?: string;
-}
+type NavItem = NavItemModel & { labelKey: string; icon: ReactNode };
 
+/**
+ * `perms` is the permission the screen's own API requires; an item without it is open to every staff
+ * role. The inbox badge is data (`only_open`), never a number copied from the mockup.
+ */
 const NAV: NavItem[] = [
-  { to: "/dashboard", labelKey: "nav.dashboard", icon: <LayoutDashboard size={20} strokeWidth={1.8} /> },
-  { to: "/inbox", labelKey: "nav.inbox", icon: <Inbox size={20} strokeWidth={1.8} />, badge: "24" },
-  { to: "/leads", labelKey: "nav.leads", icon: <KanbanSquare size={20} strokeWidth={1.8} /> },
-  { to: "/clients", labelKey: "nav.clients", icon: <FolderOpen size={20} strokeWidth={1.8} /> },
-  { to: "/sales-team", labelKey: "leads.team", icon: <Users size={20} strokeWidth={1.8} /> },
-  { to: "/policies", labelKey: "nav.policies", icon: <ClipboardList size={20} strokeWidth={1.8} />, perm: "policies.view" },
-  { to: "/reports", labelKey: "nav.reports", icon: <BarChart3 size={20} strokeWidth={1.8} />, perm: "reports.view" },
-  { to: "/users", labelKey: "nav.settings", icon: <Settings size={20} strokeWidth={1.8} />, perm: "users.manage" },
+  { to: "/dashboard", labelKey: "nav.dashboard", icon: <LayoutDashboard size={20} strokeWidth={1.8} />, perms: ["requests.view"] },
+  { to: "/inbox", labelKey: "nav.inbox", icon: <Inbox size={20} strokeWidth={1.8} />, perms: ["requests.view"], showOpenBadge: true },
+  { to: "/leads", labelKey: "nav.leads", icon: <KanbanSquare size={20} strokeWidth={1.8} />, perms: ["leads.view_own", "leads.view_all"] },
+  { to: "/clients", labelKey: "nav.clients", icon: <FolderOpen size={20} strokeWidth={1.8} />, perms: ["clients.view_own", "clients.view_all"] },
+  { to: "/sales-team", labelKey: "leads.team", icon: <Users size={20} strokeWidth={1.8} />, permsAll: ["leads.view_all", "leads.assign"] },
+  { to: "/policies", labelKey: "nav.policies", icon: <ClipboardList size={20} strokeWidth={1.8} />, perms: ["policies.view"] },
+  { to: "/reports", labelKey: "nav.reports", icon: <BarChart3 size={20} strokeWidth={1.8} />, perms: ["reports.view"] },
+  { to: "/users", labelKey: "nav.settings", icon: <Settings size={20} strokeWidth={1.8} />, perms: ["users.manage"] },
 ];
 
 export function StaffShell({ children }: { children: ReactNode }) {
@@ -45,7 +45,16 @@ export function StaffShell({ children }: { children: ReactNode }) {
   const [globalTerm, setGlobalTerm] = useState("");
   const [signingOut, setSigningOut] = useState(false);
 
-  const items = NAV.filter((item) => !item.perm || user?.permissions?.includes(item.perm));
+  const permissions = user?.permissions ?? [];
+  const items = navItemsFor(NAV, permissions);
+  // one cheap count for the pill; a role that cannot open the inbox must not even see a number for it
+  const openRequests = useQuery({
+    queryKey: ["nav", "open-requests"],
+    queryFn: () => api.get<{ total: number }>("/requests?only_open=true&limit=1"),
+    enabled: permissions.includes("requests.view"),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
 
   return (
     <div className="flex min-h-screen bg-bg">
@@ -59,8 +68,10 @@ export function StaffShell({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        <nav className="flex flex-col gap-1" aria-label="main">
-          {items.map((item) => (
+        <nav className="flex flex-col gap-1" aria-label={t("nav.ariaLabel")}>
+          {items.map((item) => {
+            const badge = item.showOpenBadge ? openBadge(openRequests.data?.total) : null;
+            return (
             <NavLink
               key={item.to}
               to={item.to}
@@ -72,11 +83,12 @@ export function StaffShell({ children }: { children: ReactNode }) {
             >
               {item.icon}
               <span className="flex-1 truncate">{t(item.labelKey)}</span>
-              {item.badge ? (
-                <span className="rounded-pill bg-primary px-2 py-[2px] text-[11px] font-bold text-white">{item.badge}</span>
+              {item.showOpenBadge && badge ? (
+                <span className="rounded-pill bg-primary px-2 py-[2px] text-[11px] font-bold text-white">{badge}</span>
               ) : null}
             </NavLink>
-          ))}
+            );
+          })}
         </nav>
 
         <div className="mt-[18px] border-t border-white/10 px-2 pt-3">

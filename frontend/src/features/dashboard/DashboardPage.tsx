@@ -9,7 +9,7 @@ import { useState } from "react";
 import { ArrowDownRight, ArrowUpRight, Clock3, Inbox, TriangleAlert, Gauge } from "lucide-react";
 
 import { Badge, Button, Card, PageHeader, SectionTitle, StateBlock, DataTable } from "@/components/ui";
-import { api } from "@/lib/api/client";
+import { ApiError_, api } from "@/lib/api/client";
 import { formatNumber, formatPercent, relativeTime } from "@/lib/format";
 
 interface Summary {
@@ -80,6 +80,8 @@ export default function DashboardPage() {
   });
 
   const data = summary.data;
+  /* The summary needs `requests.view`; a role without it gets one clear state, not four empty tiles. */
+  const forbidden = summary.isError && summary.error instanceof ApiError_ && summary.error.code === "forbidden";
   const yesterday = data?.requests_yesterday ?? 0;
   const todayDelta = data && yesterday > 0 ? Math.round(((data.requests_today - yesterday) / yesterday) * 100) : null;
   const speedDelta = data?.avg_first_response_delta_minutes ?? null;
@@ -118,6 +120,9 @@ export default function DashboardPage() {
         }
       />
 
+      {forbidden ? (
+        <StateBlock kind="forbidden" />
+      ) : (
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           label={t("dashboard.kpiToday")}
@@ -154,18 +159,23 @@ export default function DashboardPage() {
         <Kpi
           label={t("dashboard.kpiSla")}
           value={data ? formatPercent(data.sla_compliance_pct ?? null) : undefined}
-          hint={{ text: t("dashboard.slaTarget"), tone: "b" }}
+          hint={
+            data
+              ? { text: t("dashboard.slaBreaches", { n: formatNumber(data.overdue ?? 0) }), tone: (data.overdue ?? 0) > 0 ? "r" : "g" }
+              : undefined
+          }
           icon={<Gauge size={18} strokeWidth={1.8} />}
           tone="g"
         />
         <Kpi
           label={t("dashboard.kpiOverdue")}
           value={data ? formatNumber(data.overdue ?? 0) : undefined}
-          hint={{ text: t("dashboard.needsAction"), tone: "r" }}
+          hint={data ? { text: t("dashboard.ofOpen", { n: formatNumber(data.open_requests ?? 0) }), tone: "a" } : undefined}
           icon={<TriangleAlert size={18} strokeWidth={1.8} />}
           tone="r"
         />
       </div>
+      )}
 
       <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Card>

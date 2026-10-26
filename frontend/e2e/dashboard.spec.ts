@@ -12,7 +12,7 @@ test.describe("dashboard (screen 1)", () => {
 
     await login(page, MANAGER);
     await expect(page.getByRole("heading", { name: "لوحة التحكم", exact: true })).toBeVisible();
-    await expect(page.getByText("نظرة حية على كل الطلبات والقنوات")).toBeVisible();
+    await expect(page.getByText("نظرة حية على كل الطلبات والقنوات", { exact: true })).toBeVisible();
 
     for (const label of ["طلبات اليوم", "متوسط زمن أول رد", "الالتزام بالـSLA", "طلبات متأخرة"]) {
       await expect(page.getByText(label, { exact: true })).toBeVisible();
@@ -21,6 +21,8 @@ test.describe("dashboard (screen 1)", () => {
     // the KPI tiles must carry the API's numbers (Egyptian digits), never the mockup's hardcoded ones
     const main = await page.locator("main").innerText();
     expect(main).not.toMatch(/TBD|lorem/i);
+    // the mockup's invented target must not survive as data (ADR-014): hints come from the summary
+    expect(main).not.toContain("الهدف 90%");
     expect(main).toContain(formatNumber(summary.requests_today));
     if (summary.sla_compliance_pct !== null && summary.sla_compliance_pct !== undefined) {
       expect(main, "percentages must be localised").toContain("٪");
@@ -32,13 +34,16 @@ test.describe("dashboard (screen 1)", () => {
     await expect(page.locator('[data-request-row], table tbody tr').first()).toBeVisible({ timeout: 15_000 });
   });
 
-  test("the shell is RTL with the sidebar nav on the logical start edge", async ({ page }) => {
+  test("the shell is RTL with the sidebar nav on the logical start edge", async ({ page, request }) => {
+    const auth = await apiLogin(request, MANAGER);
+    const open = (await (await request.get("/api/v1/requests?only_open=true&limit=1", { headers: auth })).json()).total as number;
+
     await login(page, MANAGER);
     const root = page.locator("html");
     await expect(root).toHaveAttribute("dir", "rtl");
     await expect(root).toHaveAttribute("lang", "ar");
 
-    const nav = page.getByRole("navigation", { name: /التنقل|primary/i });
+    const nav = page.getByRole("navigation", { name: "التنقل الرئيسي", exact: true });
     await expect(nav).toBeVisible();
     const box = await nav.boundingBox();
     const viewport = page.viewportSize();
@@ -48,7 +53,16 @@ test.describe("dashboard (screen 1)", () => {
     for (const item of ["صندوق الطلبات", "العملاء"]) {
       await expect(nav.getByText(item, { exact: true }).first()).toBeVisible();
     }
+    await expect(nav.locator(".rounded-pill")).toHaveCount(1); // exactly one pill: the open-requests count
     await expect(page.locator("body")).toHaveCSS("background-color", "rgb(243, 244, 249)");
+
+    // the pill is that number, or 99+ — never the design sheet's fixed "24"
+    const pill = nav.locator(".rounded-pill");
+    if (open > 0) {
+      await expect(pill).toHaveText(open > 99 ? "99+" : String(open));
+    } else {
+      await expect(pill).toHaveCount(0);
+    }
   });
 
   test("the header search filters the shared queue", async ({ page }) => {
@@ -60,18 +74,17 @@ test.describe("dashboard (screen 1)", () => {
     await expect(page.getByRole("heading", { name: "صندوق الطلبات الموحد", exact: true })).toBeVisible({ timeout: 20_000 });
   });
 
-  test("a rep is redirected into their own queue", async ({ page, request }) => {
+  test("a rep without requests.view gets no request surfaces in the shell", async ({ page, request }) => {
     await login(page, REPS.sara);
-    const auth = await apiLogin(request, REPS.sara);
-    const mine = await (await request.get("/api/v1/requests?limit=1", { headers: auth })).json();
+    const nav = page.getByRole("navigation", { name: "التنقل الرئيسي", exact: true });
+    await expect(nav.getByText("صندوق الطلبات", { exact: true })).toHaveCount(0);
+    await expect(nav.getByText("لوحة التحكم", { exact: true })).toHaveCount(0);
+    await expect(nav.getByText("العملاء المحتملون", { exact: true })).toHaveCount(1);
 
-    await expect(page.getByRole("heading", { name: "صندوق الطلبات الموحد", exact: true })).toBeVisible({ timeout: 20_000 });
-    const rows = page.locator("[data-request-row]");
-    await expect(rows.first()).toBeVisible();
-    if (mine.total === 0) {
-      await expect(page.getByText(/لا توجد طلبات مطابقة/)).toBeVisible();
-    } else {
-      await expect(rows).toHaveCount(Math.min(mine.items.length, 25));
-    }
+    // the same boundary the sidebar promises is what the API enforces
+    const auth = await apiLogin(request, REPS.sara);
+    expect((await request.get("/api/v1/requests?limit=1", { headers: auth })).status()).toBe(403);
+    const mine = await (await request.get("/api/v1/leads?limit=1", { headers: auth })).json();
+    expect(mine.total).toBeGreaterThan(0);
   });
 });

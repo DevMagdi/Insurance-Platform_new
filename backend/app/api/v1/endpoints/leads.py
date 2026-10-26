@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 
 from app.api.serializers import lead_activity, lead_brief, lead_detail
 from app.api.v1.deps import DbSession, LeadsAssign, LeadsConvert, LeadsView, PageQuery, ScopeDep
-from app.core.errors import Conflict, NotFound
+from app.core.errors import Forbidden, NotFound
 from app.core.pagination import Page
 from app.domain.enums import ActivityType, LeadStatus
 from app.middleware_ip import ip_of
@@ -111,8 +111,9 @@ async def stats(session: DbSession, scope: ScopeDep, actor: LeadsView, assigned_
 
 @router.get("/sales/team", summary="Per-rep load, meetings and conversion (manager only)", response_model=list[RepWorkloadOut])
 async def team(session: DbSession, scope: ScopeDep) -> list[dict[str, Any]]:
+    # 403, not 409: this is a permission rule, and the error code is what the UI branches on (§6)
     if not scope.can("leads.view_all") or not scope.can("leads.assign"):
-        raise Conflict("Manager access required", details={"required": ["leads.view_all", "leads.assign"]})
+        raise Forbidden("Manager access required", details={"required": ["leads.view_all", "leads.assign"]})
     rows = await repo.rep_workload(session)
     for row in rows:
         total = sum(row["stages"].values()) or 1
