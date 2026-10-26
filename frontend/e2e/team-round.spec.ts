@@ -119,7 +119,7 @@ test.describe("sales office · lead import", () => {
     ].join("\n");
 
     await login(page, MANAGER);
-    await page.goto("/leads/board");
+    await page.goto("/leads");
     await page.getByRole("button", { name: "استيراد Excel/CSV" }).click();
     await page.setInputFiles("#leads-import-file", {
       name: "leads.csv",
@@ -130,7 +130,7 @@ test.describe("sales office · lead import", () => {
     const preview = page.getByTestId("import-preview");
     await expect(preview).toBeVisible({ timeout: 30_000 });
     // the preview is a promise about the future, not a result: no lead exists yet
-    const beforeImport = await request.get(`/api/v1/leads?search=${first.name}`, { headers: auth });
+    const beforeImport = await request.get(`/api/v1/leads?q=${first.name}&page_size=20`, { headers: auth });
     expect((await beforeImport.json()).total, "a dry run must not write rows").toBe(0);
     await expect(preview.getByTestId("import-stats")).toContainText("2");
 
@@ -138,7 +138,7 @@ test.describe("sales office · lead import", () => {
     await expect(preview).toContainText("أُنشئ");
 
     // the row is really in PostgreSQL: read it back by name, then by id
-    const found = await request.get(`/api/v1/leads?search=${first.name}&limit=10`, { headers: auth });
+    const found = await request.get(`/api/v1/leads?q=${first.name}&page_size=20`, { headers: auth });
     expect(found.ok(), await found.text());
     const items = (await found.json()).items as {
       id: string;
@@ -146,17 +146,17 @@ test.describe("sales office · lead import", () => {
       mobile: string;
       status: string;
       contact_title: string | null;
-      assigned_to: string | null;
+      assignee_id: string | null;
     }[];
     const imported = items.find((row) => row.name === first.name);
     if (imported === undefined) throw new Error(`imported lead ${first.name} is not in the leads list: ${JSON.stringify(items)}`);
     expect(imported.mobile).toBe(first.mobile);
     expect(imported.status).toBe("new");
-    expect(imported.assigned_to, "an imported lead without a named rep must be unassigned").toBeNull();
+    expect(imported.assignee_id, "an imported lead without a named rep must be unassigned").toBeNull();
     expect(imported.contact_title).toBe("مدير مشتريات");
 
     // and the duplicate of a live mobile is visible in the unassigned pool only once
-    const pool = await request.get("/api/v1/leads?unassigned=true&limit=200", {
+    const pool = await request.get("/api/v1/leads?unassigned=true&page_size=200", {
       headers: auth,
     });
     const inPool = ((await pool.json()).items as { name: string }[]).filter((row) => row.name === first.name || row.name === second.name);
@@ -172,7 +172,7 @@ test.describe("sales office · lead import", () => {
     expect(refused.status(), await refused.text()).toBe(403);
 
     await login(page, REPS.sara);
-    await page.goto("/leads/board");
+    await page.goto("/leads");
     await expect(page.getByRole("button", { name: "استيراد Excel/CSV" })).toHaveCount(0);
   });
 });
@@ -214,7 +214,9 @@ test.describe("sales office · redistribute", () => {
       headers: manager,
     });
     expect(after.ok(), await after.text());
-    const assignedTo = (await after.json()).assigned_to as string;
+    // the detail payload calls the seat `assignee_id` (the brief says assigned_to, the API says assignee_*)
+    const afterBody = await after.json();
+    const assignedTo = afterBody.assignee_id as string;
     expect(assignedTo, "the API still says the lead is unassigned").toBeTruthy();
     const activity = await request.get(`/api/v1/leads/${leadId}/activities`, {
       headers: manager,
@@ -226,14 +228,18 @@ test.describe("sales office · redistribute", () => {
     }[];
     const moved = events.filter((row) => row.type === "assignment");
     expect(moved.length, `no assignment entry in the timeline: ${JSON.stringify(events)}`).toBeGreaterThan(0);
-    expect(moved.at(-1)?.body).toContain("reassigned:");
+    // the timeline line names the people and keeps the uuids in `meta` — the same sentence a single
+    // assignment writes, so a redistributed lead does not read like a database dump
+    const line = moved.at(-1)?.body ?? "";
+    expect(line, `unexpected assignment line: ${line}`).toMatch(/^redistributed: .+ → .+/);
+    expect(line).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
 
     // the seat list is server-side, so the receiving rep is whichever one the pool round-robinned to:
     // exactly one of the two seeded reps must now be able to read the lead
     const visible: string[] = [];
     for (const email of Object.values(REPS)) {
       const repAuth = await apiLogin(request, email);
-      const mine = await request.get("/api/v1/leads?limit=200", {
+      const mine = await request.get("/api/v1/leads?page_size=200", {
         headers: repAuth,
       });
       expect(mine.ok(), await mine.text());

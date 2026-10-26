@@ -39,7 +39,7 @@ test.describe("sales kanban + isolation (screens 3, 6, 9)", () => {
     await expect(page.getByText(ar.leads.isolationBanner)).toBeVisible();
 
     const auth = await apiLogin(request, REPS.sara);
-    const mine = await (await request.get("/api/v1/leads?limit=100", { headers: auth })).json();
+    const mine = await (await request.get("/api/v1/leads?page_size=100", { headers: auth })).json();
     const mineIds = new Set<string>(mine.items.map((lead: { id: string }) => lead.id));
     const board = await boardOf(request, auth);
 
@@ -50,7 +50,7 @@ test.describe("sales kanban + isolation (screens 3, 6, 9)", () => {
     expect(shown.filter((id) => !mineIds.has(id)), "a foreign lead appeared on the rep's board").toEqual([]);
 
     const managerAuth = await apiLogin(request, MANAGER);
-    const all = await (await request.get("/api/v1/leads?limit=100", { headers: managerAuth })).json();
+    const all = await (await request.get("/api/v1/leads?page_size=100", { headers: managerAuth })).json();
     const foreign = all.items.find((lead: { id: string }) => !mineIds.has(lead.id));
     expect(foreign, "the seed must contain another rep's lead for this test to mean anything").toBeTruthy();
 
@@ -79,7 +79,7 @@ test.describe("sales kanban + isolation (screens 3, 6, 9)", () => {
     expect(board.counts).toHaveLength(5);
 
     // the point of the manager view is more than one owner on the same board
-    const rows = (await (await request.get("/api/v1/leads?limit=100", { headers: auth })).json()).items as {
+    const rows = (await (await request.get("/api/v1/leads?page_size=100", { headers: auth })).json()).items as {
       id: string;
       assigned_to: string | null;
     }[];
@@ -142,7 +142,7 @@ test.describe("sales kanban + isolation (screens 3, 6, 9)", () => {
     await expect(page.getByText(ar.leads.mobile.seeOnlyYours)).toBeVisible();
 
     const auth = await apiLogin(request, REPS.sara);
-    const total = (await (await request.get("/api/v1/leads?limit=1", { headers: auth })).json()).total as number;
+    const total = (await (await request.get("/api/v1/leads?page_size=1", { headers: auth })).json()).total as number;
     if (total > 0) {
       await expect(page.locator("[data-lead-card]").first()).toBeVisible({ timeout: 15_000 });
     }

@@ -77,9 +77,9 @@ test.describe("screen grid (spec §9)", () => {
 
   test("the client file, insured roster and lead detail open by id", async ({ page, request }) => {
     const auth = await apiLogin(request, MANAGER);
-    const client = (await (await request.get("/api/v1/clients?limit=1", { headers: auth })).json()).items[0] as { id: string; name: string };
+    const client = (await (await request.get("/api/v1/clients?page_size=1", { headers: auth })).json()).items[0] as { id: string; name: string };
     const clientId = client.id;
-    const leadId = (await (await request.get("/api/v1/leads?limit=1", { headers: auth })).json()).items[0].id as string;
+    const leadId = (await (await request.get("/api/v1/leads?page_size=1", { headers: auth })).json()).items[0].id as string;
 
     await login(page, MANAGER);
     // the file screen puts the client's name in the H1 and names its tab group «ملف العميل» for assistive

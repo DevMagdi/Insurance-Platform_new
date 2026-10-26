@@ -38,7 +38,7 @@ test.describe("unified inbox (screen 2)", () => {
 
   test("a sales rep is refused the queue, and the app says so instead of showing empty tiles", async ({ page, request }) => {
     const auth = await apiLogin(request, REPS.sara);
-    const refused = await request.get("/api/v1/requests?limit=1", { headers: auth });
+    const refused = await request.get("/api/v1/requests?page_size=1", { headers: auth });
     expect(refused.status()).toBe(403);
     expect((await refused.json()).code).toBe("forbidden");
 

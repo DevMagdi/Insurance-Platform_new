@@ -47,7 +47,7 @@ test.describe("dashboard (screen 1)", () => {
 
   test("the shell is RTL with the sidebar nav on the logical start edge", async ({ page, request }) => {
     const auth = await apiLogin(request, MANAGER);
-    const open = (await (await request.get("/api/v1/requests?only_open=true&limit=1", { headers: auth })).json()).total as number;
+    const open = (await (await request.get("/api/v1/requests?only_open=true&page_size=1", { headers: auth })).json()).total as number;
 
     await login(page, MANAGER);
     const root = page.locator("html");
@@ -100,8 +100,8 @@ test.describe("dashboard (screen 1)", () => {
 
     // the same boundary the sidebar promises is what the API enforces
     const auth = await apiLogin(request, REPS.sara);
-    expect((await request.get("/api/v1/requests?limit=1", { headers: auth })).status()).toBe(403);
-    const mine = await (await request.get("/api/v1/leads?limit=1", { headers: auth })).json();
+    expect((await request.get("/api/v1/requests?page_size=1", { headers: auth })).status()).toBe(403);
+    const mine = await (await request.get("/api/v1/leads?page_size=1", { headers: auth })).json();
     expect(mine.total).toBeGreaterThan(0);
   });
 });
