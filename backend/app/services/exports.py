@@ -17,6 +17,7 @@ from io import BytesIO
 from typing import Any
 from uuid import UUID
 
+import sqlalchemy as sa
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -116,10 +117,13 @@ def _requests_statement(
     q: str | None = None,
     client_id: UUID | None = None,
 ) -> Select[tuple[Any, ...]]:
-    response_minutes = func.round(
+    # PostgreSQL has no round(double precision, integer): the epoch arithmetic must be cast to numeric
+    # first, which is also what keeps the SQLite (test) and PostgreSQL (production) answers identical.
+    elapsed_minutes = sa.cast(
         (func.extract("epoch", ServiceRequest.first_response_at) - func.extract("epoch", ServiceRequest.created_at)) / 60.0,
-        1,
+        sa.Numeric(12, 4),
     )
+    response_minutes = func.round(elapsed_minutes, 1)
     stmt = (
         select(
             ServiceRequest.number.label("number"),

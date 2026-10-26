@@ -1,4 +1,9 @@
-"""Async ASGI tests on SQLite (ADR-001 §6). CI runs the same suite against PostgreSQL 16."""
+"""The suite runs on whichever database `DATABASE_URL_TEST` names.
+
+Empty (the local default) ⇒ a throwaway SQLite file, which is what makes `pytest` zero-setup.
+Set to PostgreSQL — as CI does — and the same tests run on the real engine, which is the only way
+`Base.metadata` types, Numeric round-trips and the partial indexes stay honest (ADR-003).
+"""
 
 from __future__ import annotations
 
@@ -12,7 +17,10 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 TEST_DB = Path(__file__).resolve().parents[1] / "test.db"
-os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB}"
+# `DATABASE_URL_TEST` is the single switch: postgres in CI, SQLite on a laptop (ADR-003).
+TEST_URL = os.environ.get("DATABASE_URL_TEST") or ""
+IS_POSTGRES = TEST_URL.startswith("postgresql")
+os.environ["DATABASE_URL"] = TEST_URL or f"sqlite+aiosqlite:///{TEST_DB}"
 os.environ["ENV"] = "dev"
 os.environ["INTEGRATIONS_DRIVER"] = "sim"
 os.environ["CELERY_TASK_ALWAYS_EAGER"] = "1"
@@ -35,11 +43,22 @@ PASSWORD = "Test-Pass-2026"
 
 @pytest_asyncio.fixture
 async def engine():
-    if TEST_DB.exists():
-        TEST_DB.unlink()
-    eng = create_async_engine(f"sqlite+aiosqlite:///{TEST_DB}", future=True)
-    async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    if IS_POSTGRES:
+        # the schema is rebuilt from `Base.metadata` on every run; RLS policies are a migration-only
+        # concern and are exercised against a migrated database in tests/test_rls_postgres.py
+        eng = create_async_engine(TEST_URL, future=True)
+        async with eng.begin() as conn:
+            # `drop_all` cannot order `leads`↔`clients` (they reference each other, and PostgreSQL
+            # enforces the cycle that SQLite ignores) — so the schema is reset instead.
+            await conn.exec_driver_sql("DROP SCHEMA public CASCADE")
+            await conn.exec_driver_sql("CREATE SCHEMA public")
+            await conn.run_sync(Base.metadata.create_all)
+    else:
+        if TEST_DB.exists():
+            TEST_DB.unlink()
+        eng = create_async_engine(f"sqlite+aiosqlite:///{TEST_DB}", future=True)
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
     from app.services import auth as auth_service
 
     auth_service.reset_rate_limits()
@@ -52,7 +71,7 @@ async def engine():
     await eng.dispose()
     set_sessionmaker(None)
     set_engine(None)
-    if TEST_DB.exists():
+    if not IS_POSTGRES and TEST_DB.exists():
         TEST_DB.unlink()
 
 
@@ -161,3 +180,13 @@ async def ids(client) -> dict[str, dict[str, str]]:
 @pytest.fixture(scope="session", autouse=True)
 def _quiet_env() -> None:
     os.environ.setdefault("TZ", "UTC")
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """`postgres_only` tests are skipped, never silently passed, when the run is on SQLite."""
+    if IS_POSTGRES:
+        return
+    skip = pytest.mark.skip(reason="requires DATABASE_URL_TEST pointing at PostgreSQL")
+    for item in items:
+        if item.get_closest_marker("postgres_only"):
+            item.add_marker(skip)
