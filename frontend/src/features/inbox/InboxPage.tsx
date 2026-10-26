@@ -17,6 +17,7 @@ import {
   Play,
   Search,
   Send,
+  Sparkles,
   StickyNote,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -27,7 +28,7 @@ import { Avatar, Badge, Card, Segmented, StateBlock } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth";
 import { formatDuration, formatNumber, humanDuration, initials, relativeTime } from "@/lib/format";
-import type { RequestCall, RequestDetail, RequestMessage, RequestRow as ViewsRequestRow } from "@/lib/api/views";
+import type { AiStatus, AiSummary, RequestCall, RequestDetail, RequestMessage, RequestRow as ViewsRequestRow } from "@/lib/api/views";
 
 /* Every row type is the generated OpenAPI model — no handwritten DTOs (spec §3). */
 type RequestRow = ViewsRequestRow;
@@ -105,6 +106,13 @@ export default function InboxPage() {
       setNoteDraft("");
       void queryClient.invalidateQueries({ queryKey: ["requests", "detail", selected] });
     },
+  });
+
+  /* The AI provider is deployment-switchable (ADR-012): the button exists only when it is on. */
+  const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: () => api.get<AiStatus>("/ai/status"), staleTime: 60_000 });
+  const summarize = useMutation({
+    mutationFn: () => api.post<AiSummary>(`/ai/requests/${selected}/summarize`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["requests", "detail", selected] }),
   });
 
   const setStatus = useMutation({
@@ -329,6 +337,26 @@ export default function InboxPage() {
                   {addNote.isPending ? "…" : t("common.save")}
                 </button>
               </div>
+              {aiStatus.data?.enabled ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary !py-1.5 text-[13px]"
+                    onClick={() => summarize.mutate()}
+                    disabled={summarize.isPending}
+                    title={t("inbox.aiProvider", { provider: aiStatus.data.driver })}
+                  >
+                    {summarize.isPending ? <Clock3 size={13} className="animate-spin" /> : <Sparkles size={13} strokeWidth={1.8} />}
+                    {t("inbox.aiSummarize")}
+                  </button>
+                  <span className="text-[11px] text-muted">{t("inbox.aiNeedsReview")}</span>
+                  {summarize.isError ? (
+                    <span className="text-[12px] font-semibold text-[var(--r-ink)]">
+                      {summarize.error instanceof Error ? summarize.error.message : "error"}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </footer>
           </>
         ) : (

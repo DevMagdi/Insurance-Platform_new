@@ -6,11 +6,13 @@ import os
 from typing import Any
 
 from app.core.config import get_settings
+from app.integrations.ai_sim import AISim
 from app.integrations.telephony import TelephonyGeneric, TelephonySim
 from app.integrations.whatsapp import WhatsAppMeta, WhatsAppSim
 
 _whatsapp: Any | None = None
 _telephony: Any | None = None
+_ai: Any | None = None
 
 
 def _driver() -> str:
@@ -25,6 +27,20 @@ def whatsapp_provider() -> Any:
         else:
             _whatsapp = WhatsAppSim()
     return _whatsapp
+
+
+def ai_provider() -> Any:
+    """Simulated by default (spec §8: every provider has a simulated driver).
+
+    There is deliberately no `live` AI driver yet: no vendor is approved for the data this touches
+    (recordings and client threads), so choosing a provider is a decision, not a ticket. Until it is
+    made, `INTEGRATIONS_DRIVER=live` still returns the simulator and `docs/STATUS.md` says so.
+    """
+
+    global _ai
+    if _ai is None:
+        _ai = AISim()
+    return _ai
 
 
 def telephony_provider() -> Any:

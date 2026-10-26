@@ -6,12 +6,14 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Download, Gauge, Timer, TrendingUp } from "lucide-react";
+import { Download, FileText, Gauge, Timer, TrendingUp } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge, Button, Card, DataTable, PageHeader, SectionTitle, StateBlock } from "@/components/ui";
+import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import { downloadFile, saveFile } from "@/lib/api/download";
 import { formatNumber, formatPercent } from "@/lib/format";
 import type { DashboardChannel, DashboardSummary, InsurerPerformance } from "@/lib/api/views";
 import { Phase2Screen } from "./phase2Gate";
@@ -35,7 +37,29 @@ export default function ReportsPage() {
 
 function ReportsContent() {
   const { t } = useTranslation();
+  const toast = useToast();
   const [range, setRange] = useState<7 | 30>(30);
+  const [exporting, setExporting] = useState(false);
+
+  /** The workbook is built server-side from the same scoped query this screen reads (spec §6). */
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const file = await downloadFile("/exports/insurer-performance");
+      saveFile(file);
+      toast(
+        file.rows === null
+          ? t("phase2.exportDonePlain", { file: file.filename })
+          : t("phase2.exportDone", { rows: file.rows, file: file.filename }),
+        file.truncated ? "warn" : "ok",
+      );
+      if (file.truncated) toast(t("phase2.exportTruncated"), "warn");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t("phase2.exportFailed"), "error");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const channels = useQuery({
     queryKey: ["dashboard", "channels", range],
@@ -88,8 +112,11 @@ function ReportsContent() {
                 </button>
               ))}
             </div>
-            <Button icon={<Download size={15} strokeWidth={1.8} />} title={t("phase2.exportPending")} disabled>
+            <Button icon={<Download size={15} strokeWidth={1.8} />} busy={exporting} onClick={() => void exportExcel()}>
               {t("phase2.exportExcel")}
+            </Button>
+            <Button icon={<FileText size={15} strokeWidth={1.8} />} title={t("phase2.exportPdfPending")} disabled>
+              {t("phase2.exportPdf")}
             </Button>
           </>
         }

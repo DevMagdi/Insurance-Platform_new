@@ -55,11 +55,19 @@ accounts publicly — they all share one password by design so the review can sw
 ## Checks
 
 ```bash
-cd backend  && ruff check . && mypy app && pytest -q          # 74 tests, coverage gate in CI
-cd frontend && npm run lint && npm run typecheck && npm test  # eslint(0 warn) · tsc · vitest
-cd frontend && npm run e2e                                    # Playwright + screenshots (needs a browser)
-cd frontend && npm run codegen:api                            # regenerate types from docs/api/openapi.json
+cd backend  && ruff check . && ruff format --check . && mypy app && pytest -q   # 114 tests on SQLite
+cd backend  && coverage run -m pytest -q && coverage report && python scripts/check_core_coverage.py
+cd frontend && npm run lint && npm run typecheck && npm test  # eslint(0 warn) · tsc · vitest (42)
+cd frontend && npm run e2e                                    # Playwright + the 16 screenshots (needs a browser)
+cd backend    && python scripts/export_openapi.py && python scripts/check_openapi_fresh.py
+cd frontend   && npm run codegen:api                          # regenerate types from docs/api/openapi.json
 ```
+
+Ops surfaces: `GET /healthz`, `GET /readyz`, `GET /metrics` (Prometheus; token-gated outside
+development — `docs/decisions/011-monitoring-and-mailpit.md`), and `GET /api/v1/dev/sim` as the
+in-process simulator panel. Exports are scoped like the lists they mirror:
+`POST /api/v1/exports/{requests|clients|insurer-performance}` returns an XLSX workbook and writes an
+`audit_logs` row (ADR-010).
 
 Frontend API types are generated (`openapi-typescript`) from the exported OpenAPI document — no
 handwritten DTOs. Regenerate after any backend schema change; CI fails if the export is stale.

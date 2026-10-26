@@ -29,6 +29,7 @@ RequestsManage = Annotated[User, Depends(require_perm(P.REQUESTS_MANAGE))]
 CallsListen = Annotated[User, Depends(require_perm(P.CALLS_LISTEN))]
 PoliciesView = Annotated[User, Depends(require_any_perm(P.POLICIES_VIEW, P.POLICIES_MANAGE))]
 ReportsView = Annotated[User, Depends(require_perm(P.REPORTS_VIEW))]
+ReportsExport = Annotated[User, Depends(require_perm(P.REPORTS_EXPORT))]
 SettingsManage = Annotated[User, Depends(require_perm(P.SETTINGS_MANAGE))]
 
 __all__ = [
@@ -43,6 +44,7 @@ __all__ = [
     "LeadsView",
     "PageQuery",
     "PoliciesView",
+    "ReportsExport",
     "ReportsView",
     "RequestsManage",
     "RequestsView",

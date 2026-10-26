@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     CELERY_TASK_ALWAYS_EAGER: bool = True
 
     # --- messaging ---
+    # Prometheus scrape guard: /metrics is open in development, otherwise it needs this bearer token.
+    METRICS_TOKEN: str = ""
     SMTP_URL: str = "smtp://localhost:1025"
     EMAIL_FROM: str = "no-reply@brokerhub.local"
 

@@ -444,6 +444,24 @@ class IssuingCaseOut(Open):
     documents: list[IssuingDocumentOut] = Field(default_factory=list)
 
 
+class IssuingDocumentDetailOut(Open):
+    id: UUID
+    name: str
+    status: str
+    requirement_id: UUID | None = None
+    attachment_id: UUID | None = None
+
+
+class IssuingCaseDetailOut(IssuingCaseOut):
+    """Case header + the timestamps the pipeline screen needs (spec §9.13)."""
+
+    headcount: int | None = None
+    assigned_to: UUID | None = None
+    started_at: str | None = None
+    issued_at: str | None = None
+    delivered_at: str | None = None
+
+
 class InsurerPerformanceOut(Open):
     insurer: str
     requests: int

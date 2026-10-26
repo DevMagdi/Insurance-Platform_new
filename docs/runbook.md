@@ -32,6 +32,8 @@ cd ../frontend && npm ci && npm run codegen:api && VITE_API_ORIGIN=http://127.0.
 | --- | --- | --- |
 | `GET /healthz` | :8000 | العملية للحية (لا يلمس قاعدة بيانات) |
 | `GET /readyz` | :8000 | `SELECT 1` — 503 مع `not_ready` عند فقدان القاعدة |
+| `GET /metrics` | :8000 | Prometheus نصي: `broker_hub_http_requests_total{method,route,status}` + `..._duration_seconds` + `..._in_flight_requests`. التسمية `route` قالب مسار لا URL خام. في التطوير مفتوح؛ مع `METRICS_TOKEN` يحتاج `Authorization: Bearer`؛ بدونه في الإنتاج 403 `metrics_disabled`. مقاييس الـworker ليست هنا عمداً (انظر ADR-011) |
+| بريد تجريبي | mailpit على :8025 | كل إشعار بريدّي في stack المحلي يظهر هناك؛ لا SMTP خارج الجهاز. `SMTP_URL=smtp://mailpit:1025` |
 | logs | stdout JSON (structlog) | حقول ثابتة: `method path status ms cid driver env`؛ `ms` هو زمن المعالجة بالمللي ثانية |
 | طابور Celery | `celery -A app.workers.celery_app:celery_app inspect active` | إن كان فارغًا والمهام تتراكم فالعامل ميت |
 | مهمات مجدولة | `celery ... inspect scheduled` | المفروض 4 tasks — انظر §4 |
@@ -84,6 +86,18 @@ where s.user_id = (select id from users where email = 'cs@brokerhub.test');
   اليدوي أعلاه، والحماية النافذة حالياً هي طبقة المستودعات.
 - تغيير صلاحيات دور يرفع `refresh_token_version` لكل مستخدميه ⇒ جلسات تُنهى. توقّع إعادة دخول.
 - تغيير كلمة مرور من شاشة المستخدمين ينهي الجلسات القديمة أيضًا.
+
+### الرايات (Feature flags) — إطفاء ميزة بدون نشر
+
+تُقرأ من جدول `feature_flags` في كل طلب (ADR-008)، وتُقلَّب `PATCH /api/v1/feature-flags/{key}`
+(`{"enabled": true|false}`، للادمن، بسطر في `audit_logs`).
+
+| الراية | ما تفتحه | سلوكها عند الإطفاء |
+|---|---|---|
+| `phase2.enabled` | شاشات الوثائق/الأقساط/العمولات/الإصدار/التقارير + `POST /exports/insurer-performance` + `GET /reports/*` | 503 `feature_disabled` مع `details.flag` (وليس 403: «الميزة مطفأة» حالة خدمة) |
+| `ai.enabled` | `POST /api/v1/ai/calls/{id}/transcribe` · `POST /api/v1/ai/requests/{id}/summarize` · `POST /api/v1/ai/classify` | نفس الـ503. `GET /api/v1/ai/status` يبقى مقروءًا بدون الراية حتى تُخفي الواجهة زر «تلخيص آلي» (ADR-013) |
+| `whatsapp.enabled` · `telephony.enabled` | — | **غير مطبقتين في الكود بعد**: الرايتان مزروعتان في الجدول فقط، ومسارا الـwebhook لا يقرأهما. موثّق كفجوة في `STATUS.md` (سطر 11) |
+
 
 ## 6) الوسائط والتسجيلات
 

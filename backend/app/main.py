@@ -92,6 +92,25 @@ def create_app() -> FastAPI:
     app.state.json_error = _json_error
 
     @app.middleware("http")
+    async def _metrics(request: Any, call_next: Any) -> Any:
+        """One place that counts every request, labelled by the matched route template."""
+        import time
+
+        from app.core import metrics
+
+        started = time.perf_counter()
+        metrics.IN_FLIGHT.inc()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = int(response.status_code)
+            return response
+        finally:
+            metrics.IN_FLIGHT.dec()
+            route = getattr(request.scope.get("route"), "path", None) or "unmatched"
+            metrics.observe(request.method, str(route), status, time.perf_counter() - started)
+
+    @app.middleware("http")
     async def _bind_ip(request: Any, call_next: Any) -> Any:
         from app.middleware_ip import set_client_ip
 
