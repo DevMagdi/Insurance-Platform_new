@@ -1,0 +1,150 @@
+"""Client-file writes (screens 5-6): owner defaults, contact primacy, insured edits, audit trail."""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from app.models.requests import AuditLog
+from sqlalchemy import select
+
+from tests.helpers import login
+
+MANAGER = "manager@brokerhub.test"
+REP_A = "rep_a@brokerhub.test"
+REP_B = "rep_b@brokerhub.test"
+CS = "cs@brokerhub.test"
+
+
+async def _audit_rows(action: str) -> list[dict]:
+    from app.core.db import get_sessionmaker
+
+    async with get_sessionmaker()() as session:
+        rows = (await session.execute(select(AuditLog).where(AuditLog.action == action).order_by(AuditLog.occurred_at))).scalars().all()
+        return [{"entity_id": str(r.entity_id), "before": r.before, "after": r.after} for r in rows]
+
+
+async def test_create_client_defaults_the_owner_to_the_actor(client) -> None:
+    async with login(client, REP_A) as h:
+        created = await client.post("/api/v1/clients", headers=h, json={"name": "شركة جيم", "type": "company", "tax_number": "512345678"})
+        assert created.status_code == 201, created.text
+        body = created.json()
+        assert body["name"] == "شركة جيم"
+        assert body["account_owner_id"]  # falls back to the acting rep, not to the manager
+
+        detail = await client.get(f"/api/v1/clients/{body['id']}", headers=h)
+        assert detail.status_code == 200
+        overview = await client.get(f"/api/v1/clients/{body['id']}/overview", headers=h)
+        assert overview.status_code == 200
+        kpis = overview.json()["kpis"]
+        # a brand new client file renders zeros, never blanks or errors
+        assert kpis["insured"] == 0 and kpis["open_requests"] == 0
+        assert overview.json()["policy"] is None
+        assert overview.json()["kpis"]["renewal_in_days"] is None
+
+    written = await _audit_rows("client.created")
+    assert any(row["entity_id"] == body["id"] for row in written)
+
+
+async def test_only_roles_with_clients_manage_may_create(client) -> None:
+    async with login(client, CS) as h:
+        refused = await client.post("/api/v1/clients", headers=h, json={"name": "شركة ممنوعة"})
+        assert refused.status_code == 403
+        assert refused.json()["code"] == "forbidden"
+
+
+async def test_update_is_scoped_and_audited(client, ids) -> None:
+    async with login(client, REP_B) as h:
+        foreign = await client.patch(f"/api/v1/clients/{ids['clients']['ألف']}", headers=h, json={"name": "سرقة اسم"})
+        assert foreign.status_code == 404  # another rep's client is absent, not forbidden
+
+    async with login(client, REP_A) as h:
+        patched = await client.patch(
+            f"/api/v1/clients/{ids['clients']['ألف']}", headers=h, json={"name": "شركة ألف للتجارة", "status": "active"}
+        )
+        assert patched.status_code == 200
+        assert patched.json()["name"] == "شركة ألف للتجارة"
+    changed = await _audit_rows("client.updated")
+    assert changed and changed[-1]["before"]["name"] == "شركة ألف"
+
+
+async def test_contacts_primary_flag_moves_to_the_new_one(client, ids) -> None:
+    client_id = ids["clients"]["ألف"]
+    async with login(client, REP_A) as h:
+        first = await client.post(
+            f"/api/v1/clients/{client_id}/contacts",
+            headers=h,
+            json={"name": "منى فؤاد", "title": "HR", "mobile": "01001112222", "email": "mona@alfa.test", "is_primary": True},
+        )
+        assert first.status_code == 201, first.text
+        assert first.json()["mobile"] == "+201001112222"  # stored through the shared E.164 util
+
+        second = await client.post(
+            f"/api/v1/clients/{client_id}/contacts", headers=h, json={"name": "أحمد", "title": "مشتريات", "is_primary": True}
+        )
+        assert second.status_code == 201
+
+        listed = (await client.get(f"/api/v1/clients/{client_id}/contacts", headers=h)).json()
+        assert len(listed) == 2
+        assert {c["id"]: c["is_primary"] for c in listed}[second.json()["id"]] is True
+        assert {c["id"]: c["is_primary"] for c in listed}[first.json()["id"]] is False
+
+        overview = (await client.get(f"/api/v1/clients/{client_id}/overview", headers=h)).json()
+        assert overview["contacts"][0]["name"] in {"منى فؤاد", "أحمد"}
+
+
+async def test_insured_add_update_and_counts(client, ids) -> None:
+    client_id = ids["clients"]["ألف"]
+    async with login(client, REP_A) as h:
+        added = await client.post(
+            f"/api/v1/clients/{client_id}/insured",
+            headers=h,
+            json={
+                "name": "هالة عبد الرحمن",
+                "mobile": "01001234567",
+                "national_id": "29105101203458",
+                "department": "الحسابات",
+                "job_title": "محاسبة",
+                "coverage_status": "pending",
+                "notes": "تحتاج شهادة راتب",
+                "external_ref": "EMP-4501",
+            },
+        )
+        assert added.status_code == 201, added.text
+        insured_id = added.json()["id"]
+        assert added.json()["coverage_status"] == "pending"
+        assert added.json()["notes"] == "تحتاج شهادة راتب"
+        assert added.json()["external_ref"] == "EMP-4501"
+
+        listed = await client.get(f"/api/v1/clients/{client_id}/insured", headers=h)
+        assert listed.status_code == 200
+        page = listed.json()
+        assert page["page"]["total"] == 1
+        assert page["kpis"]["pending"] == 1
+
+        patched = await client.patch(
+            f"/api/v1/insured/{insured_id}",
+            headers=h,
+            json={"coverage_status": "active", "department": "المراجعة", "coverage_end": "2026-12-31"},
+        )
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["coverage_status"] == "active"
+        assert patched.json()["coverage_end"] == "2026-12-31"
+
+        after = (await client.get(f"/api/v1/clients/{client_id}/insured", headers=h)).json()
+        assert after["kpis"]["active"] == 1 and after["kpis"]["pending"] == 0
+
+        # out of scope for the other rep, and unknown ids are absent
+    async with login(client, REP_B) as h:
+        assert (await client.get(f"/api/v1/clients/{client_id}/insured", headers=h)).status_code == 404
+        assert (await client.patch(f"/api/v1/insured/{UUID(int=0)}", headers=h, json={"department": "x"})).status_code == 404
+
+
+async def test_client_list_search_and_filters(client, ids) -> None:
+    async with login(client, MANAGER) as h:
+        assert (await client.get("/api/v1/clients", headers=h, params={"q": "ألف"})).json()["total"] == 1
+        assert (await client.get("/api/v1/clients", headers=h, params={"q": "مفيش كده"})).json()["total"] == 0
+        assert (await client.get("/api/v1/clients", headers=h, params={"status": "active"})).json()["total"] == 2
+        converted = (await client.get("/api/v1/clients", headers=h, params={"only_converted": True})).json()
+        assert converted["total"] == 0
+        kpis = (await client.get("/api/v1/clients/kpis", headers=h)).json()
+        assert kpis["total_clients"] == 2
