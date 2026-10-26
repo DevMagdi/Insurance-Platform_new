@@ -134,7 +134,14 @@ def create_app() -> FastAPI:
         return {"name": settings.APP_NAME, "docs": "/docs", "api": settings.API_V1_PREFIX}
 
     @app.exception_handler(404)
-    async def _not_found(_request: Any, _exc: Any) -> JSONResponse:
+    async def _not_found(_request: Any, exc: Any) -> JSONResponse:
+        # The app's own `NotFound` *is* an HTTPException with status 404, so a handler keyed on the status
+        # sees both kinds. Answering "Route not found" to a request that hit its route and missed a row throws
+        # away the reason the service gave ("Lead not found", "Import job not found") — which is exactly what
+        # a client has to show a manager. Only a genuinely unmatched route gets the generic answer.
+        detail = getattr(exc, "detail", None)
+        if isinstance(detail, dict) and detail.get("code"):
+            return JSONResponse(status_code=404, content={**detail, "status_code": 404})
         return JSONResponse(status_code=404, content=error_json(404, "not_found", "Route not found"))
 
     _decorate_openapi(app)

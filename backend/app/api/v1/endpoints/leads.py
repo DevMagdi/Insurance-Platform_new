@@ -4,17 +4,18 @@ from datetime import UTC
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, File, Query, UploadFile
 
 from app.api.serializers import lead_activity, lead_brief, lead_detail
-from app.api.v1.deps import DbSession, LeadsAssign, LeadsConvert, LeadsView, PageQuery, ScopeDep
-from app.core.errors import Forbidden, NotFound
+from app.api.v1.deps import DbSession, LeadsAssign, LeadsConvert, LeadsImport, LeadsView, PageQuery, ScopeDep
+from app.core.errors import Forbidden, NotFound, TooLarge
 from app.core.pagination import Page
 from app.domain.enums import ActivityType, LeadStatus
 from app.middleware_ip import ip_of
 from app.repositories import leads as repo
 from app.schemas.leads import (
     LeadAssign,
+    LeadBulkAssign,
     LeadCreate,
     LeadLose,
     LeadMeetingCreate,
@@ -22,7 +23,18 @@ from app.schemas.leads import (
     LeadStatusUpdate,
     LeadUpdate,
 )
-from app.schemas.out import LeadActivityOut, LeadBoardOut, LeadConvertOut, LeadDetailOut, LeadPageOut, LeadStatsOut, RepWorkloadOut
+from app.schemas.out import (
+    LeadActivityOut,
+    LeadBoardOut,
+    LeadBulkAssignOut,
+    LeadConvertOut,
+    LeadDetailOut,
+    LeadImportOut,
+    LeadPageOut,
+    LeadStatsOut,
+    RepWorkloadOut,
+)
+from app.services import lead_import
 from app.services import leads as svc
 
 router = APIRouter(tags=["leads"])
@@ -107,6 +119,61 @@ async def board(
 @router.get("/leads/stats", summary="Kanban KPI row", response_model=LeadStatsOut)
 async def stats(session: DbSession, scope: ScopeDep, actor: LeadsView, assigned_to: UUID | None = None) -> dict[str, Any]:
     return await repo.stats(session, scope, rep_id=assigned_to)
+
+
+@router.post(
+    "/leads/assign-bulk", summary="Redistribute a selection or the whole unassigned pool (managers only)", response_model=LeadBulkAssignOut
+)
+async def assign_bulk(body: LeadBulkAssign, session: DbSession, scope: ScopeDep, actor: LeadsAssign) -> dict[str, Any]:
+    """One transaction for the redistribute dialog: `lead_ids` for a chosen set, `unassigned_only` for the pool.
+
+    The pool is selected server-side on purpose: a client-side loop over one page of `/leads` could only
+    ever move `page_size` rows while telling the manager it moved the lot.
+    """
+    result = await svc.assign_bulk(
+        session,
+        actor,
+        scope,
+        lead_ids=body.lead_ids,
+        unassigned_only=body.unassigned_only,
+        to=body.to,
+        reason=body.reason,
+        ip=ip_of(),
+    )
+    await session.commit()
+    return result
+
+
+@router.post("/leads/import", status_code=201, summary="Upload .xlsx/.csv of leads → dry-run preview", response_model=LeadImportOut)
+async def import_leads(
+    session: DbSession,
+    actor: LeadsImport,
+    file: Annotated[UploadFile, File()],
+) -> dict[str, Any]:
+    """Preview only. Nothing becomes a lead until the same job is committed (screen 11's rule, ADR-017)."""
+    name = file.filename or "import.xlsx"
+    content = await file.read()
+    if len(content) > lead_import.MAX_FILE_BYTES:
+        raise TooLarge(f"File too large (limit {lead_import.MAX_FILE_BYTES // 1_000_000} MB)")
+    rows = lead_import.parse_workbook(content, name)
+    job = await lead_import.dry_run(session, actor, rows=rows, filename=file.filename)
+    await session.commit()
+    payload = lead_import.brief(job)
+    payload["confirm_required"] = True
+    payload["commit_url"] = f"/api/v1/leads/import/{job.id}/commit"
+    return payload  # type: ignore[no-any-return]
+
+
+@router.post("/leads/import/{job_id}/commit", summary="Apply a previewed lead import", response_model=LeadImportOut)
+async def commit_leads_import(job_id: UUID, session: DbSession, scope: ScopeDep, actor: LeadsImport) -> dict[str, Any]:
+    job = await lead_import.commit(session, actor, scope, job_id, ip=ip_of())
+    await session.commit()
+    return lead_import.brief(job)
+
+
+@router.get("/leads/import/{job_id}", summary="Read back a lead import's report", response_model=LeadImportOut)
+async def get_leads_import(job_id: UUID, session: DbSession, actor: LeadsImport) -> dict[str, Any]:
+    return lead_import.brief(await lead_import.get_job(session, job_id))
 
 
 @router.get("/sales/team", summary="Per-rep load, meetings and conversion (manager only)", response_model=list[RepWorkloadOut])

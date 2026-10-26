@@ -126,3 +126,25 @@ async def test_sales_team_board_is_manager_only(client) -> None:
     assert refused.status_code == 403
     assert refused.json()["code"] == "forbidden"
     assert set(refused.json()["details"]["required"]) == {"leads.view_all", "leads.assign"}
+
+
+async def test_a_miss_names_the_thing_that_was_missed(client, ids: dict[str, dict[str, str]]) -> None:
+    """A 404 from a route that matched must not be flattened into "Route not found" (see `app/main.py`)."""
+    from uuid import uuid4
+
+    async with login(client, "manager@brokerhub.test") as auth:
+        missing = await client.get(f"/api/v1/leads/{uuid4()}", headers=auth)
+        assert missing.status_code == 404, missing.text
+        assert missing.json()["code"] == "not_found"
+        assert "lead" in missing.json()["message"].lower()
+
+        unmatched = await client.get("/api/v1/leads/nope/nope/nope", headers=auth)
+        assert unmatched.status_code == 404
+        assert unmatched.json()["message"] == "Route not found"
+
+    # and the same for an id that exists but is not the caller's: a rep must not learn it exists, and a
+    # manager must learn why the row was skipped
+    async with login(client, "rep_b@brokerhub.test") as other:
+        hidden = await client.get(f"/api/v1/leads/{ids['leads']['ألف']}", headers=other)
+        assert hidden.status_code == 404, hidden.text
+        assert "lead" in hidden.json()["message"].lower()

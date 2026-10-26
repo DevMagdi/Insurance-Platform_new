@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from app.core.db import get_sessionmaker
 from app.domain.permissions import ALL_PERMISSIONS
+from app.models.requests import AuditLog
+from sqlalchemy import select
 
 from tests.helpers import login
 
@@ -179,3 +182,96 @@ async def test_unknown_user_and_role_answer_404(client) -> None:
         assert (
             await client.put(f"/api/v1/roles/{missing}/permissions", headers=h, json={"permissions": ["leads.view_own"]})
         ).status_code == 404
+
+
+async def test_a_blank_password_makes_the_server_generate_one_that_actually_works(client) -> None:
+    """«توليد تلقائي»: the manager never sees or invents a secret, and the account is usable immediately."""
+    async with login(client, ADMIN) as h:
+        created = await client.post(
+            "/api/v1/users",
+            headers=h,
+            json={"email": "generated@brokerhub.test", "full_name": "عضو بتوليد", "role_code": "sales_rep"},
+        )
+        assert created.status_code == 201, created.text
+        body = created.json()
+        temp = body["temporary_password"]
+        assert temp and len(temp) >= 10
+        assert any(c.isdigit() for c in temp) and any(c.isupper() for c in temp) and any(c.islower() for c in temp)
+
+    async with login(client, "generated@brokerhub.test", temp) as new_user:
+        me = await client.get("/api/v1/auth/me", headers=new_user)
+        assert (
+            sorted(me.json()["permissions"]) == sorted(ALL_PERMISSIONS[i] for i in range(len(ALL_PERMISSIONS)) if i == -1)
+            or "leads.view_own" in me.json()["permissions"]
+        )
+        # a rep starts with an empty pipeline: isolation, not a loading state
+        assert (await client.get("/api/v1/leads", headers=new_user)).json()["total"] == 0
+
+    async with get_sessionmaker()() as session:
+        entry = (await session.execute(select(AuditLog).where(AuditLog.action == "user.created"))).scalars().all()[-1]
+        assert entry.after["email"] == "generated@brokerhub.test"
+        assert "password" not in str(entry.after).lower(), "the audit row must not carry a secret"
+
+
+async def test_a_manager_may_open_the_account_inactive(client) -> None:
+    """«تفعيل الحساب فورًا (نعم/لا)» is not decoration: an inactive account cannot authenticate."""
+    async with login(client, ADMIN) as h:
+        created = await client.post(
+            "/api/v1/users",
+            headers=h,
+            json={
+                "email": "pending@brokerhub.test",
+                "password": PASSWORD,
+                "full_name": "بانتظار",
+                "role_code": "sales_rep",
+                "is_active": False,
+            },
+        )
+        assert created.status_code == 201
+        assert created.json()["id"]
+        refused = await client.post("/api/v1/auth/login", json={"email": "pending@brokerhub.test", "password": PASSWORD})
+        assert refused.status_code in (401, 403)
+        user_id = created.json()["id"]
+        on = await client.patch(f"/api/v1/users/{user_id}", headers=h, json={"is_active": True})
+        assert on.json()["is_active"] is True
+    async with login(client, "pending@brokerhub.test"):
+        pass  # activating it from the same dialog is the other half of the switch
+
+
+async def test_a_portal_role_cannot_be_created_without_a_client(client) -> None:
+    """The dialog has no client picker, so the API refuses the combination instead of creating a dead seat."""
+    async with login(client, ADMIN) as h:
+        refused = await client.post(
+            "/api/v1/users",
+            headers=h,
+            json={"email": "orphan@brokerhub.test", "password": PASSWORD, "full_name": "يتيم", "role_code": "client_owner"},
+        )
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["details"]["role_code"] == "client_owner"
+
+
+async def test_changing_a_role_changes_what_the_person_can_do(client) -> None:
+    """The permission set is read from `role_permissions` on every token, so a promotion is not cosmetic."""
+    async with login(client, ADMIN) as h:
+        created = await client.post(
+            "/api/v1/users",
+            headers=h,
+            json={"email": "promoted@brokerhub.test", "password": PASSWORD, "full_name": "ترقية", "role_code": "sales_rep"},
+        )
+        user_id = created.json()["id"]
+    async with login(client, "promoted@brokerhub.test") as rep:
+        assert (await client.get("/api/v1/users", headers=rep)).status_code == 403
+        assert (await client.get("/api/v1/sales/team", headers=rep)).status_code == 403
+
+    async with login(client, ADMIN) as h:
+        promoted = await client.patch(f"/api/v1/users/{user_id}", headers=h, json={"role_code": "sales_manager"})
+        # the answer describes the row as it now is — not the role the request replaced
+        assert promoted.json()["role"] == "sales_manager"
+    async with login(client, "promoted@brokerhub.test") as manager:
+        me = await client.get("/api/v1/auth/me", headers=manager)
+        assert {"leads.view_all", "leads.assign"} <= set(me.json()["permissions"])
+        assert (await client.get("/api/v1/sales/team", headers=manager)).status_code == 200
+        # the promotion buys the team roster, not the admin surface: `users.manage` stays with system_admin,
+        # which is the gate ADR-016 §8 pinned and `/sales-team/members` (this round's) does not move
+        assert (await client.get("/api/v1/users", headers=manager)).status_code == 403
+        assert (await client.get("/api/v1/sales-team/members", headers=manager)).status_code == 200

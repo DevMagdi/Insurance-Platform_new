@@ -244,6 +244,20 @@
         "title": "Body_postApiV1InsurersImport-Csv",
         "type": "object"
       },
+      "Body_postApiV1LeadsImport": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_postApiV1LeadsImport",
+        "type": "object"
+      },
       "Body_postApiV1RequestsRequestIdAttachments": {
         "properties": {
           "file": {
@@ -2450,6 +2464,87 @@
         "title": "LeadBoardOut",
         "type": "object"
       },
+      "LeadBulkAssign": {
+        "description": "One write for the redistribute dialog: a set of ids, or the whole unassigned pool.\n\n`unassigned_only` exists so the pool is drained by *server-side* selection. Without it the dialog could\nonly ever move what one page of `/leads?unassigned=true` returned — 50 leads — and report it as\n\"everything\". Exactly one of the two selectors may be sent, otherwise a page boundary silently decides\nwho a manager redistributed to.",
+        "properties": {
+          "lead_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 2000,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Ids"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "to": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "To",
+            "type": "array"
+          },
+          "unassigned_only": {
+            "default": false,
+            "title": "Unassigned Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "to"
+        ],
+        "title": "LeadBulkAssign",
+        "type": "object"
+      },
+      "LeadBulkAssignOut": {
+        "additionalProperties": true,
+        "properties": {
+          "assigned": {
+            "default": 0,
+            "title": "Assigned",
+            "type": "integer"
+          },
+          "per_rep": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Per Rep",
+            "type": "object"
+          },
+          "skipped": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "title": "LeadBulkAssignOut",
+        "type": "object"
+      },
       "LeadConvertOut": {
         "additionalProperties": true,
         "description": "Returned by `POST /leads/{id}/convert` — the client the lead became, plus idempotency info.",
@@ -2528,6 +2623,18 @@
               }
             ],
             "title": "Contact Name"
+          },
+          "contact_title": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Title"
           },
           "current_insurer_id": {
             "anyOf": [
@@ -2709,6 +2816,17 @@
               }
             ],
             "title": "Contact Name"
+          },
+          "contact_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Title"
           },
           "converted_at": {
             "anyOf": [
@@ -2913,6 +3031,106 @@
         "title": "LeadDetailOut",
         "type": "object"
       },
+      "LeadImportOut": {
+        "additionalProperties": true,
+        "description": "Dry-run preview and final report of a lead import, in the same shape `ImportJobOut` uses.",
+        "properties": {
+          "commit_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Url"
+          },
+          "committed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Committed At"
+          },
+          "confirm_required": {
+            "default": false,
+            "title": "Confirm Required",
+            "type": "boolean"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "error_report": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Error Report",
+            "type": "array"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "preview": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Preview",
+            "type": "array"
+          },
+          "stats": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Stats",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "total_rows": {
+            "default": 0,
+            "title": "Total Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "LeadImportOut",
+        "type": "object"
+      },
       "LeadLose": {
         "properties": {
           "lost_reason_id": {
@@ -3016,6 +3234,17 @@
               }
             ],
             "title": "Contact Name"
+          },
+          "contact_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Title"
           },
           "converted_client_id": {
             "anyOf": [
@@ -3309,6 +3538,18 @@
               }
             ],
             "title": "Contact Name"
+          },
+          "contact_title": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Title"
           },
           "current_insurer_id": {
             "anyOf": [
@@ -3643,6 +3884,125 @@
           "scope_mode"
         ],
         "title": "MeOut",
+        "type": "object"
+      },
+      "MemberCreate": {
+        "properties": {
+          "email": {
+            "default": "",
+            "maxLength": 255,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[A-Za-z]{2,}$",
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "maxLength": 160,
+            "minLength": 2,
+            "title": "Full Name",
+            "type": "string"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mobile"
+          },
+          "password": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Password",
+            "type": "string"
+          },
+          "role_code": {
+            "maxLength": 40,
+            "minLength": 2,
+            "title": "Role Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "full_name",
+          "role_code"
+        ],
+        "title": "MemberCreate",
+        "type": "object"
+      },
+      "MemberPatch": {
+        "properties": {
+          "full_name": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mobile"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "role_code": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Code"
+          }
+        },
+        "title": "MemberPatch",
         "type": "object"
       },
       "NoteCreate": {
@@ -5906,6 +6266,162 @@
         "title": "SlaPolicyOut",
         "type": "object"
       },
+      "TeamAssignableRole": {
+        "additionalProperties": true,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "TeamAssignableRole",
+        "type": "object"
+      },
+      "TeamMemberCreatedOut": {
+        "additionalProperties": true,
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "temporary_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporary Password"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role"
+        ],
+        "title": "TeamMemberCreatedOut",
+        "type": "object"
+      },
+      "TeamMemberOut": {
+        "additionalProperties": true,
+        "description": "One seat of the sales office, as screen 6's team tab lists it.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mobile"
+          },
+          "open_leads": {
+            "default": 0,
+            "title": "Open Leads",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "role_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Name"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "full_name",
+          "role"
+        ],
+        "title": "TeamMemberOut",
+        "type": "object"
+      },
+      "TeamRosterOut": {
+        "additionalProperties": true,
+        "description": "`GET /sales-team/members`: the office seats, and the roles the tab is allowed to hand out.\n\nThe allowlist is served rather than copied into the client — a frontend that repeats `OFFICE_ROLES`\nwould drift the day the set changes, and the dialog would offer an option the API refuses.",
+        "properties": {
+          "assignable_roles": {
+            "items": {
+              "$ref": "#/components/schemas/TeamAssignableRole"
+            },
+            "title": "Assignable Roles",
+            "type": "array"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/TeamMemberOut"
+            },
+            "title": "Members",
+            "type": "array"
+          }
+        },
+        "title": "TeamRosterOut",
+        "type": "object"
+      },
       "TemplateSyncOut": {
         "properties": {
           "detail": {
@@ -6036,8 +6552,8 @@
             "title": "Mobile"
           },
           "password": {
+            "default": "",
             "maxLength": 200,
-            "minLength": 10,
             "title": "Password",
             "type": "string"
           },
@@ -6069,11 +6585,46 @@
           }
         },
         "required": [
-          "password",
           "full_name",
           "role_code"
         ],
         "title": "UserCreate",
+        "type": "object"
+      },
+      "UserCreatedOut": {
+        "additionalProperties": true,
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "temporary_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporary Password"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role"
+        ],
+        "title": "UserCreatedOut",
         "type": "object"
       },
       "UserOut": {
@@ -8694,6 +9245,48 @@
         ]
       }
     },
+    "/api/v1/leads/assign-bulk": {
+      "post": {
+        "description": "One transaction for the redistribute dialog: `lead_ids` for a chosen set, `unassigned_only` for the pool.\n\nThe pool is selected server-side on purpose: a client-side loop over one page of `/leads` could only\never move `page_size` rows while telling the manager it moved the lot.",
+        "operationId": "postApiV1LeadsAssign-Bulk",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeadBulkAssign"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadBulkAssignOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redistribute a selection or the whole unassigned pool (managers only)",
+        "tags": [
+          "leads"
+        ]
+      }
+    },
     "/api/v1/leads/board": {
       "get": {
         "operationId": "getApiV1LeadsBoard",
@@ -8755,6 +9348,134 @@
           }
         },
         "summary": "Kanban payload (5 columns, scoped)",
+        "tags": [
+          "leads"
+        ]
+      }
+    },
+    "/api/v1/leads/import": {
+      "post": {
+        "description": "Preview only. Nothing becomes a lead until the same job is committed (screen 11's rule, ADR-017).",
+        "operationId": "postApiV1LeadsImport",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_postApiV1LeadsImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadImportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload .xlsx/.csv of leads → dry-run preview",
+        "tags": [
+          "leads"
+        ]
+      }
+    },
+    "/api/v1/leads/import/{job_id}": {
+      "get": {
+        "operationId": "getApiV1LeadsImportJobId",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadImportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read back a lead import's report",
+        "tags": [
+          "leads"
+        ]
+      }
+    },
+    "/api/v1/leads/import/{job_id}/commit": {
+      "post": {
+        "operationId": "postApiV1LeadsImportJobIdCommit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadImportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply a previewed lead import",
         "tags": [
           "leads"
         ]
@@ -10710,6 +11431,119 @@
         ]
       }
     },
+    "/api/v1/sales-team/members": {
+      "get": {
+        "operationId": "getApiV1Sales-TeamMembers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamRosterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Roster of the sales office, each seat's load, and the roles this screen may assign",
+        "tags": [
+          "team"
+        ]
+      },
+      "post": {
+        "operationId": "postApiV1Sales-TeamMembers",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamMemberCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add a member to the sales office",
+        "tags": [
+          "team"
+        ]
+      }
+    },
+    "/api/v1/sales-team/members/{user_id}": {
+      "patch": {
+        "operationId": "patchApiV1Sales-TeamMembersUserId",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamMemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change a member's role, active flag or contact",
+        "tags": [
+          "team"
+        ]
+      }
+    },
     "/api/v1/sales/team": {
       "get": {
         "operationId": "getApiV1SalesTeam",
@@ -11198,9 +12032,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Postapiv1Users",
-                  "type": "object"
+                  "$ref": "#/components/schemas/UserCreatedOut"
                 }
               }
             },

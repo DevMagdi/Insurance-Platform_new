@@ -34,6 +34,7 @@ def lead_brief(lead: Lead) -> dict[str, Any]:
         "status": lead.status.value,
         "mobile": lead.mobile,
         "contact_name": lead.contact_name,
+        "contact_title": lead.contact_title,
         "headcount": lead.headcount,
         "next_followup_at": lead.next_followup_at,
         "followup_overdue": bool(lead.next_followup_at and lead.next_followup_at < now and lead.status not in {"won", "lost"}),

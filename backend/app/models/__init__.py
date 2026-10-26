@@ -2,7 +2,7 @@ from app.models.auth import ClientPortalUser, Permission, Role, User, UserScope,
 from app.models.base import Base, TimestampMixin, utcnow
 from app.models.clients import Client, ClientContact, ImportJob, InsuredPerson
 from app.models.integrations import IntegrationConfig, WebhookEvent
-from app.models.leads import Lead, LeadActivity, LeadMeeting
+from app.models.leads import Lead, LeadActivity, LeadImportJob, LeadMeeting
 from app.models.masters import (
     BusinessHoursRow,
     DocumentRequirement,
@@ -48,6 +48,7 @@ __all__ = [
     "IssuingDocument",
     "Lead",
     "LeadActivity",
+    "LeadImportJob",
     "LeadMeeting",
     "LostReason",
     "Notification",

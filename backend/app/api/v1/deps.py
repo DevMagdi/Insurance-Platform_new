@@ -21,6 +21,11 @@ from app.models.auth import User
 LeadsView = Annotated[User, Depends(require_any_perm(P.LEADS_VIEW_OWN, P.LEADS_VIEW_ALL))]
 LeadsConvert = Annotated[User, Depends(require_perm(P.LEADS_CONVERT))]
 LeadsAssign = Annotated[User, Depends(require_perm(P.LEADS_ASSIGN))]
+#: Uploading a file into everyone's pipeline is a manager action. `leads.view_all` is exactly the
+#: population allowed to see (so to speak, to own) the whole pool — a rep does not hold it and gets a 403.
+#: There is deliberately no new permission slug for this: a permission nobody assigns is a permission
+#: nobody can grant, and the seed owns `role_permissions`.
+LeadsImport = Annotated[User, Depends(require_perm(P.LEADS_VIEW_ALL))]
 ClientsView = Annotated[User, Depends(require_any_perm(P.CLIENTS_VIEW_OWN, P.CLIENTS_VIEW_ALL))]
 ClientsManage = Annotated[User, Depends(require_perm(P.CLIENTS_MANAGE))]
 InsuredManage = Annotated[User, Depends(require_perm(P.INSURED_MANAGE))]
@@ -41,6 +46,7 @@ __all__ = [
     "InsuredManage",
     "LeadsAssign",
     "LeadsConvert",
+    "LeadsImport",
     "LeadsView",
     "PageQuery",
     "PoliciesView",

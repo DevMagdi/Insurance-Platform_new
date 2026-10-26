@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.common import EmailAddress, ORMModel
 
@@ -30,6 +30,8 @@ class LeadCreate(BaseModel):
     type: LeadType = "company"
     name: str = Field(min_length=2, max_length=200)
     contact_name: str | None = Field(default=None, max_length=160)
+    #: the contact's job title, e.g. "المدير المالي" — read from the Excel column «البوزيشن»
+    contact_title: str | None = Field(default=None, max_length=120)
     mobile: str | None = None
     email: EmailAddress | None = None
     source: str | None = Field(default=None, max_length=80)
@@ -48,6 +50,7 @@ class LeadUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=200)
     type: LeadType | None = None
     contact_name: str | None = None
+    contact_title: str | None = Field(default=None, max_length=120)
     mobile: str | None = None
     email: EmailAddress | None = None
     source: str | None = None
@@ -69,6 +72,28 @@ class LeadStatusUpdate(BaseModel):
 class LeadAssign(BaseModel):
     assigned_to: UUID | None = None
     reason: str | None = Field(default=None, max_length=500)
+
+
+class LeadBulkAssign(BaseModel):
+    """One write for the redistribute dialog: a set of ids, or the whole unassigned pool.
+
+    `unassigned_only` exists so the pool is drained by *server-side* selection. Without it the dialog could
+    only ever move what one page of `/leads?unassigned=true` returned — 50 leads — and report it as
+    "everything". Exactly one of the two selectors may be sent, otherwise a page boundary silently decides
+    who a manager redistributed to.
+    """
+
+    lead_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=2_000)
+    unassigned_only: bool = False
+    #: one rep for "all to this one", several for a round-robin split in the order they were picked
+    to: list[UUID] = Field(min_length=1, max_length=100)
+    reason: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _one_selector(self) -> LeadBulkAssign:
+        if bool(self.lead_ids) == self.unassigned_only:
+            raise ValueError("send either lead_ids or unassigned_only, not both and not neither")
+        return self
 
 
 class LeadLose(BaseModel):

@@ -715,6 +715,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/leads/assign-bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Redistribute a selection or the whole unassigned pool (managers only)
+         * @description One transaction for the redistribute dialog: `lead_ids` for a chosen set, `unassigned_only` for the pool.
+         *
+         *     The pool is selected server-side on purpose: a client-side loop over one page of `/leads` could only
+         *     ever move `page_size` rows while telling the manager it moved the lot.
+         */
+        post: operations["postApiV1LeadsAssign-Bulk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/leads/board": {
         parameters: {
             query?: never;
@@ -726,6 +749,60 @@ export interface paths {
         get: operations["getApiV1LeadsBoard"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/leads/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload .xlsx/.csv of leads → dry-run preview
+         * @description Preview only. Nothing becomes a lead until the same job is committed (screen 11's rule, ADR-017).
+         */
+        post: operations["postApiV1LeadsImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/leads/import/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read back a lead import's report */
+        get: operations["getApiV1LeadsImportJobId"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/leads/import/{job_id}/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply a previewed lead import */
+        post: operations["postApiV1LeadsImportJobIdCommit"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1291,6 +1368,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sales-team/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Roster of the sales office, each seat's load, and the roles this screen may assign */
+        get: operations["getApiV1Sales-TeamMembers"];
+        put?: never;
+        /** Add a member to the sales office */
+        post: operations["postApiV1Sales-TeamMembers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sales-team/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Change a member's role, active flag or contact */
+        patch: operations["patchApiV1Sales-TeamMembersUserId"];
+        trace?: never;
+    };
     "/api/v1/sales/team": {
         parameters: {
             query?: never;
@@ -1715,6 +1827,11 @@ export interface components {
         };
         /** Body_postApiV1InsurersImport-Csv */
         "Body_postApiV1InsurersImport-Csv": {
+            /** File */
+            file: string;
+        };
+        /** Body_postApiV1LeadsImport */
+        Body_postApiV1LeadsImport: {
             /** File */
             file: string;
         };
@@ -2577,6 +2694,46 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * LeadBulkAssign
+         * @description One write for the redistribute dialog: a set of ids, or the whole unassigned pool.
+         *
+         *     `unassigned_only` exists so the pool is drained by *server-side* selection. Without it the dialog could
+         *     only ever move what one page of `/leads?unassigned=true` returned — 50 leads — and report it as
+         *     "everything". Exactly one of the two selectors may be sent, otherwise a page boundary silently decides
+         *     who a manager redistributed to.
+         */
+        LeadBulkAssign: {
+            /** Lead Ids */
+            lead_ids?: string[] | null;
+            /** Reason */
+            reason?: string | null;
+            /** To */
+            to: string[];
+            /**
+             * Unassigned Only
+             * @default false
+             */
+            unassigned_only: boolean;
+        };
+        /** LeadBulkAssignOut */
+        LeadBulkAssignOut: {
+            /**
+             * Assigned
+             * @default 0
+             */
+            assigned: number;
+            /** Per Rep */
+            per_rep?: {
+                [key: string]: number;
+            };
+            /** Skipped */
+            skipped?: {
+                [key: string]: unknown;
+            }[];
+        } & {
+            [key: string]: unknown;
+        };
+        /**
          * LeadConvertOut
          * @description Returned by `POST /leads/{id}/convert` — the client the lead became, plus idempotency info.
          */
@@ -2609,6 +2766,8 @@ export interface components {
             budget?: number | string | null;
             /** Contact Name */
             contact_name?: string | null;
+            /** Contact Title */
+            contact_title?: string | null;
             /** Current Insurer Id */
             current_insurer_id?: string | null;
             /** Current Policy Expiry */
@@ -2646,6 +2805,8 @@ export interface components {
             budget?: number | string | null;
             /** Contact Name */
             contact_name?: string | null;
+            /** Contact Title */
+            contact_title?: string | null;
             /** Converted At */
             converted_at?: string | null;
             /** Converted Client Id */
@@ -2695,6 +2856,51 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * LeadImportOut
+         * @description Dry-run preview and final report of a lead import, in the same shape `ImportJobOut` uses.
+         */
+        LeadImportOut: {
+            /** Commit Url */
+            commit_url?: string | null;
+            /** Committed At */
+            committed_at?: string | null;
+            /**
+             * Confirm Required
+             * @default false
+             */
+            confirm_required: boolean;
+            /** Created At */
+            created_at?: string | null;
+            /** Error Report */
+            error_report?: {
+                [key: string]: unknown;
+            }[];
+            /** Filename */
+            filename?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Preview */
+            preview?: {
+                [key: string]: unknown;
+            }[];
+            /** Stats */
+            stats?: {
+                [key: string]: number;
+            };
+            /** Status */
+            status: string;
+            /**
+             * Total Rows
+             * @default 0
+             */
+            total_rows: number;
+        } & {
+            [key: string]: unknown;
+        };
         /** LeadLose */
         LeadLose: {
             /**
@@ -2728,6 +2934,8 @@ export interface components {
             assignee_name?: string | null;
             /** Contact Name */
             contact_name?: string | null;
+            /** Contact Title */
+            contact_title?: string | null;
             /** Converted Client Id */
             converted_client_id?: string | null;
             /**
@@ -2845,6 +3053,8 @@ export interface components {
             budget?: number | string | null;
             /** Contact Name */
             contact_name?: string | null;
+            /** Contact Title */
+            contact_title?: string | null;
             /** Current Insurer Id */
             current_insurer_id?: string | null;
             /** Current Policy Expiry */
@@ -2954,6 +3164,43 @@ export interface components {
             role_name: string;
             /** Scope Mode */
             scope_mode: string;
+        };
+        /** MemberCreate */
+        MemberCreate: {
+            /**
+             * Email
+             * @default
+             */
+            email: string;
+            /** Full Name */
+            full_name: string;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /** Mobile */
+            mobile?: string | null;
+            /**
+             * Password
+             * @default
+             */
+            password: string;
+            /** Role Code */
+            role_code: string;
+        };
+        /** MemberPatch */
+        MemberPatch: {
+            /** Full Name */
+            full_name?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Mobile */
+            mobile?: string | null;
+            /** Password */
+            password?: string | null;
+            /** Role Code */
+            role_code?: string | null;
         };
         /** NoteCreate */
         NoteCreate: {
@@ -3743,6 +3990,86 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** TeamAssignableRole */
+        TeamAssignableRole: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** TeamMemberCreatedOut */
+        TeamMemberCreatedOut: {
+            /** Email */
+            email: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /** Role */
+            role: string;
+            /** Temporary Password */
+            temporary_password?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * TeamMemberOut
+         * @description One seat of the sales office, as screen 6's team tab lists it.
+         */
+        TeamMemberOut: {
+            /** Email */
+            email: string;
+            /** Full Name */
+            full_name: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /** Last Login At */
+            last_login_at?: string | null;
+            /** Mobile */
+            mobile?: string | null;
+            /**
+             * Open Leads
+             * @default 0
+             */
+            open_leads: number;
+            /** Role */
+            role: string;
+            /** Role Name */
+            role_name?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * TeamRosterOut
+         * @description `GET /sales-team/members`: the office seats, and the roles the tab is allowed to hand out.
+         *
+         *     The allowlist is served rather than copied into the client — a frontend that repeats `OFFICE_ROLES`
+         *     would drift the day the set changes, and the dialog would offer an option the API refuses.
+         */
+        TeamRosterOut: {
+            /** Assignable Roles */
+            assignable_roles?: components["schemas"]["TeamAssignableRole"][];
+            /** Members */
+            members?: components["schemas"]["TeamMemberOut"][];
+        } & {
+            [key: string]: unknown;
+        };
         /** TemplateSyncOut */
         TemplateSyncOut: {
             /** Detail */
@@ -3790,7 +4117,10 @@ export interface components {
             is_active: boolean;
             /** Mobile */
             mobile?: string | null;
-            /** Password */
+            /**
+             * Password
+             * @default
+             */
             password: string;
             /** Portal Client Id */
             portal_client_id?: string | null;
@@ -3800,6 +4130,22 @@ export interface components {
             scopes?: {
                 [key: string]: string;
             }[];
+        };
+        /** UserCreatedOut */
+        UserCreatedOut: {
+            /** Email */
+            email: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Role */
+            role: string;
+            /** Temporary Password */
+            temporary_password?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         /** UserOut */
         UserOut: {
@@ -5325,6 +5671,39 @@ export interface operations {
             };
         };
     };
+    "postApiV1LeadsAssign-Bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeadBulkAssign"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadBulkAssignOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getApiV1LeadsBoard: {
         parameters: {
             query?: {
@@ -5344,6 +5723,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LeadBoardOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1LeadsImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_postApiV1LeadsImport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadImportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiV1LeadsImportJobId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadImportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1LeadsImportJobIdCommit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadImportOut"];
                 };
             };
             /** @description Validation Error */
@@ -6619,6 +7093,94 @@ export interface operations {
             };
         };
     };
+    "getApiV1Sales-TeamMembers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamRosterOut"];
+                };
+            };
+        };
+    };
+    "postApiV1Sales-TeamMembers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMemberCreatedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "patchApiV1Sales-TeamMembersUserId": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMemberOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getApiV1SalesTeam: {
         parameters: {
             query?: never;
@@ -6980,9 +7542,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["UserCreatedOut"];
                 };
             };
             /** @description Validation Error */

@@ -10,9 +10,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.errors import Conflict, NotFound, ValidationFailed
+from app.core.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.core.scope import Scope
-from app.core.security import hash_password
+from app.core.security import generate_temp_password, hash_password
 from app.domain import permissions as P
 from app.domain.enums import PortalRole, ScopeType
 from app.domain.phone import normalize_mobile
@@ -61,15 +61,44 @@ async def _scope_names(session: AsyncSession, user_id: UUID) -> list[dict[str, s
     return out
 
 
-async def create_user(session: AsyncSession, actor: User, payload: dict[str, Any], *, ip: str | None = None) -> User:
+#: the two codes from `permissions.DEFAULT_ROLES` that describe a portal account rather than a seat in
+#: the office — they are meaningless without the client they belong to
+_PORTAL_ROLES = frozenset({"client_owner", "client_contact"})
+
+
+async def create_user(
+    session: AsyncSession,
+    actor: User,
+    payload: dict[str, Any],
+    *,
+    ip: str | None = None,
+    allowed_roles: frozenset[str] | None = None,
+) -> tuple[User, str | None]:
+    """Returns the new user and, when the caller left the password blank, the one generated for them.
+
+    The generated value is returned exactly once and is deliberately absent from the audit row: the trail
+    says who was created with which role, never what their secret was.
+    """
     email = str(payload["email"]).strip().lower()
     if (await session.execute(select(User.id).where(func.lower(User.email) == email))).scalar_one_or_none():
         raise Conflict("A user with this email already exists")
     role = (await session.execute(select(Role).where(Role.code == payload["role_code"]))).scalar_one_or_none()
     if role is None:
         raise ValidationFailed("Unknown role", details={"role_code": payload["role_code"]})
+    if allowed_roles is not None and role.code not in allowed_roles:
+        # the caller's own ceiling first: a surface that manages part of the org cannot mint a seat outside it,
+        # and that is the truer answer for such a request than "a portal role needs a client" would be
+        raise Forbidden(
+            "That role is outside what this screen may assign", details={"role_code": role.code, "allowed": sorted(allowed_roles)}
+        )
+    if role.code in _PORTAL_ROLES and not payload.get("portal_client_id"):
+        raise ValidationFailed("A portal role needs the client it belongs to", details={"role_code": role.code})
     password = str(payload.get("password") or "")
-    if len(password) < 10:
+    generated: str | None = None
+    if not password:
+        generated = generate_temp_password()
+        password = generated
+    elif len(password) < 10:
         raise ValidationFailed("Password must be at least 10 characters")
     user = User(
         email=email,
@@ -96,13 +125,21 @@ async def create_user(session: AsyncSession, actor: User, payload: dict[str, Any
         action="user.created",
         entity_type="user",
         entity_id=user.id,
-        after={"email": user.email, "role": role.code},
+        after={"email": user.email, "role": role.code, "is_active": user.is_active},
         ip=ip,
     )
-    return user
+    return user, generated
 
 
-async def update_user(session: AsyncSession, actor: User, user_id: UUID, payload: dict[str, Any], *, ip: str | None = None) -> User:
+async def update_user(
+    session: AsyncSession,
+    actor: User,
+    user_id: UUID,
+    payload: dict[str, Any],
+    *,
+    ip: str | None = None,
+    allowed_roles: frozenset[str] | None = None,
+) -> User:
     user = (
         await session.execute(select(User).where(User.id == user_id).options(selectinload(User.role).selectinload(Role.permissions)))
     ).scalar_one_or_none()
@@ -113,7 +150,16 @@ async def update_user(session: AsyncSession, actor: User, user_id: UUID, payload
         role = (await session.execute(select(Role).where(Role.code == payload["role_code"]))).scalar_one_or_none()
         if role is None:
             raise ValidationFailed("Unknown role")
-        user.role_id = role.id
+        if allowed_roles is not None and role.code not in allowed_roles:
+            raise Forbidden(
+                "That role is outside what this screen may assign", details={"role_code": role.code, "allowed": sorted(allowed_roles)}
+            )
+        # the relationship, not the FK: `user.role_id = role.id` leaves the loaded `user.role` pointing at
+        # the old row, so the endpoint would answer with the role the user used to have (measured — the
+        # PATCH said "sales_rep" while the database said "sales_manager")
+        if role.id != user.role_id:
+            user.role = role
+            user.refresh_token_version += 1  # a role move is a permission move: their sessions re-auth
     if payload.get("full_name"):
         user.full_name = payload["full_name"]
     if "mobile" in payload:
