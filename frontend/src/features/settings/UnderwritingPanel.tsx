@@ -42,8 +42,8 @@ export function UnderwritingPanel() {
   if (query.isError || !values) return <StateBlock kind="error" />;
 
   const dirty = JSON.stringify(values) !== JSON.stringify(query.data);
+  // the number the preview shows is the number the service builds; `tests/settingsView.test.tsx` pins it
   const count = INSTALLMENTS_BY_PLAN[values.default_payment_plan as (typeof PLANS)[number]] ?? 1;
-  void count;
 
   return (
     <Card className="max-w-[720px]">
