@@ -10,7 +10,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ProviderCard } from "@/features/settings/ProviderCard";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { MemoryRouter } from "react-router-dom";
@@ -200,5 +200,38 @@ describe("the card renders what the API said — and nothing it did not", () => 
     expect(passwords.every((input) => input.value === "")).toBe(true);
     expect(container.innerHTML).not.toContain("wamid");
     expect(screen.getByText(ar.settings.testConnection)).toBeInTheDocument();
+  });
+
+  it("shows the state the row reports — and offers the risky direction through a warning", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: 0 }, mutations: { retry: 0 } } });
+    const mount = (state: ProviderState) =>
+      render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter>
+            <ProviderCard state={state} webhookUrl={{ url: "http://localhost:5173/api/v1/webhooks/whatsapp", note: "" }} />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+
+    // live: the badge the browser suite waits for, with only the safe direction offered
+    const live = mount(providerState({ status: "live", is_live: true, last_test_status: "ok" }));
+    expect(live.container.textContent).toContain(ar.settings.status.live);
+    expect(screen.getByText(ar.settings.backToSim)).toBeInTheDocument();
+    expect(screen.queryByText(ar.settings.goLive)).not.toBeInTheDocument();
+    live.unmount();
+
+    // an error is reported with the provider's own words, kept verbatim from the row (no server logs needed)
+    const failed = mount(providerState({ status: "error", last_test_status: "error", last_test_detail: "(100) invalid credentials" }));
+    expect(failed.container.textContent).toContain(ar.settings.status.error);
+    expect(screen.getByTestId("test-result-whatsapp")).toHaveTextContent("(100) invalid credentials");
+    failed.unmount();
+
+    // untested: the dialog names the blocker before any request is sent (ADR-016 §3)
+    const unset = mount(providerState({ status: "unset", last_test_status: null }));
+    expect(unset.container.textContent).toContain(ar.settings.status.unset);
+    fireEvent.click(screen.getByRole("button", { name: ar.settings.goLive }));
+    expect(screen.getByRole("dialog", { name: ar.settings.confirmLiveTitle })).toBeInTheDocument();
+    expect(screen.getByText(/لم ينجح أي اختبار بعد/)).toBeInTheDocument();
+    unset.unmount();
   });
 });

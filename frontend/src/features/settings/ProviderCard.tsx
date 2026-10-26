@@ -43,7 +43,8 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
   useEffect(() => {
     setConfig({ ...(state.config ?? {}) });
     setSecrets({});
-    setLastTest(null);
+    // the stored outcome belongs to the row, so a failure explains itself on load — not only after a click
+    setLastTest(state.last_test_detail ? { ok: state.last_test_status === "ok", detail: state.last_test_detail } : null);
   }, [state]);
 
   const badge = statusBadge(state.status);

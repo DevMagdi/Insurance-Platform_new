@@ -48,10 +48,29 @@ test.describe("settings hub · providers", () => {
     await expect(page.getByText("تم حفظ الإعدادات")).toBeVisible();
   });
 
-  test("a connection test is recorded, and live needs a confirmation — then it really switches", async ({ page }) => {
+  test("the live switch refuses an untested provider — and says why, before and after the click", async ({ page }) => {
+    // telephony is the provider no other spec touches, so "never tested" is a fact here, not a race
     await login(page, MANAGER);
     await page.goto("/settings");
 
+    const card = page.locator("div.card", { hasText: "السنترال (Telephony)" }).first();
+    await expect(card.getByText("غير مُعدّ", { exact: true })).toBeVisible();
+
+    await card.getByRole("button", { name: "التبديل إلى الحيّ" }).click();
+    const dialog = page.getByRole("dialog", { name: "تأكيد التحوّل إلى الوضع الحيّ" });
+    await expect(dialog).toBeVisible();
+    // the screen warns before the request: a green test is a precondition, not a suggestion
+    await expect(dialog.getByText("لم ينجح أي اختبار بعد")).toBeVisible();
+    await dialog.getByRole("button", { name: "تأكيد والتبديل" }).click();
+    await expect(page.getByText("لم ينجح أي اختبار اتصال لهذا المزوّد بعد")).toBeVisible({ timeout: 15_000 });
+    await expect(card.getByText("غير مُعدّ", { exact: true })).toBeVisible(); // still refused, still sim
+  });
+
+  test("test → live really flips the badge, and going back asks for nothing", async ({ page }) => {
+    await login(page, MANAGER);
+    await page.goto("/settings");
+
+    const card = page.locator("div.card", { hasText: "واتساب للأعمال" }).first();
     await page.getByTestId(PHONE).fill("999888777");
     await page.getByTestId(TOKEN).fill("e2e-live-token");
     await page.getByRole("button", { name: "حفظ" }).first().click();
@@ -61,21 +80,18 @@ test.describe("settings hub · providers", () => {
     await expect(page.getByTestId("test-result-whatsapp")).toContainText("وضع المحاكاة", { timeout: 20_000 });
 
     await page.getByRole("button", { name: "التبديل إلى الحيّ" }).first().click();
-    await expect(page.getByRole("dialog", { name: "تأكيد التحوّل إلى الوضع الحيّ" })).toBeVisible();
-    await page.getByRole("button", { name: "تأكيد والتبديل" }).click();
-
-    const card = page.locator("div.card", { hasText: "واتساب للأعمال" }).first();
+    await page.getByRole("dialog", { name: "تأكيد التحوّل إلى الوضع الحيّ" }).getByRole("button", { name: "تأكيد والتبديل" }).click();
     await expect(card.getByText("حيّ", { exact: true })).toBeVisible({ timeout: 20_000 });
-    // no assertion that the app then *called* Meta: an e2e run must not spend a real vendor quota, and
-    // what the switch provably changes is the row and the badge — the live HTTP path is unit-tested
-    // against a stubbed transport (`tests/test_integrations_settings.py`).
 
-    // going back to simulation is the safe direction, so it asks for nothing
+    // no assertion that the app then *called* Meta: CI must not spend a real vendor quota, and a live click
+    // from another spec would race this row. What the switch provably changes is the row and the badge —
+    // the live HTTP path is unit-tested against a stubbed transport (`tests/test_integrations_settings.py`),
+    // and the flip itself is proven over real HTTP in the run log quoted in the PR.
+
     await page.getByRole("button", { name: "الرجوع إلى المحاكاة" }).first().click();
     await expect(card.getByText("محاكاة", { exact: true })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toHaveCount(0); // the safe direction needs no confirmation
 
-    // clean up: no credentials and no live row survive this spec
     await page.getByTestId(DROP_TOKEN).click();
     await page.getByTestId(PHONE).fill("");
     await page.getByRole("button", { name: "حفظ" }).first().click();
