@@ -7,6 +7,8 @@ x-backend-env: &backend-env
   REDIS_URL: redis://redis:6379/0
   CELERY_BROKER_URL: redis://redis:6379/1
   CELERY_RESULT_BACKEND: redis://redis:6379/2
+  # empty token + DEBUG=false ⇒ GET /metrics answers 403 (ADR-011); set it for a real scraper
+  METRICS_TOKEN: ${METRICS_TOKEN:-}
   # the local stack runs the simulator so the inbox can be demoed without vendor credentials
   INTEGRATIONS_DRIVER: ${INTEGRATIONS_DRIVER:-sim}
   STORAGE_BACKEND: s3
@@ -17,8 +19,25 @@ x-backend-env: &backend-env
   JWT_SECRET: ${JWT_SECRET:-change-me-in-any-shared-environment-0123456789}
   DEBUG: ${DEBUG:-false}
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+  # outbound mail lands in mailpit below — nothing leaves the laptop in local runs (spec §3)
+  SMTP_URL: ${SMTP_URL:-smtp://mailpit:1025}
+  EMAIL_FROM: ${EMAIL_FROM:-no-reply@brokerhub.local}
 
 services:
+  mailpit:
+    # Dev SMTP sink + web UI: notifications, SLA warnings and follow-up reminders are all readable at
+    # http://localhost:8025 without an SMTP provider. Never expose this outside a laptop.
+    image: axllent/mailpit:v1.20
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - mailpitdata:/data
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -159,6 +178,7 @@ services:
         condition: service_healthy
 
 volumes:
+  mailpitdata:
   pgdata:
   redisdata:
   miniodata:

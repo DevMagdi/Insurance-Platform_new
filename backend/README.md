@@ -9,14 +9,15 @@ app/core/          settings, errors (uniform {code,message,details}), security/J
 app/domain/        enums, permissions matrix, phone (E.164), sla (business-hours clock), lead FSM
 app/models/        SQLAlchemy 2.0 typed models (33 tables) — no business logic here
 app/repositories/  query building + `with_scope` (every list/detail query is scoped)
-app/services/      the rules: leads/convert, requests/SLA/replies, clients/import, portal, auth, audit
-app/integrations/  provider protocols + real & simulator drivers (WhatsApp, telephony, storage, notify)
+app/services/      the rules: leads/convert, requests/SLA/replies, clients/import, portal, reports/exports, auth, audit
+app/integrations/  provider protocols + real & simulator drivers (WhatsApp, telephony, storage, notify, AI)
 app/api/           serializers (the only place wire shapes are decided) + v1/endpoints/*
 app/workers/       celery_app (beat schedule) + tasks: sla sweep, notifications, imports, media retention
 app/seed.py        deterministic demo data (fictitious people, +201… numbers, @brokerhub.test)
 migrations/        alembic — 0001 baseline, 0002 PostgreSQL RLS + partial indexes
-scripts/           export_openapi.py, check_core_coverage.py, smoke_api.py
-tests/             103 tests: auth, isolation matrix, intake/webhooks, leads flow, clients, import, portal
+scripts/           export_openapi.py, check_openapi_fresh.py, check_core_coverage.py, smoke_api.py
+tests/             124 tests: auth, isolation matrix, intake/webhooks, leads flow, clients, import, portal,
+                   exports (XLSX scoping), /metrics, /ai (flag, consent, human review) and issuing scoping
 ```
 
 ## Commands

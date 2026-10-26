@@ -108,8 +108,22 @@ def policy_predicate(scope: Scope) -> Any:
     return _NONE_MATCH
 
 
+def issuing_case_predicate(scope: Scope) -> Any:
+    """Issuing cases follow their client, exactly like policies (spec §6: one central rule)."""
+    from app.models.phase2 import IssuingCase
+
+    if scope.mode == "all":
+        return sa.true()
+    if scope.mode in {"owner", "seeded"}:
+        return IssuingCase.client_id.in_(_visible_client_ids(scope))
+    if scope.mode == "portal_client":
+        return IssuingCase.client_id == scope.portal_client_id
+    return _NONE_MATCH
+
+
 PREDICATES: dict[str, Any] = {
     "lead": lead_predicate,
+    "issuing_case": issuing_case_predicate,
     "client": client_predicate,
     "request": request_predicate,
     "insured": insured_predicate,

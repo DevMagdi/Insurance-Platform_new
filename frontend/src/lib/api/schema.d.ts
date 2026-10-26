@@ -4,6 +4,74 @@
  */
 
 export interface paths {
+    "/api/v1/ai/calls/{call_id}/transcribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transcribe */
+        post: operations["postApiV1AiCallsCallIdTranscribe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/classify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Suggested triage for free text (nothing is stored) */
+        post: operations["postApiV1AiClassify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/requests/{request_id}/summarize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Summarize */
+        post: operations["postApiV1AiRequestsRequestIdSummarize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the AI features are on for this deployment */
+        get: operations["getApiV1AiStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/audit/mine": {
         parameters: {
             query?: never;
@@ -405,6 +473,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export catalogue: which kinds exist and what they accept */
+        get: operations["getApiV1Exports"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exports/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export a scoped table as XLSX (audited) */
+        post: operations["postApiV1ExportsKind"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feature-flags": {
         parameters: {
             query?: never;
@@ -550,6 +652,40 @@ export interface paths {
         };
         /** Issuing pipeline (Phase 2 · screen 13) */
         get: operations["getApiV1Issuing-Cases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/issuing-cases/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One issuing case (Phase 2) */
+        get: operations["getApiV1Issuing-CasesCaseId"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/issuing-cases/{case_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Document checklist for one issuing case (Phase 2 · §7) */
+        get: operations["getApiV1Issuing-CasesCaseIdDocuments"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1285,6 +1421,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prometheus exposition (open in development, token-gated otherwise)
+         * @description Scrape target for the runbook's monitoring table. Not part of the versioned API the SPA uses.
+         */
+        get: operations["getMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/readyz": {
         parameters: {
             query?: never;
@@ -1306,6 +1462,78 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AIClassifyIn
+         * @description Strict on purpose: a typo in this body would otherwise be read as "classify this other text".
+         */
+        AIClassifyIn: {
+            /** Text */
+            text: string;
+        };
+        /** AIClassifyOut */
+        AIClassifyOut: {
+            /** Confidence */
+            confidence: number;
+            /** Intent */
+            intent: string;
+            /** Provider */
+            provider: string;
+            /** Queue */
+            queue: string;
+            /** Urgency */
+            urgency: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** AIStatusOut */
+        AIStatusOut: {
+            /** Capabilities */
+            capabilities: string[];
+            /** Driver */
+            driver: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Note */
+            note: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** AISummarizeOut */
+        AISummarizeOut: {
+            /** Note Id */
+            note_id: string;
+            /** Provider */
+            provider: string;
+            /** Request Id */
+            request_id: string;
+            /**
+             * Requires Review
+             * @default true
+             */
+            requires_review: boolean;
+            /** Summary */
+            summary: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** AITranscribeOut */
+        AITranscribeOut: {
+            /** Call Id */
+            call_id: string;
+            /** Provider */
+            provider: string;
+            /**
+             * Requires Review
+             * @default true
+             */
+            requires_review: boolean;
+            /** Summary */
+            summary?: string | null;
+            /** Transcript */
+            transcript: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** AttachmentOut */
         AttachmentOut: {
             /** Created At */
@@ -1704,6 +1932,49 @@ export interface components {
             /** Message */
             message: string;
         };
+        /**
+         * ExportKind
+         * @enum {string}
+         */
+        ExportKind: "requests" | "clients" | "insurer-performance";
+        /**
+         * ExportRequest
+         * @description Narrowing options for row exports.
+         *
+         *     The report kinds ignore them on purpose: an aggregation has no row filters, and accepting keys that
+         *     change nothing would be a silent lie about the file the user just downloaded.
+         */
+        ExportRequest: {
+            /**
+             * Client Id
+             * @description limit the export to one client
+             */
+            client_id?: string | null;
+            /**
+             * Only Open
+             * @description only new / in progress / waiting for the insurer
+             * @default false
+             */
+            only_open: boolean;
+            /**
+             * Only Overdue
+             * @description only rows past their SLA
+             * @default false
+             */
+            only_overdue: boolean;
+            /**
+             * Q
+             * @description free text over company, employee, subject or request number
+             */
+            q?: string | null;
+            /**
+             * Statuses
+             * @description repeatable status filter, same values as GET /requests
+             */
+            statuses?: components["schemas"]["RequestStatus"][] | null;
+        } & {
+            [key: string]: unknown;
+        };
         /** FeatureFlagOut */
         FeatureFlagOut: {
             /** Description */
@@ -1988,6 +2259,39 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * IssuingCaseDetailOut
+         * @description Case header + the timestamps the pipeline screen needs (spec §9.13).
+         */
+        IssuingCaseDetailOut: {
+            /** Assigned To */
+            assigned_to?: string | null;
+            /** Client */
+            client?: string | null;
+            /** Delivered At */
+            delivered_at?: string | null;
+            /** Documents */
+            documents?: components["schemas"]["IssuingDocumentOut"][];
+            /** Headcount */
+            headcount?: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Insurer */
+            insurer?: string | null;
+            /** Issued At */
+            issued_at?: string | null;
+            /** Premium Amount */
+            premium_amount?: number | null;
+            /** Stage */
+            stage: string;
+            /** Started At */
+            started_at?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
         /** IssuingCaseOut */
         IssuingCaseOut: {
             /** Client */
@@ -2005,6 +2309,24 @@ export interface components {
             premium_amount?: number | null;
             /** Stage */
             stage: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** IssuingDocumentDetailOut */
+        IssuingDocumentDetailOut: {
+            /** Attachment Id */
+            attachment_id?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Requirement Id */
+            requirement_id?: string | null;
+            /** Status */
+            status: string;
         } & {
             [key: string]: unknown;
         };
@@ -3297,6 +3619,123 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    postApiV1AiCallsCallIdTranscribe: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AITranscribeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1AiClassify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AIClassifyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIClassifyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1AiRequestsRequestIdSummarize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AISummarizeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiV1AiStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIStatusOut"];
+                };
+            };
+        };
+    };
     getApiV1AuthAuditMine: {
         parameters: {
             query?: never;
@@ -4100,6 +4539,64 @@ export interface operations {
             };
         };
     };
+    getApiV1Exports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    postApiV1ExportsKind: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description which table to write */
+                kind: components["schemas"]["ExportKind"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ExportRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description The workbook itself. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     "getApiV1Feature-Flags": {
         parameters: {
             query?: never;
@@ -4343,6 +4840,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IssuingCaseOut"][];
+                };
+            };
+        };
+    };
+    "getApiV1Issuing-CasesCaseId": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuingCaseDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "getApiV1Issuing-CasesCaseIdDocuments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuingDocumentDetailOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -5956,6 +6515,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    getMetrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

@@ -36,13 +36,18 @@ test.describe("insured persons import (screen 11)", () => {
     // dry-run: nothing is written yet
     await expect(page.getByText(/لم يُحفظ شيء بعد/)).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(/إضافة/).first()).toBeVisible();
-    const before = await (await request.get(`/api/v1/clients/${clientId}/insured?limit=1`, { headers: auth })).json();
+    // `GET /clients/{id}/insured` answers { kpis, page: { items, total } } — read the envelope.
+    const rosterTotal = async () => {
+      const body = await (await request.get(`/api/v1/clients/${clientId}/insured?limit=1`, { headers: auth })).json();
+      return body.page.total as number;
+    };
+    const before = await rosterTotal();
 
     await page.getByRole("button", { name: "تأكيد الاستيراد", exact: true }).click();
 
     await expect(page.getByText(/تقرير النتائج|تم حفظ/).first()).toBeVisible({ timeout: 30_000 });
-    const after = await (await request.get(`/api/v1/clients/${clientId}/insured?limit=1`, { headers: auth })).json();
-    expect(after.total).toBeGreaterThan(before.total);
+    const after = await rosterTotal();
+    expect(after).toBeGreaterThan(before);
 
     // and the roster in the UI now lists the imported employee
     await page.reload();

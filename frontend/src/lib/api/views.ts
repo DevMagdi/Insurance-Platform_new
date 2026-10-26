@@ -4,6 +4,10 @@
  */
 import type { components } from "./schema";
 
+/* AI (M10) — the flags and the note the provider writes are typed from the schema, like everything else. */
+export type AiStatus = components["schemas"]["AIStatusOut"];
+export type AiSummary = components["schemas"]["AISummarizeOut"];
+
 export type Lead = components["schemas"]["LeadOut"];
 export type LeadDetail = components["schemas"]["LeadDetailOut"];
 export type LeadActivity = components["schemas"]["LeadActivityOut"];

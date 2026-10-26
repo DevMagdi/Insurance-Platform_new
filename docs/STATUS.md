@@ -1,6 +1,6 @@
 # STATUS — منصة إدارة الوساطة التأمينية (Broker Hub)
 
-آخر تحديث: 2026-10-26 · فرع العمل: `arena/358fbc4e-insurance-platform-new`
+آخر تحديث: 2026-10-26 · فرع العمل: `arena/b15e42b8-insurance-platform-new` (بعد دمج PR #1 في `main`)
 
 مرجع التحقق: ملف تصميم الواجهات (16 شاشة) المرفق من صاحب المشروع + نصّ المواصفات §1–§13.
 قاعدة العمل: لا يُكتب «مطابقة» إلا بموافقة المالك — انظر [`ui-parity/`](ui-parity/README.md).
@@ -20,18 +20,20 @@
 | M8 المرحلة الثانية (وثائق/أقساط/عمولات/إصدار/تقارير) خلف flag | 🟡 واجهات كاملة + API مقروء؛ الأعمال اليدوية فقط | `api/v1/endpoints/phase2.py` · `tests/test_dashboard_phase2.py` · الشاشات 12–14 تعمل عند تفعيل `phase2.enabled` |
 | M9 التوثيق والمحاكاة وتشغيل UI | 🟡 جزئي | هذا الملف + [`runbook.md`](runbook.md) + [`ui-parity/`](ui-parity/README.md) · لقطات الشاشة تُنتَج في CI فقط (انظر «ما لم يُشغَّل») |
 | M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | CI أخضر محليًا (backend+frontend)؛ e2e مكتوبة و typecheck ✓ لكن لم تُشغَّل (لا متصفح في البيئة) |
+| مزوّد AI (§11 M10): واجهة واحدة خلف `ai.enabled` + مراجعة بشرية | ✅ السطح كامل بسائق محاكاة · ⬜ بلا مزوّد حقيقي | `integrations/ai_sim.py` (حتمي، استخلاصي) · `endpoints/ai.py`: `GET /ai/status` · `POST /ai/calls/{id}/transcribe` · `POST /ai/requests/{id}/summarize` · `POST /ai/classify` · `tests/test_ai.py` (7) · زر «تلخيص آلي» في `InboxPage` يظهر فقط عند تشغيل الراية · ADR-013 |
 
 ## ما شُغِّل فعليًا (هذه الجلسة، نفس نتائج CI)
 
-backend (`/home/user/.venv2`، Python 3.11، SQLite):
+backend (`.venv`، Python 3.11، SQLite):
 
 ```
 ruff check .            → All checks passed!
-mypy app                → Success: no issues found in 85 source files
-pytest -q               → 103 passed
-coverage report         → TOTAL 81.7%  · كل ملفات النواة ≥80% (بوابة `scripts/check_core_coverage.py`
+ruff format --check .   → 119 file already formatted
+mypy app                → Success: no issues found in 91 source files
+pytest -q               → 124 passed  (منها 8 لـ/exports و3 لـ/metrics و7 لـ/ai و3 لـ/issuing-cases)
+coverage report         → TOTAL 82.9%  · 12/12 ملف نواة ≥80% (بوابة `scripts/check_core_coverage.py`
                           تقرأ `coverage json`، لأن `skip_covered` كان يُخفي الملفات المغطاة 100% ويحوّلها إلى FAIL)
-scripts/export_openapi.py → docs/api/openapi.json (75 path, 101 schema)
+scripts/check_openapi_fresh.py → openapi.json is fresh (84 path, 110 schema)
 ```
 
 frontend (Node 22):
@@ -49,6 +51,8 @@ playwright test --list    → 112 tests / 8 files (desktop + mobile)
 `POST /dev/sim/call` (مكالمة + recording) · `GET /dev/sim` (HTML 200) · `GET /leads` (16 لـ rep مقابل 63 لمدير) + 404 لـ lead خارج النطاق ·
 `GET /portal/overview` (بلا عمولات/ملاحظات) + 403 على `/requests` · `PATCH /feature-flags/phase2.enabled` ثم `/policies` + `/reports` ✓.
 و`vite dev` مع الوصلة الأمامية `/api` (تسجيل دخول عبر المنفذ 5173 → 200).
+كما تحقّق حيّ من `vite preview` على الحزمة المبنية: `/login` → 200 و`/api/v1/auth/login` عبر الـproxy → 200
+و`GET /api/v1/requests` بجلسة حقيقية → بيانات مزروعة (طلبات برقم 1003+).
 
 ## ما أصلحه أول تشغيل لـ CI على هذا الطلب
 
@@ -58,6 +62,8 @@ playwright test --list    → 112 tests / 8 files (desktop + mobile)
 | `e2e · config.webServer was not able to start` | `webServer.env` يستبدل البيئة ⇒ ضاع `PATH` فاشتُغل بـ python بلا alembic؛ و`bash -lc` كان يخفي المشكلة | البيئة تُدمج مع `process.env`، والقيادة `sh -c` بلا login shell، و`reuseExistingServer` مطفأ في CI |
 | بوابة تغطية النواة FAIL على ملف مغطى 100% | `skip_covered` في `pyproject.toml` يُخفي الملف من `coverage report` | البوابة تقرأ `coverage json` |
 | `ruff format --check` على 5 ملفات | تنسيق لم يُجرَ محلياً | `ruff format .` ثم أُعيد التصدير والتوليد |
+| `e2e`: أول 9 اختبارات في مشروع desktop تسقط بعناوين مفقودة | تبريد Vite (أول transform للمسار) يلتهم مهلة 8–20 ثانية؛ نفس الـ specs تنجح بعد ثوانٍ | `e2e/global-setup.ts` يفتح `/login` وينتظر النموذج قبل المجموعة، وCI يشغّل `vite preview` على الحزمة المبنية (`E2E_USE_PREVIEW=1`) |
+| `e2e/insured.spec.ts`: `after.total === undefined` | الاختبار قرأ غلافاً مسطحاً، و`GET /clients/{id}/insured` يرجع `{kpis, page:{items,total}}` | يُقرأ `page.total` من دالة `rosterTotal()` — الخادم كان صحيحاً والاختبار هو الغلط |
 
 بعد الإصلاحات: `backend` ✅ · `frontend` ✅ · `docker` ✅ · `e2e` — النتيجة تُذكر أسفل هذا الجدول بعد إعادة التشغيل.
 
@@ -83,12 +89,14 @@ playwright test --list    → 112 tests / 8 files (desktop + mobile)
 | 2 | أرقام «+12% عن أمس» و«أسرع بـ4 دقائق» محسوبة من `requests_yesterday` / `avg_first_response_delta_minutes`، لكن «الهدف 90%» و«تحتاج تدخلاً» نص ثابت | لا يوجد نموذج لهدف SLA يومي في §5؛ انظر `ui-parity/screens.md` |
 | 3 | «قسم المالية» في صف العميل بموك-أب الشاشة 1 غير موجود في النموذج | لا عمود لقسم الموظف في `service_requests`؛ يُعرض اسم الموظف فقط |
 | 4 | رضا العميل في شاشة المدير يعرض `—` مع إيضاح `phase2.notTracked` | لا يوجد قياس NPS/رضا في §5 |
-| 5 | زر تصدير التقارير معطّل مع سبب `phase2.exportPending` | §10 يطلب تصديرًا عبر Celery؛ التنفيذ مؤجَّل للمرحلة 2 ولم نُدّعِ أنه جاهز |
+| 5 | تصدير **Excel يعمل** (`POST /api/v1/exports/insurer-performance` ← نفس استعلام الشاشة، سقف 5000 صّف، مدقَّق). زر **PDF** باقٍ معطّلاً بالسبب `phase2.exportPdfPending` | §7 يطلب `/exports/*`؛ PDF يحتاج تشكيلاً عربياً وخطاً مضمّناً — قرار موثّق في `decisions/010-exports.md` |
 | 6 | شاشات المرحلة الثانية خلف `phase2.enabled` تعرض «غير مفعّلة بعد» | تعليمية المالك الصريحة |
 | 7 | لا يوجد `/import-jobs/{id}/template` | لم يُكتب في §7؛ الواجهة لا تطلبه |
 | 8 | اللقطات تُكتب باسم `desktop-NN-*` / `mobile-NN-*` داخل `docs/screenshots/` ويرفعها CI كـ artifact؛ لا يُلتزَم بها في المستودع تلقائيًا | قرار المالك بعد المراجعة البصرية |
 | 9 | مسارات الحظر في المرحلة الثانية ترجع **503** `feature_disabled` لا 403 | «الميزة مطفأة» حالة خدمة وليست عجز صلاحيات؛ موثّق في `decisions/008` |
 | 10 | **فجوة معروفة:** سياسات RLS في migration 0002 تقرأ `app.scope_user_id`/`app.bypass_rls`، و`Scope.session_settings()` يولّدهما، لكن لا مستدعٍ يطبّقهما على جلسة الطلب ⇒ RLS حالياً شبكة للوصول المباشر للقاعدة فقط | لا Postgres هنا لاختبار المسار؛ ربط الـGUC يجب أن يُعمل مع اختبار `postgres_only` قبل الاعتماد عليه في الإنتاج (`decisions/003`) |
+| شاشة الإصدار كانت تُرجع **كل الحالات لكل من يملك `policies.view`** (استعلام بلا `with_scope`) | قائمة Phase 2 كُتبت بـ`select(IssuingCase)…limit(100)` مباشرة | أُضيف `issuing_case` إلى `repositories/scope_filters.py` ومرّر القائمة عبره، مع مسارين جديدين `GET /api/v1/issuing-cases/{case_id}` و`GET /api/v1/issuing-cases/{case_id}/documents` (§7) بنفس القاعدة؛ `tests/test_issuing_cases.py` يثبّت أن مديرًا بنطاق عميل واحد لا يرى قائمة عميل آخر (404 لا 403). الواجهة لا تزال تكتفي بالقائمة المضمّنة المستندات |
+| 11 | رايتا `whatsapp.enabled` و`telephony.enabled` مزروعتان في `feature_flags` لكن **لا مسار يقرأهما**: إيقافهما لا يوقف الـwebhooks | إضافتهما في §8 تخصّ المزوّدات، وتطبيقهما على `POST /webhooks/*` يحتاج قرارًا: الرفض 503 أم الإهمال الصامت للقناة. مُدرج كفجوة لا كحاجة؛ لا قناة إنتاجية موصولة أصلاً (`INTEGRATIONS_DRIVER=sim`) |
 
 ## قرارات اتُّخذت نيابة عن المالك (لأن الأسئلة غير مسموحة)
 
@@ -104,6 +112,9 @@ playwright test --list    → 112 tests / 8 files (desktop + mobile)
 | 008 المرحلة الثانية خلف `feature_flag` | [`decisions/008-phase2-feature-flags.md`](decisions/008-phase2-feature-flags.md) |
 | 009 سجل شركات التأمين (37 لا 47) | [`decisions/009-insurer-register.md`](decisions/009-insurer-register.md) |
 | 012 جدول تدقيق الاعتماديات | [`decisions/012-dependency-audit.md`](decisions/012-dependency-audit.md) |
+| 010 التصدير: XLSX الآن وPDF مؤجَّل | [`decisions/010-exports.md`](decisions/010-exports.md) |
+| 011 `/metrics` وmailpit والمحاكيات داخل العملية | [`decisions/011-monitoring-and-mailpit.md`](decisions/011-monitoring-and-mailpit.md) |
+| 013 سطح الـAI: محاكاة حتمية ومراجعة قبل أي كتابة | [`decisions/013-ai-surface-sim-only-and-review-before-write.md`](decisions/013-ai-surface-sim-only-and-review-before-write.md) |
 
 ## قائمة ما قبل «جاهز للمراجعة»
 

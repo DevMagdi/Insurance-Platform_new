@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, cast
 from uuid import UUID
 
-import sqlalchemy as sa
 from fastapi import APIRouter
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,21 +12,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.serializers import policy_brief
 from app.api.v1.deps import CurrentUser, DbSession, PageQuery, PoliciesView, ReportsView, ScopeDep
 from app.core.errors import FeatureDisabled
+from app.core.scope import Scope
 from app.models.clients import Client
 from app.models.phase2 import Commission, Installment, IssuingCase, Policy
 from app.repositories.scope_filters import with_scope
-from app.schemas.out import InstallmentPlanOut, InsurerPerformanceOut, IssuingCaseOut, PageOut, PolicyKpisOut
+from app.schemas.out import (
+    InstallmentPlanOut,
+    InsurerPerformanceOut,
+    IssuingCaseDetailOut,
+    IssuingCaseOut,
+    IssuingDocumentDetailOut,
+    PageOut,
+    PolicyKpisOut,
+)
+from app.services.feature_flags import PHASE2_FLAG as _FLAG
+from app.services.feature_flags import flag_enabled
+from app.services.reports import insurer_performance
 
 router = APIRouter(tags=["phase 2 (flagged)"])
 
-_FLAG = "phase2.enabled"
-
 
 async def _flag(session: AsyncSession) -> bool:
-    from app.models.masters import FeatureFlag
-
-    row = (await session.execute(select(FeatureFlag).where(FeatureFlag.key == _FLAG))).scalar_one_or_none()
-    return bool(row and row.enabled)
+    """The single flag that gates this module (ADR-008). The lookup itself lives in `services.feature_flags`."""
+    return await flag_enabled(session, _FLAG)
 
 
 @router.get("/policies", summary="Active policies (Phase 2 · screen 12)", response_model=PageOut)
@@ -151,21 +158,81 @@ async def commissions(session: DbSession, scope: ScopeDep, actor: CurrentUser) -
     ]
 
 
+def _case_row(case: IssuingCase, *, documents: bool = True) -> dict[str, Any]:
+    """One serializer for the three issuing routes, so the pipeline list and a case detail cannot drift."""
+    row: dict[str, Any] = {
+        "id": str(case.id),
+        "stage": case.stage.value,
+        "client": None if case.client is None else case.client.name,
+        "insurer": None if case.insurer is None else case.insurer.name,
+        "premium_amount": float(case.premium_amount) if case.premium_amount else None,
+    }
+    if documents:
+        row["documents"] = [{"name": d.name, "status": d.status.value} for d in case.documents]
+    return row
+
+
+def _case_detail(case: IssuingCase) -> dict[str, Any]:
+    # the checklist is embedded like in the list route, so the screen needs one round-trip, not two
+    row = _case_row(case)
+    row.update(
+        {
+            "headcount": case.headcount,
+            "assigned_to": None if case.assigned_to is None else str(case.assigned_to),
+            "started_at": None if case.started_at is None else case.started_at.isoformat(),
+            "issued_at": None if case.issued_at is None else case.issued_at.isoformat(),
+            "delivered_at": None if case.delivered_at is None else case.delivered_at.isoformat(),
+        }
+    )
+    return row
+
+
+async def _visible_case(session: AsyncSession, scope: Scope, case_id: UUID) -> IssuingCase:
+    """Unknown id and foreign id answer the same 404 (§6: the API must not let anyone enumerate)."""
+    from app.core.errors import NotFound
+
+    row: IssuingCase | None = (
+        await session.execute(with_scope(select(IssuingCase).where(IssuingCase.id == case_id), scope, "issuing_case").limit(1))
+    ).scalar_one_or_none()
+    if row is None:
+        raise NotFound("Issuing case not found")
+    return row
+
+
 @router.get("/issuing-cases", summary="Issuing pipeline (Phase 2 · screen 13)", response_model=list[IssuingCaseOut])
 async def issuing_cases(session: DbSession, scope: ScopeDep, actor: PoliciesView) -> Any:
     if not await _flag(session):
         raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
-    rows = (await session.execute(select(IssuingCase).order_by(IssuingCase.created_at.desc()).limit(100))).scalars().all()
+    stmt = with_scope(select(IssuingCase).order_by(IssuingCase.created_at.desc()), scope, "issuing_case").limit(100)
+    rows = (await session.execute(stmt)).scalars().unique().all()
+    return [_case_row(c) for c in rows]
+
+
+@router.get("/issuing-cases/{case_id}", summary="One issuing case (Phase 2)", response_model=IssuingCaseDetailOut)
+async def issuing_case(case_id: UUID, session: DbSession, scope: ScopeDep, actor: PoliciesView) -> Any:
+    if not await _flag(session):
+        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
+    return _case_detail(await _visible_case(session, scope, case_id))
+
+
+@router.get(
+    "/issuing-cases/{case_id}/documents",
+    summary="Document checklist for one issuing case (Phase 2 · §7)",
+    response_model=list[IssuingDocumentDetailOut],
+)
+async def issuing_case_documents(case_id: UUID, session: DbSession, scope: ScopeDep, actor: PoliciesView) -> Any:
+    if not await _flag(session):
+        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
+    case = await _visible_case(session, scope, case_id)
     return [
         {
-            "id": str(c.id),
-            "stage": c.stage.value,
-            "client": None if c.client is None else c.client.name,
-            "insurer": None if c.insurer is None else c.insurer.name,
-            "premium_amount": float(c.premium_amount) if c.premium_amount else None,
-            "documents": [{"name": d.name, "status": d.status.value} for d in c.documents],
+            "id": str(d.id),
+            "name": d.name,
+            "status": d.status.value,
+            "requirement_id": None if d.requirement_id is None else str(d.requirement_id),
+            "attachment_id": None if d.attachment_id is None else str(d.attachment_id),
         }
-        for c in rows
+        for d in case.documents
     ]
 
 
@@ -173,32 +240,6 @@ async def issuing_cases(session: DbSession, scope: ScopeDep, actor: PoliciesView
 async def insurer_report(session: DbSession, scope: ScopeDep, actor: ReportsView) -> Any:
     if not await _flag(session):
         raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
-    from app.models.masters import Insurer
-    from app.models.requests import ServiceRequest
-
-    rows = (
-        await session.execute(
-            select(
-                Insurer.name,
-                func.count(ServiceRequest.id),
-                func.avg(func.extract("epoch", ServiceRequest.first_response_at) - func.extract("epoch", ServiceRequest.created_at)),
-                func.sum(sa.case((ServiceRequest.is_overdue.is_(True), 1), else_=0)),
-            )
-            .join(ServiceRequest, ServiceRequest.insurer_id == Insurer.id)
-            .group_by(Insurer.name)
-        )
-    ).all()
-    out = []
-    for name, count, avg_first, overdue in rows:
-        overdue_count = int(overdue or 0)
-        sla_pct = round(((int(count) - overdue_count) / int(count)) * 100.0, 1) if count else 0.0
-        out.append(
-            {
-                "insurer": name,
-                "requests": int(count),
-                "avg_first_response_minutes": round(float(avg_first) / 60.0, 1) if avg_first else None,
-                "sla_pct": sla_pct,
-                "tone": "g" if sla_pct >= 90 else ("a" if sla_pct >= 80 else "r"),
-            }
-        )
-    return out
+    # Shared with `POST /exports/insurer-performance`, so the downloaded file can never disagree with
+    # the screen — and so scope predicates (spec §6) apply to both paths at once.
+    return await insurer_performance(session, scope)

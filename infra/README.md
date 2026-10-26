@@ -10,6 +10,11 @@ the API, a Celery worker, Celery beat, and the built SPA behind nginx.
 | postgres | `PG_PORT` = 5432 | `brokerhub` database, RLS policies from the migrations |
 | redis | — | broker + result backend for Celery |
 | minio | 9000 / 9001 | `brokerhub` bucket; console on `:9001` (credentials in `.env`) |
+| mailpit | 1025 / 8025 | dev SMTP sink + web UI — every notification email lands here, nothing leaves the laptop |
+
+The WhatsApp/call **simulators are in-process** (`GET /api/v1/dev/sim`, `POST /api/v1/dev/sim/{whatsapp,call}`),
+not separate containers: they must run the same intake code (phone normalization → insured/lead matching),
+and a second service would duplicate that logic. See `docs/decisions/011-monitoring-and-mailpit.md`.
 
 ## Commands
 

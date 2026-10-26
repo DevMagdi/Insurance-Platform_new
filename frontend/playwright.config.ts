@@ -18,6 +18,17 @@ const env = { ...loadEnv("", process.cwd(), ""), ...process.env };
 const API_PORT = env.E2E_API_PORT ?? "8000";
 const WEB_PORT = env.E2E_WEB_PORT ?? "5173";
 const skip = env.E2E_SKIP_WEBSERVER === "1";
+
+/**
+ * `E2E_USE_PREVIEW=1` serves the built bundle through `vite preview` instead of the dev server — CI
+ * uses it so the suite measures the app rather than Vite's first-request transforms. The port is
+ * published back into the environment because e2e/global-setup.ts warms the same origin.
+ */
+const usePreview = env.E2E_USE_PREVIEW === "1";
+const webPort = usePreview ? (env.E2E_WEB_PREVIEW_PORT ?? WEB_PORT) : WEB_PORT;
+const webCommand = usePreview
+  ? `npm run build && npx vite preview --host 0.0.0.0 --port ${webPort} --strictPort`
+  : `npm run dev -- --host 0.0.0.0 --port ${webPort} --strictPort`;
 const backendDir = path.resolve(process.cwd(), "../backend");
 
 /** The suite needs its own database. Locally that is SQLite in `backend/`; a CI job may export
@@ -31,6 +42,7 @@ const apiEnv: Record<string, string> = {
   DATABASE_URL: env.DATABASE_URL ?? `sqlite+aiosqlite:///${path.join(backendDir, "e2e.db")}`,
 };
 export default defineConfig({
+  globalSetup: "./e2e/global-setup.ts",
   testDir: "./e2e",
   timeout: 60_000,
   expect: { timeout: 8_000 },
@@ -39,7 +51,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : [["list"], ["html", { open: "never" }]],
   outputDir: "test-results/e2e",
   use: {
-    baseURL: `http://127.0.0.1:${WEB_PORT}`,
+    baseURL: `http://127.0.0.1:${webPort}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
@@ -66,14 +78,21 @@ export default defineConfig({
           env: apiEnv,
         },
         {
-          command: `npm run dev -- --host 0.0.0.0 --port ${WEB_PORT} --strictPort`,
+          command: webCommand,
           cwd: process.cwd(),
-          url: `http://127.0.0.1:${WEB_PORT}`,
+          url: `http://127.0.0.1:${webPort}`,
           reuseExistingServer: !process.env.CI,
-          timeout: 120_000,
+          timeout: 180_000,
           stdout: "pipe",
           stderr: "pipe",
-          env: { ...process.env, VITE_API_ORIGIN: `http://127.0.0.1:${API_PORT}` },
+          env: {
+            ...process.env,
+            VITE_API_ORIGIN: `http://127.0.0.1:${API_PORT}`,
+            VITE_PREVIEW_PORT: webPort,
+            E2E_WEB_PORT: webPort,
+            E2E_WEB_PREVIEW_PORT: webPort,
+            E2E_USE_PREVIEW: usePreview ? "1" : "0",
+          },
         },
       ],
 });

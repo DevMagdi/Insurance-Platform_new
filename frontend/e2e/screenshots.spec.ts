@@ -6,67 +6,93 @@ import { expect, test } from "@playwright/test";
 import { apiLogin, login, MANAGER, OWNER } from "./fixtures";
 
 /**
- * Design-review evidence (spec §10): every screen at 1440×900, the mobile flows at 390×844, and a
- * contact sheet the owner can scan in one image. Files land in docs/screenshots/ and are uploaded as a
- * CI artifact. Nothing here asserts pixel values — it captures them for the human review pass.
+ * Design-review evidence (spec §10): one capture per screen of §9, at 1440×900 — except screen 4,
+ * which the spec fixes at 390×844 — written under the fixed names `01-dashboard.png` … `16-login.png`,
+ * plus a contact sheet the owner can scan in one image. Files land in docs/screenshots/ and are
+ * uploaded as a CI artifact. Nothing here asserts pixel values: it captures them, and
+ * docs/ui-parity/ measures them (see docs/ui-parity/screens.md for the deltas that stay open).
  */
 const OUT = path.resolve(import.meta.dirname, "../../docs/screenshots");
 
-type Shot = { name: string; route: string; who: "manager" | "owner"; ready: RegExp; viewport: "desktop" | "mobile"; fullPage?: boolean };
+type Shot = {
+  /** Fixed file name, `NN-slug.png`, matching the screen order of spec §9. */
+  file: string;
+  route: string;
+  who: "manager" | "owner" | "anon";
+  ready: RegExp;
+  viewport: "desktop" | "mobile";
+  fullPage?: boolean;
+};
 
+/** `{clientId}` / `{leadId}` are resolved in beforeAll from the seeded data — no invented ids. */
 const SHOTS: Shot[] = [
-  { name: "01-dashboard", route: "/dashboard", who: "manager", ready: /لوحة التحكم/, viewport: "desktop" },
-  { name: "02-inbox", route: "/inbox", who: "manager", ready: /صندوق الطلبات الموحد/, viewport: "desktop", fullPage: false },
-  { name: "03-kanban", route: "/leads", who: "manager", ready: /جديد|الـLeads/, viewport: "desktop", fullPage: false },
-  { name: "04-mobile-board", route: "/mobile/leads", who: "manager", ready: /ليدزي|Leads/, viewport: "mobile" },
-  { name: "04-mobile-inbox", route: "/inbox", who: "manager", ready: /صندوق الطلبات/, viewport: "mobile", fullPage: false },
-  { name: "05-client-file", route: "/clients", who: "manager", ready: /العملاء/, viewport: "desktop" },
-  { name: "06-unassigned", route: "/leads", who: "manager", ready: /الكل|جديد/, viewport: "desktop", fullPage: false },
-  { name: "07-portal", route: "/portal", who: "owner", ready: /بوابة العميل/, viewport: "desktop" },
-  { name: "08-clients", route: "/clients", who: "manager", ready: /العملاء/, viewport: "desktop" },
-  { name: "09-lead-detail", route: "/leads", who: "manager", ready: /جديد|الـLeads/, viewport: "desktop", fullPage: false },
-  { name: "10-new-lead", route: "/leads/new", who: "manager", ready: /ليد جديد/, viewport: "desktop" },
-  { name: "11-insured", route: "/clients", who: "manager", ready: /العملاء/, viewport: "desktop" },
-  { name: "12-sales-team", route: "/sales-team", who: "manager", ready: /فريق المبيعات|حِمل/, viewport: "desktop" },
-  { name: "13-policies", route: "/policies", who: "manager", ready: /الوثائق والأقساط/, viewport: "desktop" },
-  { name: "14-issuing", route: "/issuing", who: "manager", ready: /حالات الإصدار/, viewport: "desktop" },
-  { name: "15-portal-mobile", route: "/portal", who: "owner", ready: /بوابة العميل/, viewport: "mobile", fullPage: false },
-  { name: "16-reports", route: "/reports", who: "manager", ready: /التقارير/, viewport: "desktop" },
-  { name: "17-users", route: "/users", who: "manager", ready: /المستخدمون|الأدوار/, viewport: "desktop" },
+  { file: "01-dashboard.png", route: "/dashboard", who: "manager", ready: /لوحة التحكم/, viewport: "desktop" },
+  { file: "02-inbox.png", route: "/inbox", who: "manager", ready: /صندوق الطلبات الموحد/, viewport: "desktop", fullPage: false },
+  { file: "03-leads-kanban.png", route: "/leads", who: "manager", ready: /جديد|الـLeads/, viewport: "desktop", fullPage: false },
+  { file: "04-mobile-leads.png", route: "/mobile/leads", who: "manager", ready: /ليدزي|Leads/, viewport: "mobile" },
+  { file: "05-client-file.png", route: "/clients/{clientId}", who: "manager", ready: /عميل منذ|نظرة عامة/, viewport: "desktop" },
+  { file: "06-portal.png", route: "/portal", who: "owner", ready: /بوابة العميل/, viewport: "desktop" },
+  { file: "07-sales-team.png", route: "/sales-team", who: "manager", ready: /فريق المبيعات|حِمل/, viewport: "desktop" },
+  { file: "08-clients.png", route: "/clients", who: "manager", ready: /العملاء/, viewport: "desktop" },
+  { file: "09-lead-detail.png", route: "/leads/{leadId}", who: "manager", ready: /تحويل لعميل|سجل النشاط/, viewport: "desktop" },
+  { file: "10-new-lead.png", route: "/leads/new", who: "manager", ready: /ليد جديد/, viewport: "desktop" },
+  { file: "11-insured.png", route: "/clients/{clientId}/insured", who: "manager", ready: /الموظفون المؤمَّنون|الموظفون/, viewport: "desktop" },
+  { file: "12-policies.png", route: "/policies", who: "manager", ready: /الوثائق والأقساط/, viewport: "desktop" },
+  { file: "13-issuing.png", route: "/issuing", who: "manager", ready: /حالات الإصدار|إصدار/, viewport: "desktop" },
+  { file: "14-reports.png", route: "/reports", who: "manager", ready: /التقارير/, viewport: "desktop" },
+  { file: "15-users.png", route: "/users", who: "manager", ready: /المستخدمون|الأدوار/, viewport: "desktop" },
+  { file: "16-login.png", route: "/login", who: "anon", ready: /أهلاً بعودتك|تسجيل الدخول/, viewport: "desktop" },
+  // extras the review asked for beyond the 16: the same inbox on a phone, and the portal on a phone
+  { file: "02-inbox@390x844.png", route: "/inbox", who: "manager", ready: /صندوق الطلبات/, viewport: "mobile", fullPage: false },
+  { file: "06-portal@390x844.png", route: "/portal", who: "owner", ready: /بوابة العميل/, viewport: "mobile", fullPage: false },
 ];
+
+const ids: { clientId: string; leadId: string } = { clientId: "", leadId: "" };
+
+function resolve(route: string): string {
+  return route.replace("{clientId}", ids.clientId).replace("{leadId}", ids.leadId);
+}
 
 test.describe("screenshots for design review", () => {
   test.describe.configure({ mode: "serial" });
 
   test.beforeAll(async ({ request }) => {
     mkdirSync(OUT, { recursive: true });
-    // phase 2 must be captured unlocked, otherwise half the sheet is a gate card
+    // phase 2 must be captured unlocked, otherwise half the sheet is a gate card (ADR-008)
     const auth = await apiLogin(request, "admin@brokerhub.test");
     const enabled = await request.patch("/api/v1/feature-flags/phase2.enabled", { headers: auth, data: { enabled: true } });
     expect(enabled.status()).toBe(200);
+
+    const manager = await apiLogin(request, MANAGER);
+    const clients = await (await request.get("/api/v1/clients?limit=1", { headers: manager })).json();
+    const leads = await (await request.get("/api/v1/leads?limit=1", { headers: manager })).json();
+    ids.clientId = clients.items[0]?.id ?? "";
+    ids.leadId = leads.items[0]?.id ?? "";
+    expect(ids.clientId, "the seed must contain a client to photograph").toBeTruthy();
+    expect(ids.leadId, "the seed must contain a lead to photograph").toBeTruthy();
   });
 
   for (const shot of SHOTS) {
-    test(shot.name, async ({ page }, testInfo) => {
-      test.skip(testInfo.project.name !== shot.viewport, `${shot.name} is a ${shot.viewport} capture`);
-      await login(page, shot.who === "owner" ? OWNER : MANAGER);
-      await page.goto(shot.route);
+    test(shot.file, async ({ page }, testInfo) => {
+      test.skip(testInfo.project.name !== shot.viewport, `${shot.file} is a ${shot.viewport} capture`);
+      if (shot.who !== "anon") await login(page, shot.who === "owner" ? OWNER : MANAGER);
+      await page.goto(resolve(shot.route));
       await expect(page.getByText(shot.ready).first()).toBeVisible({ timeout: 20_000 });
       // let charts, avatars and skeletons settle before freezing pixels
       await page.waitForTimeout(700);
-      await page.screenshot({ path: path.join(OUT, `${testInfo.project.name}-${shot.name}.png`), fullPage: shot.fullPage !== false });
+      await page.screenshot({ path: path.join(OUT, shot.file), fullPage: shot.fullPage !== false });
     });
   }
 
   test("contact sheet", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop", "the desktop pass assembles the sheet");
     const files = readdirSync(OUT)
-      .filter((file) => file.startsWith("desktop-") && file.endsWith(".png"))
+      .filter((file) => /^\d{2}-.+\.png$/.test(file) && !file.includes("@"))
       .sort();
-    expect(files.length).toBeGreaterThanOrEqual(10);
+    expect(files.length).toBeGreaterThanOrEqual(14);
 
     const cells = files
-      .map((file) => `<figure><img src="file://${path.join(OUT, file)}"><figcaption>${file.replace(/^desktop-|\.png$/g, "")}</figcaption></figure>`)
+      .map((file) => `<figure><img src="file://${path.join(OUT, file)}"><figcaption>${file.replace(/\.png$/, "")}</figcaption></figure>`)
       .join("\n");
     await page.setViewportSize({ width: 1800, height: 1200 });
     await page.setContent(

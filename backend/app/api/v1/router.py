@@ -3,9 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    ai,
     auth,
     clients,
     dashboard,
+    exports,
     leads,
     masters,
     phase2,
@@ -27,4 +29,6 @@ api_router.include_router(requests_ep.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(portal.router)
 api_router.include_router(webhooks.router)
+api_router.include_router(exports.router, prefix="/exports")
 api_router.include_router(phase2.router)
+api_router.include_router(ai.router)

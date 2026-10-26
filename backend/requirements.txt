@@ -7,6 +7,7 @@ pydantic[email]>=2.12,<3
 pydantic-settings>=2.7,<3
 python-multipart>=0.0.32
 structlog>=25.1
+prometheus-client>=0.21   # /metrics exposition (spec §10 monitoring)
 # --- persistence ---
 SQLAlchemy[asyncio]>=2.0.45,<2.1
 alembic>=1.16,<2

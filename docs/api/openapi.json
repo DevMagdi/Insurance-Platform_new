@@ -1,6 +1,163 @@
 {
   "components": {
     "schemas": {
+      "AIClassifyIn": {
+        "additionalProperties": false,
+        "description": "Strict on purpose: a typo in this body would otherwise be read as \"classify this other text\".",
+        "properties": {
+          "text": {
+            "maxLength": 4000,
+            "minLength": 12,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "AIClassifyIn",
+        "type": "object"
+      },
+      "AIClassifyOut": {
+        "additionalProperties": true,
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "intent": {
+            "title": "Intent",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "queue": {
+            "title": "Queue",
+            "type": "string"
+          },
+          "urgency": {
+            "title": "Urgency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent",
+          "confidence",
+          "queue",
+          "urgency",
+          "provider"
+        ],
+        "title": "AIClassifyOut",
+        "type": "object"
+      },
+      "AIStatusOut": {
+        "additionalProperties": true,
+        "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "driver": {
+            "title": "Driver",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "driver",
+          "capabilities",
+          "note"
+        ],
+        "title": "AIStatusOut",
+        "type": "object"
+      },
+      "AISummarizeOut": {
+        "additionalProperties": true,
+        "properties": {
+          "note_id": {
+            "title": "Note Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requires_review": {
+            "default": true,
+            "title": "Requires Review",
+            "type": "boolean"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "provider",
+          "summary",
+          "note_id"
+        ],
+        "title": "AISummarizeOut",
+        "type": "object"
+      },
+      "AITranscribeOut": {
+        "additionalProperties": true,
+        "properties": {
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "requires_review": {
+            "default": true,
+            "title": "Requires Review",
+            "type": "boolean"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "transcript": {
+            "title": "Transcript",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "provider",
+          "transcript"
+        ],
+        "title": "AITranscribeOut",
+        "type": "object"
+      },
       "AttachmentOut": {
         "additionalProperties": true,
         "properties": {
@@ -949,6 +1106,76 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "ExportKind": {
+        "enum": [
+          "requests",
+          "clients",
+          "insurer-performance"
+        ],
+        "title": "ExportKind",
+        "type": "string"
+      },
+      "ExportRequest": {
+        "additionalProperties": true,
+        "description": "Narrowing options for row exports.\n\nThe report kinds ignore them on purpose: an aggregation has no row filters, and accepting keys that\nchange nothing would be a silent lie about the file the user just downloaded.",
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "limit the export to one client",
+            "title": "Client Id"
+          },
+          "only_open": {
+            "default": false,
+            "description": "only new / in progress / waiting for the insurer",
+            "title": "Only Open",
+            "type": "boolean"
+          },
+          "only_overdue": {
+            "default": false,
+            "description": "only rows past their SLA",
+            "title": "Only Overdue",
+            "type": "boolean"
+          },
+          "q": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "free text over company, employee, subject or request number",
+            "title": "Q"
+          },
+          "statuses": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RequestStatus"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "repeatable status filter, same values as GET /requests",
+            "title": "Statuses"
+          }
+        },
+        "title": "ExportRequest",
+        "type": "object"
+      },
       "FeatureFlagOut": {
         "additionalProperties": true,
         "properties": {
@@ -1754,6 +1981,123 @@
         "title": "InsurerRefOut",
         "type": "object"
       },
+      "IssuingCaseDetailOut": {
+        "additionalProperties": true,
+        "description": "Case header + the timestamps the pipeline screen needs (spec §9.13).",
+        "properties": {
+          "assigned_to": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned To"
+          },
+          "client": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/IssuingDocumentOut"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "headcount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headcount"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "insurer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insurer"
+          },
+          "issued_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued At"
+          },
+          "premium_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Premium Amount"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          }
+        },
+        "required": [
+          "id",
+          "stage"
+        ],
+        "title": "IssuingCaseDetailOut",
+        "type": "object"
+      },
       "IssuingCaseOut": {
         "additionalProperties": true,
         "properties": {
@@ -1812,6 +2156,55 @@
           "stage"
         ],
         "title": "IssuingCaseOut",
+        "type": "object"
+      },
+      "IssuingDocumentDetailOut": {
+        "additionalProperties": true,
+        "properties": {
+          "attachment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "requirement_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status"
+        ],
+        "title": "IssuingDocumentDetailOut",
         "type": "object"
       },
       "IssuingDocumentOut": {
@@ -5591,6 +5984,164 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/ai/calls/{call_id}/transcribe": {
+      "post": {
+        "operationId": "postApiV1AiCallsCallIdTranscribe",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Call Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AITranscribeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Transcribe",
+        "tags": [
+          "ai (phase 2)"
+        ]
+      }
+    },
+    "/api/v1/ai/classify": {
+      "post": {
+        "operationId": "postApiV1AiClassify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIClassifyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIClassifyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggested triage for free text (nothing is stored)",
+        "tags": [
+          "ai (phase 2)"
+        ]
+      }
+    },
+    "/api/v1/ai/requests/{request_id}/summarize": {
+      "post": {
+        "operationId": "postApiV1AiRequestsRequestIdSummarize",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISummarizeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Summarize",
+        "tags": [
+          "ai (phase 2)"
+        ]
+      }
+    },
+    "/api/v1/ai/status": {
+      "get": {
+        "operationId": "getApiV1AiStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Whether the AI features are on for this deployment",
+        "tags": [
+          "ai (phase 2)"
+        ]
+      }
+    },
     "/api/v1/auth/audit/mine": {
       "get": {
         "operationId": "getApiV1AuthAuditMine",
@@ -6860,6 +7411,90 @@
         ]
       }
     },
+    "/api/v1/exports": {
+      "get": {
+        "operationId": "getApiV1Exports",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Getapiv1Exports",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Export catalogue: which kinds exist and what they accept",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/api/v1/exports/{kind}": {
+      "post": {
+        "operationId": "postApiV1ExportsKind",
+        "parameters": [
+          {
+            "description": "which table to write",
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ExportKind",
+              "description": "which table to write"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ExportRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The workbook itself."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export a scoped table as XLSX (audited)",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
     "/api/v1/feature-flags": {
       "get": {
         "operationId": "getApiV1Feature-Flags",
@@ -7191,6 +7826,96 @@
           }
         },
         "summary": "Issuing pipeline (Phase 2 · screen 13)",
+        "tags": [
+          "phase 2 (flagged)"
+        ]
+      }
+    },
+    "/api/v1/issuing-cases/{case_id}": {
+      "get": {
+        "operationId": "getApiV1Issuing-CasesCaseId",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuingCaseDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One issuing case (Phase 2)",
+        "tags": [
+          "phase 2 (flagged)"
+        ]
+      }
+    },
+    "/api/v1/issuing-cases/{case_id}/documents": {
+      "get": {
+        "operationId": "getApiV1Issuing-CasesCaseIdDocuments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IssuingDocumentDetailOut"
+                  },
+                  "title": "Response Getapiv1Issuing-Casescaseiddocuments",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Document checklist for one issuing case (Phase 2 · §7)",
         "tags": [
           "phase 2 (flagged)"
         ]
@@ -9770,6 +10495,26 @@
           }
         },
         "summary": "Liveness",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "description": "Scrape target for the runbook's monitoring table. Not part of the versioned API the SPA uses.",
+        "operationId": "getMetrics",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Prometheus exposition (open in development, token-gated otherwise)",
         "tags": [
           "health"
         ]
