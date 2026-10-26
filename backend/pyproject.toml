@@ -1,7 +1,7 @@
 [project]
 name = "broker-hub-backend"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"  # the CI and image interpreter (ADR-002); dev boxes on 3.11 are unsupported
 
 [tool.ruff]
 line-length = 140
@@ -37,7 +37,7 @@ ignore = [
 "scripts/*" = ["T201", "ANN", "E501", "E402", "ANN401", "SIM102"]
 
 [tool.mypy]
-python_version = "3.11"
+# no explicit python_version: mypy checks the interpreter it runs on, which is 3.12 in CI and the image
 strict = true
 plugins = ["sqlalchemy.ext.mypy.plugin", "pydantic.mypy"]
 exclude = ["^backend/migrations/versions/", "^\\.venv/"]

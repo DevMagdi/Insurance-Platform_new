@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import os
-
 from celery import Celery
 from celery.schedules import crontab
-
-os.environ.setdefault("DJABO_IGNORE", "1")  # keeps lint quiet about env ordering
 
 settings_module = "app.core.config"
 

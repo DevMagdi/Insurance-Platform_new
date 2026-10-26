@@ -49,9 +49,18 @@ cd ../frontend && npm ci && npm run codegen:api && VITE_API_ORIGIN=http://127.0.
 
 ## 3) الترقية المخططة (Migrations)
 
-- لا تُحرَّر migration مُدمجة أبدًا؛ أضف واحدة جديدة (`alembic revision -m "..."`).
-- 0001 = الأساس الكامل؛ 0002 = RLS + فهارس جزئية (PostgreSQL فقط، تقفز على SQLite).
-- قبل الدمج: `alembic upgrade head` على نسخة من قاعدة الإنتاج (أو `docker compose run --rm migrate`).
+- لا تُحرَّر migration مُدمجة أبدًا؛ أضف واحدة جديدة (`alembic revision -m "..."`). الاستثناء الوحيد
+  المسجَّل هو 0001/0002: لم تكونا قادرتين على التشغيل على PostgreSQL إطلاقًا، فلم تُطبَّقا على أي قاعدة،
+  والتصحيح كان مستحيلًا في migration لاحقة — التفاصيل والتبرير في `docs/decisions/014-*.md` (ADR-014).
+- 0001 = الأساس الكامل (33 جدولًا بترتيب تبعي لا أبجدي: `users` قبل `clients`، وقيد `clients.source_lead_id`
+  يُضاف بعد وجود الجدولين لأن حلقة `leads ↔ clients` لا تُعبَّر داخل `CREATE TABLE` على PostgreSQL)؛
+  0002 = RLS + فهارس جزئية (PostgreSQL فقط، تقفز على SQLite)؛ 0003 = سياسة `FOR ALL` واحدة لكل جدول
+  (تغطي `INSERT` أيضًا) + بند البوابة `app.scope_client_id` + دور `brokerhub_app`.
+- لا يتجاوز `revision` 32 حرفًا: `alembic_version.version_num` هو `VARCHAR(32)`، ومخالفته تُفشِل آخر خطوة
+  من الترقية بعد تنفيذ الـDDL كله. البوابة: `tests/test_migrations.py::test_every_revision_id_fits_the_version_table`.
+- قبل الدمج لا تُصدَّق السلسلة يدويًا فقط — `tests/test_migrations.py` يبني قاعدة PostgreSQL فارغة ويشغّل
+  `upgrade head ← downgrade base ← upgrade head` ثم يقارن المخطط الناتج بنماذج `Base.metadata`. يدويًا على
+  نسخة إنتاج: `alembic upgrade head` (أو `docker compose run --rm migrate`).
 - للنزول الآمن: فضّل إضافة column nullable ثم backfill ثم NOT NULL، بدل downgrade كامل.
 
 ## 4) SLA: كيف تُحسب ومتى «تظلم»
@@ -81,9 +90,29 @@ where s.user_id = (select id from users where email = 'cs@brokerhub.test');
 ```
 
 - المندوب: `owner` scope (leads به `assigned_to`، عملاء بـ `account_owner_id`)؛ id خارج النطاق ⇒ **404**.
-- المدير/أدمن: `all`؛ المندوب `owner`. `Scope.session_settings()` يهيّئ GUC المطلوب (`app.bypass_rls`,
-  `app.scope_user_id`) لكن **تطبيقها على جلسة الطلب غير موصول بعد** (ADR-003): سياسة RLS تُختبر بالفحص
-  اليدوي أعلاه، والحماية النافذة حالياً هي طبقة المستودعات.
+- المدير/أدمن: `all`؛ المندوب `owner`.
+- الشبكة الثانية موصولة الآن (ADR-014): `app/core/rls.py` يثبّت `app.bypass_rls` / `app.scope_user_id` /
+  `app.scope_client_id` على كل معاملة تفتحها جلسة الطلب (خطّاف `after_begin`)، فيسري حتى على استعلام نسي
+  فلتر المستودع. الاختيار ليس `SET LOCAL` عاريًا لأن نقاط النهاية تعمل `commit` في منتصف الطلب — بل إعادة
+  تطبيق عند كل `begin`؛ والقيم المعامة لا تبقى على اتصال الـpool عند انتهائه (بوّابتان في
+  `tests/test_rls_postgres.py` تُثبتان الأمرين على PostgreSQL حقيقي).
+- **السياسات لا تسري على superuser**، ولو مع `FORCE ROW LEVEL SECURITY`. لذا لا معنى للشبكة ما لم يتصل
+  التطبيق بدور `NOBYPASSRLS`: 0003 ينشئ `brokerhub_app` (بلا LOGIN وبمنح بيانات فقط). للتحويل: امنحه كلمة
+  مرور ثم بدّل `DATABASE_URL` إليه — `ALTER ROLE brokerhub_app PASSWORD '…';` ثم
+  `DATABASE_URL=postgresql+asyncpg://brokerhub_app:…@postgres:5432/brokerhub`. لا تُنشِئ الأدوار يدويًا في
+  بيئة لا تملك فيها `CREATEROLE`: الترقية تُكمل وتُنبّه (المهاجرة تتخطّى إنشاء الدور بهدوء).
+- فحص من `psql` (المتوقّع `0` لغير المالك، ثم `2` بعد مفتاح التجاوز):
+
+```sql
+BEGIN;
+SET LOCAL ROLE brokerhub_app;
+SELECT set_config('app.bypass_rls', 'off', true);
+SELECT set_config('app.scope_user_id', '00000000-0000-0000-0000-000000000000', true);
+SELECT count(*) FROM clients;  -- ⇒ 0
+SELECT set_config('app.bypass_rls', 'on', true);
+SELECT count(*) FROM clients;  -- ⇒ كل الصفوف (نطاق مدير)
+ROLLBACK;
+```
 - تغيير صلاحيات دور يرفع `refresh_token_version` لكل مستخدميه ⇒ جلسات تُنهى. توقّع إعادة دخول.
 - تغيير كلمة مرور من شاشة المستخدمين ينهي الجلسات القديمة أيضًا.
 

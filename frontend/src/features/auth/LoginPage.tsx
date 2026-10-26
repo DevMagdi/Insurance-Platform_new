@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { Navigate, useNavigate } from "react-router-dom";
 import { z } from "zod";
 
+import { landingPath } from "@/app/landing";
 import { ApiError_ } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth";
 
@@ -36,7 +37,7 @@ export default function LoginPage() {
       login({ email: values.email, password: values.password, remember_me: Boolean(values.remember) }),
     onSuccess: (next) => {
       setError(null);
-      navigate(next?.role?.startsWith("client_") ? "/portal" : "/dashboard", { replace: true });
+      navigate(landingPath(next?.role, next?.permissions), { replace: true });
     },
     onError: (cause: unknown) => {
       if (cause instanceof ApiError_ && cause.code === "mfa_required") {
@@ -47,7 +48,7 @@ export default function LoginPage() {
     },
   });
 
-  if (ready && user) return <Navigate to={user.role.startsWith("client_") ? "/portal" : "/dashboard"} replace />;
+  if (ready && user) return <Navigate to={landingPath(user.role, user.permissions)} replace />;
 
   return (
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,1fr)_460px]">

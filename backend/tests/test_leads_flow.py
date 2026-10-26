@@ -113,3 +113,16 @@ async def test_lose_requires_a_reason(client, ids) -> None:
             reason_id = str((await session.execute(select(LostReason).limit(1))).scalar_one().id)
         ok = await client.post(f"/api/v1/leads/{lead_id}/lose", headers=h, json={"lost_reason_id": reason_id, "note": "أغلى"})
         assert ok.status_code == 200 and ok.json()["status"] == "lost"
+
+
+async def test_sales_team_board_is_manager_only(client) -> None:
+    """Screen 7 aggregates every rep, so it needs the manager pair — and answers 403, not 409 (spec §6)."""
+    async with login(client, "manager@brokerhub.test") as auth:
+        ok = await client.get("/api/v1/sales/team", headers=auth)
+    async with login(client, "rep_a@brokerhub.test") as rep:
+        refused = await client.get("/api/v1/sales/team", headers=rep)
+    assert ok.status_code == 200, ok.text
+    assert isinstance(ok.json(), list)
+    assert refused.status_code == 403
+    assert refused.json()["code"] == "forbidden"
+    assert set(refused.json()["details"]["required"]) == {"leads.view_all", "leads.assign"}

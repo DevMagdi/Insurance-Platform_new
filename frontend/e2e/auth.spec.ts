@@ -1,20 +1,29 @@
 import { expect, test } from "@playwright/test";
 
-import { login, OWNER, PASSWORD, REPS } from "./fixtures";
+import { apiLogin, LOGIN_BUTTON, login, OWNER, PASSWORD, REPS } from "./fixtures";
 
 test.describe("authentication", () => {
-  test("a rep lands on the dashboard with their own KPI row", async ({ page }) => {
+  test("a rep lands on the board their role can load", async ({ page, request }) => {
+    /*
+     * The dashboard's summary requires `requests.view`, which a sales rep does not hold — landing there
+     * produced four empty tiles and a 403 in the log. Landing is by permission now, so the rep starts on
+     * their own leads board, and the KPI label the old assertion used ("نسبة الالتزام بالـ SLA") never
+     * existed: the tile is "الالتزام بالـSLA" (`dashboard.kpiSla` in both dictionaries).
+     */
     await login(page, REPS.sara);
-    await expect(page.getByRole("heading", { name: "لوحة التحكم" })).toBeVisible();
-    await expect(page.getByText("طلبات اليوم")).toBeVisible();
-    await expect(page.getByText("نسبة الالتزام بالـ SLA")).toBeVisible();
+    await expect(page).toHaveURL(/\/leads/);
+    await expect(page.getByText("عرض البياع")).toBeVisible();
+    const auth = await apiLogin(request, REPS.sara);
+    const refused = await request.get("/api/v1/dashboard/summary", { headers: auth });
+    expect(refused.status()).toBe(403);
+    expect((await refused.json()).code).toBe("forbidden");
   });
 
   test("a wrong password is refused with the server's own message", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel(/البريد الإلكتروني/).fill(REPS.sara);
     await page.getByLabel(/كلمة المرور/).fill("not-the-password");
-    await page.getByRole("button", { name: "دخول", exact: true }).click();
+    await page.getByRole("button", LOGIN_BUTTON).click();
     await expect(page.getByText(/بيانات الدخول غير صحيحة|خطوة|غير صحيحة/).first()).toBeVisible();
     await expect(page).toHaveURL(/\/login/);
   });

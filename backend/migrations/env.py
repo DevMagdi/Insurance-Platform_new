@@ -24,7 +24,10 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 url = os.environ.get("DATABASE_URL") or get_settings().DATABASE_URL
-config.set_main_option("sqlalchemy.url", url)
+# `%` is configparser's interpolation character, and a DSN is allowed to contain it: a password with a
+# percent sign, or a Unix-socket path that SQLAlchemy renders as %2F. Doubling it is the documented way to
+# hand a URL to `set_main_option` — the value read back is the URL the engine needs.
+config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:

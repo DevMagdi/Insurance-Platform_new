@@ -5,8 +5,14 @@ Revises: 0001_baseline
 
 Why a separate migration: these are the second net over application-level scoping (spec §6) and
 they only exist on PostgreSQL. Everything is guarded so the same chain still applies on SQLite
-dev databases (ADR-001 §6). Never edit this file once merged — add 0003.
+dev databases (ADR-001 §6). Never edit this file once merged — add a new revision; the one exception is
+marked below and justified in ADR-014.
 """
+
+# ALEMBIC-REWRITE-APPROVED: `CREATE POLICY … FOR UPDATE, DELETE` is not valid SQL (a policy names exactly
+# one command), so this revision aborted on every PostgreSQL database and had therefore never been applied.
+# The write half is now one policy per command, which is the same rule set; the `FOR ALL` replacement that
+# also covers `INSERT` belongs to 0003, where adding it is legal. ADR-014.
 
 from __future__ import annotations
 
@@ -50,36 +56,29 @@ def upgrade() -> None:
     )
 
     # --- RLS -------------------------------------------------------------------------
+    # `CREATE POLICY` accepts exactly one command per policy (there is no `FOR UPDATE, DELETE`),
+    # so the write half is one policy per command. Postgres-only: everything below is skipped on
+    # SQLite (ADR-001 §6), which is why this file never ran until `alembic upgrade head` was
+    # exercised against a real PostgreSQL database — see ADR-014.
     for table, owner_col in _GUARDED:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
-        op.execute(
-            f"""
-            CREATE POLICY {table}_scope_read ON {table}
-            FOR SELECT
-            USING (
+        scope = f"""
                 current_setting('app.bypass_rls', true) = 'on'
                 OR current_setting('app.bypass_rls', true) IS NULL
                 OR {owner_col}::text = nullif(current_setting('app.scope_user_id', true), 'null')
-            )
             """
-        )
-        op.execute(
-            f"""
-            CREATE POLICY {table}_scope_write ON {table}
-            FOR UPDATE, DELETE
-            USING (
-                current_setting('app.bypass_rls', true) = 'on'
-                OR current_setting('app.bypass_rls', true) IS NULL
-                OR {owner_col}::text = nullif(current_setting('app.scope_user_id', true), 'null')
-            )
-            WITH CHECK (
-                current_setting('app.bypass_rls', true) = 'on'
-                OR current_setting('app.bypass_rls', true) IS NULL
-                OR {owner_col}::text = nullif(current_setting('app.scope_user_id', true), 'null')
-            )
+        for command in ("SELECT", "UPDATE", "DELETE"):
+            # `WITH CHECK` only exists for UPDATE/INSERT-style policies; DELETE takes USING alone.
+            check = f"WITH CHECK ({scope})" if command == "UPDATE" else ""
+            op.execute(
+                f"""
+            CREATE POLICY {table}_scope_{command.lower()} ON {table}
+            FOR {command}
+            USING ({scope})
+            {check}
             """
-        )
+            )
 
     # Audit rows are append-only at the DB level too (spec §5 "لا تُحذف ولا تُعدَّل").
     op.execute(
@@ -106,8 +105,8 @@ def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS audit_logs_no_update ON audit_logs")
     op.execute("DROP FUNCTION IF EXISTS broker_hub_audit_is_immutable()")
     for table, _col in _GUARDED:
-        op.execute(f"DROP POLICY IF EXISTS {table}_scope_write ON {table}")
-        op.execute(f"DROP POLICY IF EXISTS {table}_scope_read ON {table}")
+        for command in ("update", "delete", "select"):
+            op.execute(f"DROP POLICY IF EXISTS {table}_scope_{command} ON {table}")
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
     op.execute("DROP INDEX IF EXISTS uq_leads_active_mobile")
     op.execute("DROP INDEX IF EXISTS uq_insured_client_active_mobile")
