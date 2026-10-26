@@ -6,7 +6,7 @@
 import { useMemo, useState } from "react";
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ChevronLeft, GripVertical, PhoneCall, Users, X } from "lucide-react";
+import { AlertCircle, ChevronLeft, FileSpreadsheet, GripVertical, PhoneCall, Users, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -17,6 +17,8 @@ import { api } from "@/lib/api/client";
 import type { Lead, LeadBoardColumn } from "@/lib/api/views";
 import { useAuth } from "@/lib/auth";
 import { followupLabel, formatNumber } from "@/lib/format";
+
+import { ImportLeadsDialog } from "./ImportLeadsDialog";
 
 type Board = { columns: LeadBoardColumn[] };
 
@@ -37,6 +39,7 @@ export default function KanbanPage() {
   const [query, setQuery] = useState("");
   const [confirming, setConfirming] = useState<Lead | null>(null);
   const [losing, setLosing] = useState<Lead | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const board = useQuery({ queryKey: ["leads", "board"], queryFn: () => api.get<Board>("/leads/board") });
   const stats = useQuery({ queryKey: ["leads", "stats"], queryFn: () => api.get<Record<string, number | null>>("/leads/stats") });
@@ -125,9 +128,15 @@ export default function KanbanPage() {
           <>
             <SearchInput value={query} onChange={setQuery} width={260} placeholder={t("leads.search")} />
             {isManager ? (
-              <Button icon={<Users size={16} strokeWidth={1.8} />} onClick={() => navigate("/sales-team")}>
-                {t("leads.managerView")}
-              </Button>
+              <>
+                <Button icon={<Users size={16} strokeWidth={1.8} />} onClick={() => navigate("/sales-team")}>
+                  {t("leads.managerView")}
+                </Button>
+                {/* a sheet of leads is a manager's action; the API refuses a rep, so the button is not offered */}
+                <Button icon={<FileSpreadsheet size={16} strokeWidth={1.8} />} onClick={() => setImporting(true)}>
+                  {t("leads.importLeads")}
+                </Button>
+              </>
             ) : null}
             <Button variant="primary" onClick={() => navigate("/leads/new")}>
               {t("leads.newLead")}
@@ -209,6 +218,8 @@ export default function KanbanPage() {
           </dl>
         </Modal>
       ) : null}
+
+      {importing ? <ImportLeadsDialog onClose={() => setImporting(false)} /> : null}
 
       {losing ? (
         <LostDialog

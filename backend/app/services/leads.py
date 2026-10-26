@@ -86,6 +86,7 @@ async def create(session: AsyncSession, actor: User, scope: Scope, payload: Lead
         type=ClientType(payload.type),
         name=payload.name.strip(),
         contact_name=payload.contact_name,
+        contact_title=payload.contact_title,
         mobile=mobile,
         email=payload.email,
         source=payload.source,
@@ -186,27 +187,46 @@ async def set_status(
     return lead
 
 
-async def assign(
-    session: AsyncSession, actor: User, scope: Scope, lead_id: UUID, *, to_user_id: UUID | None, ip: str | None = None
-) -> Lead:
-    """Re-assignment is manager-only (spec §6). The event is recorded on the timeline."""
-    if not scope.can("leads.assign"):
-        raise Forbidden("Only a manager can re-assign leads")
-    lead = await _require(session, lead_id, scope)  # managers can reach every lead
+async def _name_of(session: AsyncSession, user_id: UUID) -> str:
+    """The seat's full name, falling back to its id when the row is gone — a deleted rep still reads as a person
+    in the history of the leads they carried."""
+    person = await session.get(User, user_id)
+    return person.full_name if person is not None else str(user_id)
+
+
+async def _apply_assignment(
+    session: AsyncSession,
+    actor: User,
+    lead: Lead,
+    *,
+    to_user_id: UUID | None,
+    ip: str | None = None,
+    reason: str | None = None,
+    via: str = "single",
+) -> tuple[UUID | None, str]:
+    """The one implementation of "this lead now belongs to someone else": pointer, timeline row, audit row.
+
+    Both the single-lead endpoint and the bulk redistribution call this, so a lead moved by the dialog
+    cannot end up with a different history than one moved from its own detail sheet.
+    """
     previous = lead.assigned_to
-    if to_user_id is not None:
-        target = await session.get(User, to_user_id)
-        if target is None or not target.is_active:
-            raise ValidationFailed("Target rep does not exist or is inactive", details={"user_id": str(to_user_id)})
     lead.assigned_to = to_user_id
     await session.flush()
-    label = "unassigned" if to_user_id is None else str(to_user_id)
+    # `meta` keeps the machine ids, the human line names the people — a manager reading a lead's history
+    # should not have to look up two uuids to learn who handed the lead to whom.
+    from_name = "unassigned" if previous is None else await _name_of(session, previous)
+    to_name = "unassigned" if to_user_id is None else await _name_of(session, to_user_id)
+    label = to_name
+    verb = {"redistribute": "redistributed", "import": "imported"}.get(via, "assigned" if previous is None else "reassigned")
+    body = f"{verb}: {from_name} → {to_name}"
+    if reason:
+        body = f"{body} · {reason}"
     await repo.add_activity(
         session,
         lead_id=lead.id,
         type_=ActivityType.ASSIGNMENT,
-        body=f"reassigned: {previous or 'none'} → {label}",
-        meta={"from": str(previous) if previous else None, "to": str(to_user_id) if to_user_id else None},
+        body=body,
+        meta={"from": str(previous) if previous else None, "to": str(to_user_id) if to_user_id else None, "via": via},
         actor_id=actor.id,
     )
     await audit.write(
@@ -219,7 +239,88 @@ async def assign(
         after={"assigned_to": str(to_user_id) if to_user_id else None},
         ip=ip,
     )
+    return previous, label
+
+
+async def assign(
+    session: AsyncSession, actor: User, scope: Scope, lead_id: UUID, *, to_user_id: UUID | None, ip: str | None = None
+) -> Lead:
+    """Re-assignment is manager-only (spec §6). The event is recorded on the timeline."""
+    if not scope.can("leads.assign"):
+        raise Forbidden("Only a manager can re-assign leads")
+    lead = await _require(session, lead_id, scope)  # managers can reach every lead
+    if to_user_id is not None:
+        await _require_rep(session, to_user_id)
+    await _apply_assignment(session, actor, lead, to_user_id=to_user_id, ip=ip)
     return lead
+
+
+async def _require_rep(session: AsyncSession, user_id: UUID) -> User:
+    target = await session.get(User, user_id)
+    if target is None or not target.is_active or target.deleted_at is not None:
+        raise ValidationFailed("Target rep does not exist or is inactive", details={"user_id": str(user_id)})
+    return target
+
+
+async def assign_bulk(
+    session: AsyncSession,
+    actor: User,
+    scope: Scope,
+    *,
+    lead_ids: list[UUID] | None,
+    unassigned_only: bool,
+    to: list[UUID],
+    reason: str | None = None,
+    ip: str | None = None,
+) -> dict[str, Any]:
+    """Redistribute a set of leads — or the whole unassigned pool — in one transaction.
+
+    The rep list is validated *before* any row is touched, so a typo in a uuid cannot leave half the pool
+    moved. Ids the caller cannot see land in `skipped` rather than failing the batch: a manager's list may
+    legitimately contain a lead that was deleted while the dialog was open, and the answer the UI needs is
+    "34 moved, 1 was gone", not a 404 that hides the 34.
+    """
+    if not scope.can("leads.assign"):
+        raise Forbidden("Only a manager can re-assign leads", details={"required": ["leads.assign"]})
+    targets = []
+    for user_id in dict.fromkeys(to):  # the picker can repeat a rep; the split should not
+        targets.append(await _require_rep(session, user_id))
+
+    if unassigned_only:
+        ids = await repo.unassigned_ids(session, scope)
+    else:
+        ids = list(dict.fromkeys(lead_ids or []))
+    if not ids:
+        return {"assigned": 0, "per_rep": {}, "skipped": []}
+
+    per_rep: dict[str, int] = {str(target.id): 0 for target in targets}
+    skipped: list[dict[str, Any]] = []
+    assigned = 0
+    cursor = 0
+    for lead_id in ids:
+        lead = await repo.get_by_id(session, lead_id, scope)
+        if lead is None:
+            skipped.append({"lead_id": str(lead_id), "reason": "not_found"})
+            continue
+        target = targets[cursor % len(targets)]
+        cursor += 1
+        if lead.assigned_to == target.id:
+            skipped.append({"lead_id": str(lead_id), "reason": "already_assigned", "rep_id": str(target.id)})
+            continue
+        await _apply_assignment(session, actor, lead, to_user_id=target.id, ip=ip, reason=reason, via="redistribute")
+        per_rep[str(target.id)] += 1
+        assigned += 1
+
+    await audit.write(
+        session,
+        actor=actor,
+        action="lead.assigned_bulk",
+        entity_type="lead",
+        entity_id=None,
+        after={"assigned": assigned, "per_rep": per_rep, "skipped": len(skipped), "pool": "unassigned" if unassigned_only else "selection"},
+        ip=ip,
+    )
+    return {"assigned": assigned, "per_rep": {key: value for key, value in per_rep.items() if value}, "skipped": skipped}
 
 
 async def lose(

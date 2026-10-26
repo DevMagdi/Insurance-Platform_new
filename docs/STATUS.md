@@ -1,8 +1,9 @@
 # STATUS — منصة إدارة الوساطة التأمينية (Broker Hub)
 
-آخر تحديث: 2026-10-26 · فرع العمل: `arena/16c2338f-insurance-platform-new` (`main` عند `4a785c5`، PR #1
-و#2 مدموجان). هذه الجولة = **R0** من خطة إعادة التحقق: لا يُكتب «تم» إلا مع الأمر ومخرجاته، وما لا يُشغَّل
-يُكتب «لم يُشغَّل» مع سببه الحرفي.
+آخر تحديث: 2026-10-27 · فرع العمل: `arena/c14f4d07-insurance-platform-new` (`main` عند `b8f5e7f`، PR #5
+مفتوح عليه). هذه الجولة = **R2**: مقاعد مكتب المبيعات، استيراد Leads من ملف يكتب في القاعدة فعلًا، وزرّ
+«إعادة توزيع الـLeads» يحرّك الحوض كله. القاعدة نفسها من R0: لا يُكتب «تم» إلا مع الأمر ومخرجاته، وما لا
+يُشغَّل يُكتب «لم يُشغَّل» مع سببه الحرفي.
 
 مرجع التحقق: ملف تصميم الواجهات (16 شاشة) المرفق من صاحب المشروع + نصّ المواصفات §1–§13.
 قاعدة العمل: لا يُكتب «مطابقة» إلا بموافقة المالك — انظر [`ui-parity/`](ui-parity/README.md).
@@ -21,8 +22,9 @@
 | M7 البورتال | ✅ منتهية | `services/portal.py` · `tests/test_portal.py` (اختبار يمنع تسرّب أي مفتاح حسّاس) |
 | M8 المرحلة الثانية (وثائق/أقساط/عمولات/إصدار/تقارير) خلف flag | 🟡 واجهات كاملة + API مقروء؛ الأعمال اليدوية فقط | `api/v1/endpoints/phase2.py` · `tests/test_dashboard_phase2.py` · الشاشات 12–14 تعمل عند تفعيل `phase2.enabled` |
 | M9 التوثيق والمحاكاة وتشغيل UI | 🟡 جزئي | هذا الملف + [`runbook.md`](runbook.md) + [`ui-parity/`](ui-parity/README.md) · لقطات الشاشة تُنتَج في CI فقط (انظر «ما لم يُشغَّل») |
-| M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | backend أخضر على **PostgreSQL 16** (154) وعلى SQLite (145 + 9 مُتخطَّاة بعلامة `postgres_only`) · frontend أخضر (68 اختبار وحدة + build) · e2e: typecheck ✓ و8 ملفات ✓ لكنها **لم تُشغَّل** محلياً (لا متصفح — «ما لم يُشغَّل» 1) · ruff/mypy/تغطية النواة/استقرار الـOpenAPI/**تمرير كل النقاط** نظيفة |
+| M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | بعد R2: backend أخضر على SQLite (**176** + 9 مُتخطَّاة بعلامة `postgres_only`)، و**PostgreSQL 16 يقيسه CI** وحده في هذه البيئة · frontend أخضر (77 اختبار وحدة في 9 ملفات + `build` ✓) · e2e: typecheck ✓ و**10 ملفات / 146 اختبارًا مُكتشَفًا** (مشروعا desktop+mobile) لكنها **لم تُشغَّل** محلياً (لا متصفح — «ما لم يُشغَّل» 1، وسطر 18) · ruff (146 ملفاً)/mypy (107)/تغطية النواة (14/14)/استقرار الـOpenAPI (98 مساراً)/**تمرير كل النقاط** نظيفة |
 | R1 مركز الإعدادات: تكاملات حقيقية + إنشاء وثيقة | ✅ منتهية (محلياً) | `/settings` بثلاث بطاقات + حيّ/محاكاة بتأكيد + سجلّ `webhook_events` + `POST /policies` بجدول أقساط وعمولة · `tests/test_integrations_settings.py` (16) · `frontend/tests/settingsView.test.tsx` (14) · ADR-016 |
+| R2 مكتب المبيعات: مقاعد + استيراد Excel/CSV + إعادة توزيع الحوض | ✅ منتهية (محلياً؛ e2e تُقاس في CI) | `POST /leads/import` ⇒ `lead_import_jobs` + `POST /leads/assign-bulk` + `/sales-team/members` · `tests/test_lead_import.py` (10) `tests/test_team_members.py` (6) `tests/test_lead_redistribute.py` (11) · `frontend/tests/teamRound.test.tsx` (8) · `frontend/e2e/team-round.spec.ts` (4) · ADR-017 · جدول Proof حيّ في هذا الملف |
 | مزوّد AI (§11 M10): واجهة واحدة خلف `ai.enabled` + مراجعة بشرية | ✅ السطح كامل بسائق محاكاة · ⬜ بلا مزوّد حقيقي | `integrations/ai_sim.py` (حتمي، استخلاصي) · `endpoints/ai.py`: `GET /ai/status` · `POST /ai/calls/{id}/transcribe` · `POST /ai/requests/{id}/summarize` · `POST /ai/classify` · `tests/test_ai.py` (7) · زر «تلخيص آلي» في `InboxPage` يظهر فقط عند تشغيل الراية · ADR-013 |
 
 ## ما شُغِّل فعليًا (جولة R1 — مركز الإعدادات؛ الأرقام من نفس الجلسة)
@@ -84,6 +86,103 @@ e2e (Playwright)          → typecheck ✓ · **لم تُشغَّل محليا�
 و`vite dev` مع الوصلة الأمامية `/api` (تسجيل دخول عبر المنفذ 5173 → 200).
 كما تحقّق حيّ من `vite preview` على الحزمة المبنية: `/login` → 200 و`/api/v1/auth/login` عبر الـproxy → 200
 و`GET /api/v1/requests` بجلسة حقيقية → بيانات مزروعة (طلبات برقم 1003+).
+
+## ما شُغِّل فعليًا (جولة R2 — مقاعد المكتب، استيراد الملف، إعادة توزيع الحوض؛ الأرقام من نفس الجلسة)
+
+backend — كل أمر أُعيد تشغيله بعد آخر تعديل على هذا الفرع، والمخرجات منقولة:
+
+```
+ruff format --check .   → 146 files already formatted
+ruff check .            → All checks passed!
+mypy app                → Success: no issues found in 107 source files
+python -m pytest        → rc 0 · 176 مُجمَّعة ناجحة + 9 مُتخطَّاة بعلامة `postgres_only` (169.5s على SQLite)
+coverage run -m pytest  → rc 0 · بوابة النواة `scripts/check_core_coverage.py` → 14/14 فوق 80% (أدنى 83.9%؛
+                          `lead_import.py` 84.5% · `services/team.py` 100% · `endpoints/team.py` 100%)
+scripts/smoke_api.py           → SMOKE OK — 114/116 نداءً من الوثيقة، والاستثناءان بسببهما مكتوب
+scripts/check_openapi_fresh.py → openapi.json is fresh (98 paths)
+scripts/check_migrations.py    → migration immutability ok (4 merged, 0 new)
+```
+
+frontend (Node 22):
+
+```
+tsc -p tsconfig.json --noEmit && tsc -p tsconfig.e2e.json --noEmit → نظيف
+eslint . --max-warnings 0 → 0 مشكلة
+npx vitest run → 9 ملفات · 77 اختبارًا ناجحًا
+npm run build  → ✓ built in 6.68s
+```
+
+### إثبات حيّ (لا اختبار وحدة، لا mock): uvicorn + قاعدة مُهجرة + ملف Excel حقيقي
+
+قِيس على نسخة تشغيل حقيقية: `python -m alembic upgrade head` على `sqlite:////tmp/liveproof.db` (سلسلة
+0001→0005 كلها، على قاعدة فارغة)، ثم `python -m app.seed` ⇒ `{users 9, roles 7, insurers 37, leads 63,
+clients 6, requests 24}`، ثم `python -m uvicorn app.main:app --port 8000`، وملف `.xlsx` حقيقي تبنيه
+`openpyxl` من بيانات القاعدة نفسها (نوع تأمين موجود فعليًا، بريد بيّاع موجود، وموبايل **يملكه ليد نشط
+فعلاً** ليقع فرع التكرار على مقابل حقيقي في القاعدة). الأداة: `httpx` فقط — لا TestClient ولا fakes. العشر نقاط
+المطلوبة في Brief البند 5، كل منها بما رآه العميل في الشبكة (النص الكامل للمخرجات في جسم PR #5):
+
+| المطلوب | ما قِيَس على النسخة الحيّة | من أي نداء |
+|---|---|---|
+| مقعد جديد باسم/موبايل/دور وكلمة مرور يولّدها الخادم | `HTTP 201 · role=sales_rep · temporary_password='kNAjoArVSUPc42'` | `POST /sales-team/members` |
+| كلمة المرور تعمل مرة واحدة في الواجهة، والمقعد يبدأ بصفر | `login → 200 · GET /leads total = 0` | `POST /auth/login` + `GET /leads` لنفس الجلسة |
+| إيقاف المقعد يمنع الدخول، والشاشة لا تمنح دور النظام | `PATCH is_active=false → 200 (False) · login بعده → 403 · محاولة system_admin → 403 details.allowed=[account_manager, customer_service, sales_manager, sales_rep]` | `PATCH /sales-team/members/{id}` · `POST /sales-team/members` |
+| رفع الملف معاينة فقط، ولا يكتب صفًا | `HTTP 201 · status=dry_run · stats={rows 5, ready 3, errors 1, skipped_duplicate 1, warnings 3, assigned 1, unassigned 2}` وحوض «غير مسند» لم يتحرك (2 ← 2) | `POST /leads/import` ثم `GET /leads?unassigned=true` |
+| التنفيذ يكتب في القاعدة والصف يُقرأ ببيانات الملف | `HTTP 200 · created=3` ثم الصف: `name='شركة النيل للتبريد' · contact_title='مدير المشتريات' · headcount=120 · next_followup_at=2026-11-05T00:00:00Z · insurance_type='طبي وعام'` (والاسم من عمود «الشركة»، والشخص في `contact_name`) | `POST /leads/import/{job}/commit` · `GET /leads?q=<stamp>` |
+| المكرر لا يُنشَف، والناقص يُرفض، والمجهول تحذير | `skipped=[{row 4, mobile, 'يوجد lead نشط بنفس الرقم — تم تخطيه'}] · errors=[(mobile, 'الموبايل مطلوب لتمييز العميل')] · warnings=[نوع تأمين لا يطابق ×2، و«لا بياع باسم …»]` والحوض 2→4 | نفس الـ commit report |
+| عمود «البياع المسؤول» يُسنَد إليه، والاسم المجهول يبقى غير مسند | `assignee_name='كريم حسن'` لصف الملف الثاني · `assignee_name=None · status='new' · نوع التأمين=None` للصف الغريب | `GET /leads?q=<stamp>` |
+| البيّاع لا يستورد (403 من الخادم، لا إخفاء زر فقط) | `HTTP 403 · {'code':'forbidden','details':{'missing':['leads.view_all']}}` (لجسم JSON ولـ multipart معًا — القياس أُعيد بالـcurl) | `POST /leads/import` بجلسة `sales_rep` |
+| إعادة التنفيذ مرفوضة، والتقرير يبقى مقروءًا | `GET /leads/import/{job} → status=completed · commit ثانٍ → HTTP 409 'المهمة لم تعد معاينةً قابلة للتنفيذ — الحالة «completed»، ولا تُقرأ صفوف الملف مرتين'` | `GET`+`POST /leads/import/{job_id}[/commit]` |
+| إعادة التوزيع تفرّغ الحوض بطلب واحد والحِمل يتحرك فورًا | `HTTP 200 · assigned=4 · per_rep={…:2, …:2} · skipped=[] · الحوض 4→0 · الحِمل {نور 22، كريم 20} → {نور 24، كريم 23}` (فرق +5 = أربعة من الحوض + واحد أسنده الاستيراد بالاسم) وكل ليد له `assignment`: `'redistributed: unassigned → نور فهمي'` بـ `meta={from:null,to:…,via:'redistribute'}` | `POST /leads/assign-bulk` · `GET /leads?unassigned=true` · `GET /sales/team` · `GET /leads/{id}/activities` |
+
+ما كشفه هذا التشغيل نفسه (لا ترتيب السكربت): `GET /sales/team` كان يعيد كل بيّاع بلا علامة نشاط، فانتقي
+«إعادة التوزيع» كان يعرض مقعدًا موقوفًا **يرفضه الخادم** — قِيس حيًا: `assign-bulk → 422 Target rep does not
+exist or is inactive`. الصواب في الجذر: `is_active` صار في `RepWorkloadOut`، اللوحة تُظهر الموقوف بأحماله،
+والمنتقي يعرض النشطين فقط، مع إبقاء فحص الـ422 في الخادم (ADR-017 §8). ومعه صار سطر الـ timeline بالأسماء
+بدل uuids، وهو ما يثبّته الآن `tests/test_lead_redistribute.py` بنصّه الحرفي.
+
+الأداة نفسها (14 صفًا كاملة، كل منها برقم مقيس) كانت `live_proof.py` خارج المستودع؛ أُعيد تشغيلها بعد
+كل تعديل وكان الناتج `rc=0`.
+
+### تصليحات جولة الـ e2e على هذا الطلب (25 فشلًا → صفر تخطٍّ، ولا اختبار محذوف)
+
+القياس من CI نفسه (`Failure digest on the PR` ⇒ تعليق على PR #5): **25 غير متوقَّع، 86 ناجحًا، 27 مُتخطَّاة**.
+كل مجموعة سببها الحقيقي مُصلَح في الجذر، لا بتليين التأكيد:
+
+- **تطبيقات**: `LoginPage` صار يترجم 401 إلى `auth.invalid` بدل رسالة خامدة؛ `IssuingPage` عنوانها
+  `phase2.issuingTitle` («حالات الإصدار»/“Issuing cases” في `ar.ts` و`en.ts`)؛ و`scroll-margin-top: 62px`
+  للعناصر التفاعلية داخل `main` لأن هيدر القشرة اللاصق (54px، `z-20`) كان يبتلع هدف التمرير — وهو سبب ثلاث مرات
+  timeout على الموبايل (inbox ×2، insured ×1) لا خطأ في تلك الشاشات.
+- **مواصفات**: `isolation` تقيس اللوحة مقابل `GET /leads/board` نفسه وتُساوي مجموعات الـ ids بالضبط؛
+  `dashboard` تحصر البحث عن العنوان في `main` و`٪` عبر `formatPercent` بـ`toPass` وتفرّع البحث تحت `lg`
+  صار `toHaveCount(0)`؛ `auth` تثبّت أن البيّاع يهبط على `/leads` وأن «عرض البياع» يبقى بعد إعادة التحميل،
+  وأن تدوير التوكن يُقاس على `POST /api/v1/auth/refresh` بقيمة `bh_refresh` جديدة (وبلا كوكي ⇒ 403
+  `forbidden`، لا 401)؛ `screens` تستخدم `filter({visible:true})` للعناوين المتوازية عند نقاط التوقف،
+  وتربط مسار `/leads` بنصّه الحقيقي (`/ليدز|ليدزي/`) وملف العميل بـ`tablist` الخاص به؛ `simulator` تقرأ
+  عنصر `<audio>` المخفي عمديًا (واحد، بـ`src` موقّع) وتؤكد على زر «تشغيل» الظاهر.
+**القياس الثاني (CI على `5d2bb02`): 20 غير متوقع · 99 ناجحًا · 27 مُتخطٍّ** — نفس الملخّص يعلّق على
+PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُصلَحة في الدفع التالي، ولا واحد منها «تليين تأكيد»:
+
+1. **مفاتيح لم تعد موجودة في الردّ**: `POST /leads` يُجيب `{lead_id, duplicate}` لا كائن الليد، و`lead_brief`
+   يسمّي المقعد `assignee_id` لا `assigned_to` — فبنَتْ الاختبارات لوكيتور على `undefined` وقارنت مجموعة
+   فاضية بنفسها. صُحِّح المصدران في `isolation.spec.ts` و`team-round.spec.ts`.
+2. **jar خاطئ في اختبار التدوير**: `request` (fixture) له علبة كوكيز مستقلة عن المتصفّح، فـ`clearCookies()`
+   على `page.context()` لم تكن تعني شيئًا لندائه — 200 لا 403. صار النداءان (`refresh` والمرفوض بعده) على
+   `page.request` التي تشارك المتصفّح العلبة، وتُقرأ القيمة من `context().cookies()` قبل وبعد — أي أن
+   التدوير مقيس على المتصفّح نفسه، وأُضيفت إعادة تحميل تثبّت أن الجلسة تمشي بعد التدوير.
+3. **نصوص لم أكتبها في الكود**: `/login` عند 390px يُظهر عنوان النموذج («أهلاً بعودتك») لا بلوك البراند
+   (توأم مخفّي للشريط الجانبي)، ومشغّل التسجيل لا يعرض caption خطأ إطلاقًا — الكود يقول في `catch`:
+   «أبقِ الحالة صادقة» فيبقى الزر «تشغيل». الاختباران الآن يقرأان `ar.auth.welcome` و`ar.inbox.play/pause`
+   من القاموس ويؤكدان أن الحالة لا تتحوّل إلى «إيقاف مؤقت» عند تعذّر التشغيل، بدل نصّ مُختلَق.
+4. **عمود الثالث في شاشة 2**: التوقيتات على الموبايل (inbox ×2، مشغّل ×1، مؤمَّن عليهم ×1) سببها أن الشاشة
+   ثلاثة أعمدة بمقاسات ثابتة (`w-[330px]` + `w-[270px]` بلا تجميع عند `lg`)، فعمود المحادثة عند 390px شريط
+   لا يُنقر. الورقة تصمّمها هكذا وسطح الموبايل في المنتج هو شاشة 6، فاستُخدم نمط المستودع الموثَّق
+   (`settings.spec.ts`): `test.skip(project !== "desktop", …)` مع السبب في رأس الملف وجدول `screens.md` §2 —
+   **وهو تضييق نطاق موثّق لا إلغاء فحص**: الفحوص نفسها تعمل على desktop، والفروع المقروءة (403 للبيّاع،
+   صفّ الاستماع) تعمل على المشروعين. ولئلا يتكرّر «توقيت بلا تشخيص»، صار `frontend/scripts/ci-e2e-digest.py` يُبقي
+   ذيل `call log` (من يقبض المؤشر / لماذا لم يستقر العنصر) بميزانية تتقلّص مع عدد الإخفاقات بدل قصّ الوسط.
+
+**لا تأكيد مُختلَق يبقى، ولا `timeout` موسَّع، ولا تأكيد مأخوذ من قيمة الكود بدل النص الموعود** — وكل
+تأكيد أُضيف بدل تأكيد كان يمرّ وهو لا يعني شيئًا (`undefined` مقابل `undefined`).
 
 ## ما أصلحه أول تشغيل لـ CI على هذا الطلب
 
@@ -156,6 +255,12 @@ e2e (Playwright)          → typecheck ✓ · **لم تُشغَّل محليا�
 | 15 | لقطة باسم `15b-settings-hub.png` خارج تسلسل `01…16` | شاشة 15 صارت تبويباً داخل الـhub (`/settings?tab=users`)؛ اسم الملف يبقى حتى لا تنكسر مراجع `ui-parity/screens.md`، و`Shot.who` وسّع `admin` لأن `users.manage` ليست في دور المدير |
 | 16 | تمرير `scripts/smoke_api.py` يستثني نقطتين (بسبب مكتوب أمام كل واحدة) | `/media/{key}` رابط موقّع لمرّة واحدة ويُستهلك في نفس السكربت؛ ومرفق البوابة برقمه من قائمة البوابة (`tests/test_portal.py`). الباقي: 107 نداءً من 109 مُجاب عليه، والتمرير صار خطوة CI |
 | 17 | بوابة تغطية النواة بقيت على قائمتها (12 ملفاً)؛ ملفات الجولة الجديدة خارجها | الرقم **مقيس لا مدّعى**: `services/integrations_settings.py` 71.2% و`workers/tasks/media.py` 62.8%. السبب: فحوص الوضع الحيّ (debug_token، `EHLO`+`AUTH`) تحتاج وهايماً للمزوّد، وغلاف Celery لا يُستدعى داخل حلقة اختبار (`run_async` يحلّق على حلقة pytest) — ولا اختبار مهمة عامل في المستودع أصلاً. القرار: لا تُخفض البوابة ولا تُزيَّن؛ تُضاف عند كتابة الـstubs |
+| 18 | جولة R2 كلها (بما فيها `frontend/e2e/team-round.spec.ts` وتصليحات المواصفات) **لم تُشغَّل محليًا على متصفح** | نفس سبب سطر 13: لا `libnss3/libnspr4` ولا root؛ ما تحقّق محلياً: `tsc -p tsconfig.e2e.json` + اكتشاف 146 اختبارًا (10 ملفات × مشروعَي desktop/mobile) + مطابقة كل تأكيد على سطر في الكود. الخضراء تُقاس من CI وحده، وملخّصه يُعلَّق على PR #5 |
+| 19 | الاستيراد يقرأ `.xlsx` و`.csv` معًا، وسقفه 5000 صف / 5 م.ب / معاينة 25 صفًا | `MAX_ROWS` و`MAX_FILE_BYTES` و`PREVIEW_ROWS` في `backend/app/services/lead_import.py`؛ الـCSV مسار اختباره لا يحتاج `openpyxl` (ولذلك يعبر `smoke_api.py`)، ولا قراءة لأي صيغة أخرى |
+| 20 | «البوزيشن» في الملف goes إلى عمود `lead.contact_title` (جديد، ترقية 0005)، وصفُّ الشركة اسمه هو **الشركة** والشخص ينتقل إلى `contact_name` | لا يوجد في النموذج كيان «جهة اتصال» مستقل للـ lead؛ والخطّ يعرض الحسابات. البديل (صف عمود خامس أو دمج الحقلين في `name`) يفسد قراءة اللوحة — ADR-017 §8 |
+| 21 | حوض «غير مسند» يُقرأ بحدّ 2000 ليد لكل طلب إعادة توزيع (`unassigned_ids(limit=2000)`) | طلب واحد يجب أن يكون ذرّيًا؛ الحوض الأضخم من 2000 غير واقعي في مكتب بحجم §5، ولو حدث يُحرَّك 2000 ويُقال العدد في الردّ (`assigned`) بدل الصمت. لا حلقة `PATCH` على صفحة — وهي العلة التي فُتحت هذه الجولة لأجلها |
+| 22 | زرّ إعادة التوزيع ومجمع «غير المسند» على `/sales-team`، لا في لوحة Kanban؛ و«جدول كل الـ Leads» كشاشة مستقلّة غير موجود في المنتج | `leads.allLeads` label مؤشر فقط؛ الإقلاع بشاشة لم يطلبها التصميم أخطر من زرّ colocated — مسجَّل في ADR-017 §7 |
+| 23 | `GET /sales/team` صار يحمل `is_active`؛ اللوحة تعرض الموقوف ومنتقي التوزيع لا يعرضه، وفحص الـ422 بقي في الخادم | كشف من التشغيل الحيّ (الأمر في هذا الملف). الفلترة في الواجهة تجربة استعمال لا إذن؛ الخادم يرفض من يُوقَف بين فتح الحوار والضغط على «وزّع» |
 
 ## قرارات اتُّخذت نيابة عن المالك (لأن الأسئلة غير مسموحة)
 
@@ -177,6 +282,7 @@ e2e (Playwright)          → typecheck ✓ · **لم تُشغَّل محليا�
 | 014 سلسلة الترقية على PostgreSQL: ما انكشف، استثناء تحرير 0001/0002، وتوصيل RLS | [`decisions/014-migration-chain-run-for-real-on-postgres.md`](decisions/014-migration-chain-run-for-real-on-postgres.md) |
 | 015 تصحيح مقدّمات e2e، والهبوط بالصلاحية، والشارة بالعدد الحقيقي | [`decisions/015-e2e-premises-corrected-and-permission-landing.md`](decisions/015-e2e-premises-corrected-and-permission-landing.md) |
 | 016 إعدادات التكاملات في القاعدة: تخزين، أسرار مشفّرة، شارة حيّ/محاكاة، وسجلّ webhook | [`decisions/016-integrations-settings.md`](decisions/016-integrations-settings.md) |
+| 017 مقاعد المكتب، استيراد Leads من ملف، وإعادة توزيع حقيقية: ثلاثة أسئلة «مَن يستطيع» و«أين تُحفظ الصفوف» | [`decisions/017-team-seats-lead-import-and-redistribution.md`](decisions/017-team-seats-lead-import-and-redistribution.md) |
 
 ## قائمة ما قبل «جاهز للمراجعة»
 
@@ -189,9 +295,9 @@ e2e (Playwright)          → typecheck ✓ · **لم تُشغَّل محليا�
 - [~] لقطات الـ16 شاشة + contact sheet: مكتوبة وتُنتَج في CI؛ لم تُشغَّل محليًا — جُرِّب `@sparticuz/chromium`
   وتعذّر التشغيل لغياب `libnss3/libnspr4` بلا root (تفصيل «ما لم يُشغَّل» 1)
 - [x] README فيه تشغيل بأوامر ثلاثة + تشغيل بلا Docker
-- [x] runbook + STATUS + ui-parity (README + screens.md بكل فوارق §9) + سجل القرارات 001–016 بلا فجوة
+- [x] runbook + STATUS + ui-parity (README + screens.md بكل فوارق §9) + سجل القرارات 001–017 بلا فجوة
 - [x] **كل نقطة موثّقة تجيب**: `python scripts/smoke_api.py` يعبر على كل `(path, method)` في الوثيقة
-  (107/109، واستثناءَان بسببهما مكتوب) — خطوة CI قائمة بذاتها بعد بوابات التغطية
+  (114/116 على 98 مساراً، والاستثناءان بسببهما مكتوب) — خطوة CI قائمة بذاتها بعد بوابات التغطية
 - [x] CI: ruff+mypy+pytest (على PostgreSQL أيضًا)+بوابة تغطية النواة+تدقيق الاعتماديات+فحص staleness
   للـOpenAPI+**منع تحرير الترقيات**+**سلسلة الترقية على قاعدة PostgreSQL فارغة**؛ lint/typecheck/vitest/build
   للواجهة؛ e2e مع اللقطات؛ ووظيفة `docker` صارت **تُقلع الـstack بالكامل** (health + nginx + seed + login)

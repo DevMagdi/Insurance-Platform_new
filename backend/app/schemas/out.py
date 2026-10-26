@@ -53,6 +53,7 @@ class LeadOut(Open):
     status: str
     mobile: str | None = None
     contact_name: str | None = None
+    contact_title: str | None = None
     headcount: int | None = None
     next_followup_at: datetime | None = None
     followup_overdue: bool = False
@@ -74,6 +75,65 @@ class LeadDetailOut(LeadOut):
     converted_at: datetime | None = None
     lost_note: str | None = None
     lost_reason: str | None = None
+
+
+class LeadBulkAssignOut(Open):
+    assigned: int = 0
+    per_rep: dict[str, int] = Field(default_factory=dict)
+    skipped: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class LeadImportOut(Open):
+    """Dry-run preview and final report of a lead import, in the same shape `ImportJobOut` uses."""
+
+    id: UUID
+    status: str
+    filename: str | None = None
+    total_rows: int = 0
+    stats: dict[str, int] = Field(default_factory=dict)
+    error_report: list[dict[str, Any]] = Field(default_factory=list)
+    preview: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: datetime | None = None
+    committed_at: datetime | None = None
+    #: the two keys the UI needs to drive itself, mirroring the insured-import contract
+    confirm_required: bool = False
+    commit_url: str | None = None
+
+
+class TeamMemberOut(Open):
+    """One seat of the sales office, as screen 6's team tab lists it."""
+
+    id: UUID
+    email: str
+    full_name: str
+    mobile: str | None = None
+    role: str
+    role_name: str | None = None
+    is_active: bool = True
+    open_leads: int = 0
+    last_login_at: str | None = None
+
+
+class TeamAssignableRole(Open):
+    code: str
+    name: str
+
+
+class TeamMemberCreatedOut(Open):
+    id: UUID
+    email: str
+    role: str
+    is_active: bool = True
+    #: only present when the server generated it, and only ever in this one response
+    temporary_password: str | None = None
+
+
+class UserCreatedOut(Open):
+    id: UUID
+    email: str
+    role: str
+    #: only present when the server generated it, and only ever in this one response
+    temporary_password: str | None = None
 
 
 class LeadActivityOut(Open):
@@ -115,6 +175,7 @@ class LeadConvertOut(Open):
 class RepWorkloadOut(Open):
     rep_id: UUID
     name: str
+    is_active: bool = True
     open_leads: int
     meetings: int
     won: int
@@ -583,3 +644,14 @@ class SignedUrlOut(Open):
 # Some page models reference classes declared later in this module; rebuild them once all exist.
 for _model in (LeadPageOut, RequestPageOut, ClientPageOut, InsuredPageOut, InsuredListOut, ClientOverviewOut):
     _model.model_rebuild()
+
+
+class TeamRosterOut(Open):
+    """`GET /sales-team/members`: the office seats, and the roles the tab is allowed to hand out.
+
+    The allowlist is served rather than copied into the client — a frontend that repeats `OFFICE_ROLES`
+    would drift the day the set changes, and the dialog would offer an option the API refuses.
+    """
+
+    members: list[TeamMemberOut] = Field(default_factory=list)
+    assignable_roles: list[TeamAssignableRole] = Field(default_factory=list)

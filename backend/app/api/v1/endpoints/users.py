@@ -10,10 +10,11 @@ from sqlalchemy import select
 from app.core.deps import DbSession, ScopeDep, require_perm
 from app.core.errors import NotFound
 from app.domain import permissions as P
+from app.middleware_ip import ip_of
 from app.models.auth import User
 from app.models.masters import FeatureFlag
 from app.schemas.common import EmailAddress
-from app.schemas.out import FeatureFlagOut, PermissionOut, RoleOut, UserOut
+from app.schemas.out import FeatureFlagOut, PermissionOut, RoleOut, UserCreatedOut, UserOut
 from app.services import audit
 from app.services import users as svc
 
@@ -25,7 +26,8 @@ _Settings = Annotated[User, Depends(require_perm(P.SETTINGS_MANAGE))]
 
 class UserCreate(BaseModel):
     email: EmailAddress = Field(default="")
-    password: str = Field(min_length=10, max_length=200)
+    #: blank means "generate one" and the answer carries it back once (screen 15's «توليد تلقائي»)
+    password: str = Field(default="", max_length=200)
     full_name: str = Field(min_length=2, max_length=160)
     role_code: str
     mobile: str | None = None
@@ -59,11 +61,11 @@ async def list_users(session: DbSession, scope: ScopeDep, user: _Manage) -> list
     return await svc.list_users(session, scope)
 
 
-@router.post("/users", status_code=201)
+@router.post("/users", status_code=201, response_model=UserCreatedOut)
 async def create_user(body: UserCreate, session: DbSession, user: _Manage) -> dict[str, Any]:  # type: ignore[valid-type]
-    created = await svc.create_user(session, user, body.model_dump())
+    created, generated = await svc.create_user(session, user, body.model_dump(), ip=ip_of())
     await session.commit()
-    return {"id": str(created.id), "email": created.email, "role": created.role.code}
+    return {"id": str(created.id), "email": created.email, "role": created.role.code, "temporary_password": generated}
 
 
 @router.patch("/users/{user_id}")

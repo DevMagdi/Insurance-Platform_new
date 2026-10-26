@@ -157,6 +157,16 @@ def exhaustive_pass(
     document = create_app_document()
     known: dict[str, str] = dict(SMOKE_IDS)
     params = _params_for(client, admin_headers, known)
+    # A global table cannot answer these, because the same parameter name means a different row in a
+    # different table: `job_id` is an insured-import job for `/import-jobs/{job_id}` and a lead-import job
+    # for `/leads/import/{job_id}`, and `user_id` is any staff account for `/users/{user_id}` but only an
+    # office seat for `/sales-team/members/{user_id}`. Each gets the instance the curated block created.
+    per_path = {
+        "/api/v1/leads/import/{job_id}": ("job_id", "lead_job_id"),
+        "/api/v1/leads/import/{job_id}/commit": ("job_id", "lead_job_id"),
+        "/api/v1/sales-team/members/{user_id}": ("user_id", "team_member_id"),
+    }
+    overrides: dict[str, dict[str, str]] = {path: {name: known[key]} for path, (name, key) in per_path.items() if known.get(key)}
     failures: list[str] = []
     exercised = 0
     for path, operations in sorted(document["paths"].items()):
@@ -166,7 +176,7 @@ def exhaustive_pass(
                 continue
             client_path = path
             if "{" in path:
-                client_path = _fill(path, params)
+                client_path = _fill(path, {**params, **overrides.get(path, {})})
                 if not client_path:
                     failures.append(f"{method.upper()} {path}: no instance could be resolved")
                     continue
@@ -403,6 +413,31 @@ def main() -> int:
                 SMOKE_IDS["insured_id"] = _first_id(client, admin, f"/api/v1/clients/{client_id}/insured")
         else:
             failures.append(f"insured import -> {uploaded.status_code} {uploaded.text[:160]}")
+
+    # — the two instances this round adds: a lead-import job of its own, and a seat in the office roster —
+    lead_csv = "الاسم,الموبايل,الشركة,البوزيشن\nسمير المستورد,01007654321,شركة دخان,المدير المالي\n".encode()
+    lead_upload = client.post("/api/v1/leads/import", headers=admin, files={"file": ("smoke-leads.csv", lead_csv, "text/csv")})
+    if lead_upload.status_code == 201:
+        preview = lead_upload.json()
+        SMOKE_IDS["lead_job_id"] = str(preview["id"])
+        print(f"ok   POST /api/v1/leads/import -> dry run {preview['stats']['ready']} ready, saved nothing")
+        applied = client.post(f"/api/v1/leads/import/{SMOKE_IDS['lead_job_id']}/commit", headers=admin, json={})
+        if applied.status_code == 200 and applied.json()["stats"]["created"] == 1:
+            print("ok   POST /api/v1/leads/import/{job_id}/commit -> the row is in the leads table")
+        else:
+            failures.append(f"lead import commit -> {applied.status_code} {applied.text[:160]}")
+    else:
+        failures.append(f"lead import -> {lead_upload.status_code} {lead_upload.text[:160]}")
+
+    # the roster answers `{members, assignable_roles}`, so the id is read from the key it lives under
+    roster = client.get("/api/v1/sales-team/members", headers=admin).json()
+    seat = str(roster["members"][0]["id"]) if roster.get("members") else ""
+    offered = {row["code"] for row in roster.get("assignable_roles", [])}
+    if seat and offered == {"sales_rep", "sales_manager", "customer_service", "account_manager"}:
+        SMOKE_IDS["team_member_id"] = seat
+        print("ok   GET /api/v1/sales-team/members -> a seat to move, and the roles the tab may assign")
+    else:
+        failures.append(f"GET /api/v1/sales-team/members -> seat={bool(seat)} assignable={sorted(offered)}")
 
     # the settings row is what the webhook handshake reads its token from (ADR-016 §1), so it is configured here
     configured = client.put(

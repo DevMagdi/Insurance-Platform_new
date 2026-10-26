@@ -1,9 +1,15 @@
 /**
- * Screen 6 — manager view of the sales team: one card per rep with a 10px stage bar,
- * a high-load warning above 20 open leads, and an unassigned pool that can be redistributed.
+ * Screen 6 — manager view of the sales team: one card per rep with a 10px stage bar, a high-load warning
+ * above 20 open leads, the unassigned pool that can be redistributed, and the office roster underneath.
+ *
+ * Two rules this screen exists to keep:
+ * - the pool is drained by the **server** (`unassigned_only`), because a client loop over one page could
+ *   only ever move `page_size` rows while telling the manager it moved the lot;
+ * - a refused move shows the API's own message. «لم نتمكن من تحميل هذه البيانات» tells nobody why 37 leads
+ *   stayed where they were.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarCheck, TriangleAlert, UserPlus } from "lucide-react";
+import { CalendarCheck, FileSpreadsheet, TriangleAlert, UserPlus } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -13,7 +19,10 @@ import { Avatar, Badge, Button, Card, PageHeader, SectionTitle, StateBlock } fro
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 import { formatNumber, formatPercent } from "@/lib/format";
-import type { Lead, RepWorkload } from "@/lib/api/views";
+import type { BulkAssignResult, Lead, RepWorkload } from "@/lib/api/views";
+
+import { ImportLeadsDialog } from "./ImportLeadsDialog";
+import { TeamMembersCard } from "./TeamMembersCard";
 
 const STAGE_ORDER = ["new", "contacted", "meeting_scheduled", "quote_sent", "negotiation"] as const;
 const STAGE_COLOR: Record<string, string> = {
@@ -32,28 +41,40 @@ export default function SalesTeamPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [redistributing, setRedistributing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
 
   const team = useQuery({ queryKey: ["sales", "team"], queryFn: () => api.get<RepWorkload[]>("/sales/team") });
   const unassigned = useQuery({
     queryKey: ["leads", "unassigned"],
-    queryFn: () => api.get<{ items: Lead[]; total: number }>("/leads", { unassigned: true, page_size: 50 }),
+    queryFn: () => api.get<{ items: Lead[]; total: number }>("/leads", { unassigned: true, page_size: 100 }),
   });
 
-  const assign = useMutation({
-    mutationFn: async (input: { leadIds: string[]; repId: string }) => {
-      for (const id of input.leadIds) {
-        await api.post(`/leads/${id}/assign`, { assigned_to: input.repId });
-      }
-      return input.leadIds.length;
-    },
-    onSuccess: (count) => {
-      void queryClient.invalidateQueries({ queryKey: ["leads"] });
-      void queryClient.invalidateQueries({ queryKey: ["sales"] });
+  const pool = unassigned.data?.items ?? [];
+  const poolTotal = unassigned.data?.total ?? 0;
+
+  async function refresh() {
+    // every list that shows a lead, a workload number or a seat reads one of these three keys
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["leads"] }),
+      queryClient.invalidateQueries({ queryKey: ["sales"] }),
+      queryClient.invalidateQueries({ queryKey: ["sales-team"] }),
+    ]);
+  }
+
+  const redistribute = useMutation({
+    mutationFn: (input: { to: string[]; onlySelected: boolean }) =>
+      api.post<BulkAssignResult>("/leads/assign-bulk", input.onlySelected ? { lead_ids: picked, to: input.to } : { unassigned_only: true, to: input.to }),
+    onSuccess: async (result) => {
+      await refresh();
       setRedistributing(false);
-      toast(t("leads.assignSaved"));
-      if (count === 0) toast(t("leads.empty"), "warn");
+      setPicked([]);
+      const moved = result.assigned ?? 0;
+      // "nothing moved" is a different fact from "the request failed", and both are said differently
+      if (moved === 0) toast(t("leads.redistributeNothing"), "warn");
+      else toast(t("leads.redistributeDone", { n: formatNumber(moved), skipped: formatNumber(result.skipped?.length ?? 0) }));
     },
-    onError: () => toast(t("common.errorBody"), "error"),
+    onError: (error: Error) => toast(error.message, "error"),
   });
 
   if (team.isPending) return <StateBlock kind="loading" />;
@@ -72,9 +93,14 @@ export default function SalesTeamPage() {
         title={t("leads.team")}
         subtitle={t("leads.teamSubtitle")}
         actions={
-          <Button variant="primary" icon={<UserPlus size={16} strokeWidth={1.8} />} onClick={() => navigate("/leads/new")}>
-            {t("leads.newLead")}
-          </Button>
+          <>
+            <Button icon={<FileSpreadsheet size={16} strokeWidth={1.8} />} onClick={() => setImporting(true)}>
+              {t("leads.importLeads")}
+            </Button>
+            <Button variant="primary" icon={<UserPlus size={16} strokeWidth={1.8} />} onClick={() => navigate("/leads/new")}>
+              {t("leads.newLead")}
+            </Button>
+          </>
         }
       />
 
@@ -147,7 +173,7 @@ export default function SalesTeamPage() {
         <div className="px-[20px] py-[18px]">
           <SectionTitle
             action={
-              <Button variant="primary" disabled={(unassigned.data?.total ?? 0) === 0} onClick={() => setRedistributing(true)}>
+              <Button variant="primary" disabled={poolTotal === 0} onClick={() => setRedistributing(true)}>
                 {t("leads.redistribute")}
               </Button>
             }
@@ -156,32 +182,67 @@ export default function SalesTeamPage() {
           </SectionTitle>
           {unassigned.isPending ? (
             <StateBlock kind="loading" />
-          ) : (unassigned.data?.items ?? []).length === 0 ? (
+          ) : pool.length === 0 ? (
             <p className="text-[13px] text-muted">{t("leads.empty")}</p>
           ) : (
-            <ul className="space-y-2">
-              {(unassigned.data?.items ?? []).slice(0, 6).map((lead) => (
-                <li key={lead.id} className="flex items-center justify-between gap-3 border-t border-line pt-2 text-[13px]">
-                  <button type="button" className="truncate font-semibold text-ink hover:text-primary" onClick={() => navigate(`/leads/${lead.id}`)}>
-                    {lead.name}
-                  </button>
-                  <span className="shrink-0 text-muted">{t(`leadStatus.${lead.status}`)}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              {/* the list is a page; the "all unassigned" mode is not, and saying so stops the cap reading as a lie */}
+              {poolTotal > pool.length ? (
+                <p className="mb-2 text-[11.5px] text-muted">{t("leads.poolPaged", { shown: formatNumber(pool.length), total: formatNumber(poolTotal) })}</p>
+              ) : null}
+              <ul className="space-y-2" data-testid="unassigned-pool">
+                {pool.map((lead) => (
+                  <li key={lead.id} className="flex items-center justify-between gap-3 border-t border-line pt-2 text-[13px]">
+                    <label className="flex min-w-0 flex-1 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        aria-label={t("leads.pickRow", { name: lead.name })}
+                        checked={picked.includes(lead.id)}
+                        onChange={(event) => setPicked(event.target.checked ? [...picked, lead.id] : picked.filter((id) => id !== lead.id))}
+                      />
+                      <button type="button" className="truncate font-semibold text-ink hover:text-primary" onClick={() => navigate(`/leads/${lead.id}`)}>
+                        {lead.name}
+                      </button>
+                    </label>
+                    <span className="flex shrink-0 items-center gap-3">
+                      <span className="text-muted">{t(`leadStatus.${lead.status}`)}</span>
+                      <button
+                        type="button"
+                        className="font-semibold text-primary hover:underline"
+                        onClick={() => {
+                          setPicked([lead.id]);
+                          setRedistributing(true);
+                        }}
+                      >
+                        {t("leads.reassignRow")}
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </div>
       </Card>
 
+      <div className="mt-5">
+        <TeamMembersCard />
+      </div>
+
       {redistributing ? (
         <RedistributeDialog
-          reps={rows}
-          leads={(unassigned.data?.items ?? []).map((lead) => lead.id)}
-          busy={assign.isPending}
+          // only a live seat can take work: the server refuses an inactive target with 422, and the dialog's
+          // own empty state already says «لا يوجد بيّاع نشط» — so the list it offers is the active one
+          reps={rows.filter((row) => row.is_active)}
+          poolTotal={poolTotal}
+          selectedCount={picked.length}
+          busy={redistribute.isPending}
           onClose={() => setRedistributing(false)}
-          onSubmit={(repId) => assign.mutate({ leadIds: (unassigned.data?.items ?? []).map((lead) => lead.id), repId })}
+          onSubmit={(input) => redistribute.mutate(input)}
         />
       ) : null}
+
+      {importing ? <ImportLeadsDialog onClose={() => setImporting(false)} /> : null}
     </>
   );
 }
@@ -198,48 +259,93 @@ function Stat({ label, value, icon }: { label: string; value: number | null | un
   );
 }
 
+type Mode = "all" | "selected";
+
 function RedistributeDialog({
   reps,
-  leads,
+  poolTotal,
+  selectedCount,
   onSubmit,
   onClose,
   busy,
 }: {
   reps: RepWorkload[];
-  leads: string[];
-  onSubmit: (repId: string) => void;
+  poolTotal: number;
+  selectedCount: number;
+  onSubmit: (input: { to: string[]; onlySelected: boolean }) => void;
   onClose: () => void;
   busy: boolean;
 }) {
   const { t } = useTranslation();
-  const [repId, setRepId] = useState("");
+  const [to, setTo] = useState<string[]>([]);
+  const [mode, setMode] = useState<Mode>(selectedCount > 0 ? "selected" : "all");
+  const targets = mode === "all" ? poolTotal : selectedCount;
+  const ready = to.length > 0 && targets > 0;
+
   return (
     <Modal
       title={t("leads.redistribute")}
+      width={520}
       onClose={onClose}
       actions={
         <>
           <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button variant="primary" busy={busy} disabled={repId.length === 0 || leads.length === 0} onClick={() => onSubmit(repId)}>
-            {t("common.confirm")}
+          <Button variant="primary" busy={busy} disabled={!ready} onClick={() => onSubmit({ to, onlySelected: mode === "selected" })}>
+            {t("leads.redistributeGo", { n: formatNumber(targets) })}
           </Button>
         </>
       }
     >
-      <p className="text-[13px] text-muted">
-        {t("leads.redistributeBody")} · {formatNumber(leads.length)} {t("common.rows")}
-      </p>
-      <label className="label mt-4" htmlFor="rep-pick">
-        {t("leads.rep")}
-      </label>
-      <select id="rep-pick" className="field" value={repId} onChange={(event) => setRepId(event.target.value)}>
-        <option value="">{t("common.none")}</option>
-        {reps.map((rep) => (
-          <option key={rep.rep_id} value={rep.rep_id}>
-            {rep.name} — {formatNumber(rep.open_leads)}
-          </option>
-        ))}
-      </select>
+      <div className="flex gap-2">
+        <ModeButton active={mode === "all"} disabled={poolTotal === 0} onClick={() => setMode("all")} label={t("leads.redistributeAll", { n: formatNumber(poolTotal) })} />
+        <ModeButton
+          active={mode === "selected"}
+          disabled={selectedCount === 0}
+          onClick={() => setMode("selected")}
+          label={t("leads.redistributeSelection", { n: formatNumber(selectedCount) })}
+        />
+      </div>
+
+      <p className="mt-3 text-[12.5px] leading-[20px] text-muted">{t("leads.redistributeBody")}</p>
+
+      <fieldset className="mt-3 border-0 p-0" data-testid="redistribute-reps">
+        <legend className="label">{t("leads.redistributePickReps")}</legend>
+        <ul className="space-y-1.5">
+          {reps.map((rep) => (
+            <li key={rep.rep_id}>
+              <label className="flex cursor-pointer items-center gap-2.5 rounded-btn border border-line px-3 py-2 text-[13px] hover:bg-[#FAFBFF]">
+                <input
+                  type="checkbox"
+                  checked={to.includes(rep.rep_id)}
+                  onChange={(event) => setTo(event.target.checked ? [...to, rep.rep_id] : to.filter((id) => id !== rep.rep_id))}
+                />
+                <Avatar name={rep.name} size={26} />
+                <span className="min-w-0 flex-1 truncate font-semibold text-ink">{rep.name}</span>
+                <span className="shrink-0 text-[12px] text-muted" dir="ltr">
+                  {formatNumber(rep.open_leads)}
+                </span>
+              </label>
+            </li>
+          ))}
+          {reps.length === 0 ? <li className="text-[12.5px] text-muted">{t("leads.noReps")}</li> : null}
+        </ul>
+      </fieldset>
+
+      {to.length > 1 ? <p className="mt-3 text-[11.5px] leading-[18px] text-muted">{t("leads.redistributeSplit", { n: formatNumber(to.length) })}</p> : null}
     </Modal>
+  );
+}
+
+function ModeButton({ active, disabled, label, onClick }: { active: boolean; disabled: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex-1 rounded-btn border px-3 py-2 text-[12.5px] font-semibold transition-colors duration-150 disabled:opacity-50"
+      style={{ borderColor: active ? "var(--primary)" : "var(--line-2)", background: active ? "var(--primary-soft)" : "var(--card)", color: active ? "var(--primary-ink)" : "var(--ink)" }}
+    >
+      {label}
+    </button>
   );
 }

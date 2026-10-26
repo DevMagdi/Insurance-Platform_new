@@ -48,7 +48,12 @@ export default defineConfig({
   expect: { timeout: 8_000 },
   fullyParallel: false,
   workers: 1,
-  reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : [["list"], ["html", { open: "never" }]],
+  // `json` is not decoration: CI keeps at most 50 annotations per check-run and the raw job log is served
+  // from blob storage a reviewer's sandbox cannot read, so failure details were invisible and got guessed at.
+  // The file is what `frontend/scripts/ci-e2e-digest.py` turns into a PR comment.
+  reporter: process.env.CI
+    ? [["github"], ["html", { open: "never" }], ["json", { outputFile: "/tmp/playwright-results.json" }]]
+    : [["list"], ["html", { open: "never" }]],
   outputDir: "test-results/e2e",
   use: {
     baseURL: `http://127.0.0.1:${webPort}`,

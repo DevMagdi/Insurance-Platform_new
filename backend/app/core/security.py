@@ -132,3 +132,22 @@ def _totp_for_counter(secret_b32: str, counter: int) -> str:
 
 def new_totp_secret() -> str:
     return base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+
+
+#: no look-alikes (l/1/I, O/0): a temporary password is read aloud or pasted once, and the account cannot
+#: be recovered without it
+_TEMP_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+
+
+def generate_temp_password(length: int = 14) -> str:
+    """A throwaway password for an account the owner is expected to change on their first sign-in.
+
+    It clears the 10-character policy with room to spare and is guaranteed to carry an upper, a lower and a
+    digit, so no client has to be taught that the policy is already satisfied.
+    """
+    if length < 10:
+        raise ValueError("a generated password must clear the 10-character policy")
+    while True:
+        value = "".join(secrets.choice(_TEMP_ALPHABET) for _ in range(length))
+        if any(c.isupper() for c in value) and any(c.islower() for c in value) and any(c.isdigit() for c in value):
+            return value

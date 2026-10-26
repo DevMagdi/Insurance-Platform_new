@@ -47,6 +47,9 @@ export default function LeadDetailPage() {
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["leads"] });
     void queryClient.invalidateQueries({ queryKey: ["clients"] });
+    // an assignment moves a number on the team screen's workload cards, so those are re-read too
+    void queryClient.invalidateQueries({ queryKey: ["sales"] });
+    void queryClient.invalidateQueries({ queryKey: ["sales-team"] });
   };
 
   const setStatus = useMutation({

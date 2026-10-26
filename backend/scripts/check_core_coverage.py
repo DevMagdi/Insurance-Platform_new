@@ -25,6 +25,10 @@ CORE = [
     "app/services/users.py",
     "app/services/masters.py",
     "app/services/audit.py",
+    # the two services this round added, gated from the day they landed: a sheet importer whose dedupe or
+    # phone branch quietly loses coverage is exactly what the next person will not notice
+    "app/services/lead_import.py",
+    "app/services/team.py",
 ]
 FLOOR = 80.0
 

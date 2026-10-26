@@ -67,8 +67,8 @@ test.describe("screenshots for design review", () => {
     expect(enabled.status()).toBe(200);
 
     const manager = await apiLogin(request, MANAGER);
-    const clients = await (await request.get("/api/v1/clients?limit=1", { headers: manager })).json();
-    const leads = await (await request.get("/api/v1/leads?limit=1", { headers: manager })).json();
+    const clients = await (await request.get("/api/v1/clients?page_size=1", { headers: manager })).json();
+    const leads = await (await request.get("/api/v1/leads?page_size=1", { headers: manager })).json();
     ids.clientId = clients.items[0]?.id ?? "";
     ids.leadId = leads.items[0]?.id ?? "";
     expect(ids.clientId, "the seed must contain a client to photograph").toBeTruthy();

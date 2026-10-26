@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { formatNumber } from "../src/lib/format";
+import { formatNumber, formatPercent } from "../src/lib/format";
 
 import { apiLogin, login, MANAGER, REPS } from "./fixtures";
 
@@ -12,10 +12,16 @@ test.describe("dashboard (screen 1)", () => {
 
     await login(page, MANAGER);
     await expect(page.getByRole("heading", { name: "لوحة التحكم", exact: true })).toBeVisible();
-    await expect(page.getByText("نظرة حية على كل الطلبات والقنوات", { exact: true })).toBeVisible();
+    // the phrase lives twice: the shell's top bar shows it as a breadcrumb, the page header shows it with
+    // the date. The screen's own copy is the one inside `main`.
+    await expect(page.locator("main").getByText("نظرة حية على كل الطلبات والقنوات")).toBeVisible();
 
     for (const label of ["طلبات اليوم", "متوسط زمن أول رد", "الالتزام بالـSLA", "طلبات متأخرة"]) {
-      await expect(page.getByText(label, { exact: true })).toBeVisible();
+      // the tile's own label, inside the screen — `main` scoping keeps a shell duplicate out of the frame,
+      // and the box is part of the message because a "hidden" verdict on a painted node needs the geometry
+      const tile = page.locator("main").getByText(label, { exact: true }).first();
+      const box = await tile.boundingBox().catch(() => null);
+      await expect(tile, `KPI «${label}» must be painted on the dashboard (boundingBox=${JSON.stringify(box)})`).toBeVisible();
     }
 
     // the KPI tiles must carry the API's numbers (Egyptian digits), never the mockup's hardcoded ones
@@ -25,7 +31,16 @@ test.describe("dashboard (screen 1)", () => {
     expect(main).not.toContain("الهدف 90%");
     expect(main).toContain(formatNumber(summary.requests_today));
     if (summary.sla_compliance_pct !== null && summary.sla_compliance_pct !== undefined) {
-      expect(main, "percentages must be localised").toContain("٪");
+      /*
+       * The tiles paint their labels before the summary resolves — `value` is undefined until it does, and
+       * the Kpi renders a skeleton — so a one-shot read of `innerText` raced the data and lost. Polling the
+       * API's own percentage is the same claim with the wait made explicit.
+       */
+      await expect(async () => {
+        const text = await page.locator("main").innerText();
+        expect(text, "percentages must be localised").toContain("٪");
+        expect(text, "the SLA tile must show the API's percentage").toContain(formatPercent(summary.sla_compliance_pct));
+      }).toPass({ timeout: 20_000 });
     }
 
     // charts and the recent table are real content, not skeletons
@@ -36,7 +51,7 @@ test.describe("dashboard (screen 1)", () => {
 
   test("the shell is RTL with the sidebar nav on the logical start edge", async ({ page, request }) => {
     const auth = await apiLogin(request, MANAGER);
-    const open = (await (await request.get("/api/v1/requests?only_open=true&limit=1", { headers: auth })).json()).total as number;
+    const open = (await (await request.get("/api/v1/requests?only_open=true&page_size=1", { headers: auth })).json()).total as number;
 
     await login(page, MANAGER);
     const root = page.locator("html");
@@ -67,6 +82,12 @@ test.describe("dashboard (screen 1)", () => {
 
   test("the header search filters the shared queue", async ({ page }) => {
     await login(page, MANAGER);
+    if ((page.viewportSize()?.width ?? 0) < 1024) {
+      // below `lg` the shell does not render the global field at all (`hidden lg:block`): the phone screens
+      // own their search. Demanding the desktop control at 390px tested a header that is not there.
+      await expect(page.getByRole("search")).toHaveCount(0);
+      return;
+    }
     const box = page.getByRole("search").getByRole("textbox");
     await box.fill("أحمد");
     await box.press("Enter");
@@ -83,8 +104,8 @@ test.describe("dashboard (screen 1)", () => {
 
     // the same boundary the sidebar promises is what the API enforces
     const auth = await apiLogin(request, REPS.sara);
-    expect((await request.get("/api/v1/requests?limit=1", { headers: auth })).status()).toBe(403);
-    const mine = await (await request.get("/api/v1/leads?limit=1", { headers: auth })).json();
+    expect((await request.get("/api/v1/requests?page_size=1", { headers: auth })).status()).toBe(403);
+    const mine = await (await request.get("/api/v1/leads?page_size=1", { headers: auth })).json();
     expect(mine.total).toBeGreaterThan(0);
   });
 });

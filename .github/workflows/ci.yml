@@ -12,6 +12,9 @@ concurrency:
 
 permissions:
   contents: read
+  # only used by the e2e job's failure digest, and only on `pull_request` events: the report has to land
+  # somewhere a reviewer can read it, and job logs cannot be fetched outside GitHub's own UI
+  pull-requests: write
 
 jobs:
   backend:
@@ -159,6 +162,17 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
           E2E_USE_PREVIEW=1 npm run e2e
+      - name: Failure digest on the PR
+        # WHY: GitHub cuts check-run annotations at 50 and the raw job log is only served from blob storage,
+        # which a reviewer's sandbox cannot fetch. Without this, "25 failed" is the whole story and people
+        # fix specs by guessing at the DOM — that cost two extra rounds on `e2e/settings.spec.ts`.
+        if: failure() && github.event_name == 'pull_request'
+        continue-on-error: true # a digest must never become a second reason for a red run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/ci-e2e-digest.py
+          gh pr comment "${{ github.event.number }}" --repo "$GITHUB_REPOSITORY" --body-file /tmp/e2e-failures.md
       - name: Screenshots for design review
         if: always()
         uses: actions/upload-artifact@v4

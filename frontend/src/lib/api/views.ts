@@ -58,3 +58,13 @@ export type RequestPage = components["schemas"]["RequestPageOut"];
 export type ClientPage = components["schemas"]["ClientPageOut"];
 export type InsuredPage = components["schemas"]["InsuredPageOut"];
 export type AnyPage = components["schemas"]["PageOut"];
+
+/* ── team round: the office roster, the seat the API let us add, and the lead-import report ───────── */
+/** A seat in the sales office with the load the manager sees next to it. */
+export type TeamMember = components["schemas"]["TeamMemberOut"];
+/** What `GET /sales-team/members` answers: the seats plus the roles this screen may hand out. */
+export type TeamRoster = components["schemas"]["TeamRosterOut"];
+/** The dry-run preview and the final report of one sheet — the same object at both stages. */
+export type LeadImportJob = components["schemas"]["LeadImportOut"];
+/** The receipt of a bulk redistribution: how many moved, how many per rep, and what was skipped. */
+export type BulkAssignResult = components["schemas"]["LeadBulkAssignOut"];

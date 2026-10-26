@@ -18,9 +18,13 @@ test.describe("insured persons import (screen 11)", () => {
   test.skip(!existsSync(SHEET), "fixture workbook missing");
 
   test("dry-run shows what would change, then the commit writes the roster", async ({ page, request }) => {
+    test.skip(
+      test.info().project.name !== "desktop",
+      "screen 11 is the client file's tab strip (a table plus the import dialog) — a desktop layout; the sheet's own rules are asserted on both projects by the test below",
+    );
     test.slow();
     const auth = await apiLogin(request, MANAGER);
-    const clients = await (await request.get("/api/v1/clients?limit=1", { headers: auth })).json();
+    const clients = await (await request.get("/api/v1/clients?page_size=1", { headers: auth })).json();
     expect(clients.items.length, "the seed must contain at least one client").toBeGreaterThan(0);
     const clientId = clients.items[0].id as string;
     const clientName = clients.items[0].name as string;
@@ -38,7 +42,7 @@ test.describe("insured persons import (screen 11)", () => {
     await expect(page.getByText(/إضافة/).first()).toBeVisible();
     // `GET /clients/{id}/insured` answers { kpis, page: { items, total } } — read the envelope.
     const rosterTotal = async () => {
-      const body = await (await request.get(`/api/v1/clients/${clientId}/insured?limit=1`, { headers: auth })).json();
+      const body = await (await request.get(`/api/v1/clients/${clientId}/insured?page_size=1`, { headers: auth })).json();
       return body.page.total as number;
     };
     const before = await rosterTotal();
@@ -90,7 +94,7 @@ test.describe("insured persons import (screen 11)", () => {
       });
 
     const rosterTotal = async () => {
-      const body = await (await request.get(`/api/v1/clients/${clientId}/insured?limit=1`, { headers: auth })).json();
+      const body = await (await request.get(`/api/v1/clients/${clientId}/insured?page_size=1`, { headers: auth })).json();
       return body.page.total as number;
     };
 

@@ -35,6 +35,7 @@
 | تفاصيل 270px | `w-[270px] shrink-0 border-r border-line` (سطر 275) | ✅ |
 | مشغّل صوتي 20 شريطاً بارتفاعات مختلفة | `BARS = 20`، `HEIGHTS` مشتقة من `seed` لكل رسالة، 2px → 16px | ✅ |
 | «العميل لم يحدد اسم الشركة» | `inbox.callerUnknown` | ✅ |
+| لا نسخة موبايل من هذه الشاشة (3 أعمدة كما في الورقة) | `w-[330px] shrink-0` + `w-[270px] shrink-0` بلا تجميع عند `lg` | ✅ كما في التصميم — والاختبارات التي تكتب داخل الخيط `desktop`-only بسبب ذلك (السبب مكتوب في رأس `frontend/e2e/inbox.spec.ts`)؛ سطح الموبايل في هذا المنتج هو شاشة 6 |
 | ردّ داخلي/خارجي، مرفقات، مكالمة | تبويبات + رفع مرفق + `POST /dev/sim/call` | ✅ |
 
 الفارق: زر «اتصال» يفتح نافذة تسجيل مكالمة (مدة + ملاحظة) لأنه لا يوجد WebRTC في المرحلة الأولى؛
@@ -89,7 +90,13 @@
 |---|---|---|
 | كروت مندوبين + «حِمل مرتفع» | `leads.loadHigh` عند `active > 20` | ✅ |
 | أشرطة مراحل 10px | `h-[10px] rounded-pill` | ✅ |
-| مجموعة غير موزّعة + إعادة توزيع | `GET /leads?unassigned=true` + `POST /leads/{id}/assign` | ✅ |
+| حوض «غير مسند» + إعادة توزيع بطلب واحد | `GET /leads?unassigned=true` + `POST /leads/assign-bulk` (`{unassigned_only, to:[…]}`، لا حلقة `PATCH` على صفحة واحدة) | ✅ |
+| استيراد Excel/CSV من اللوحة | زر `leads.importLeads` عند `leads.view_all` فقط → `frontend/src/features/leads/ImportLeadsDialog.tsx` (معاينة ⇒ `POST /leads/import/{job}/commit`) | ✅ |
+| أعضاء المكتب (مقاعد + أدوار + كلمة مرور مؤقّتة) | `frontend/src/features/leads/TeamMembersCard.tsx` فوق `GET/POST/PATCH /sales-team/members[/{user_id}]`، بسقف `OFFICE_ROLES` وصلاحية `leads.assign` | ✅ |
+| لوحة الحِمل تُظهر الموقوف ولا يمنحه منتقي التوزيع | `RepWorkloadOut.is_active` ⇒ `rows.filter((row) => row.is_active)` في `RedistributeDialog` | ✅ |
+
+لا يوجد في هذا المنتج «جدول كل الـ Leads» كشاشة مستقلة؛ إسناد الصف colocated مع الحوض ومن تفاصيل الـ lead
+(ADR-017 §7). الأرقام الحيّة لكل سطر أعلاه في `docs/STATUS.md` («جولة R2»).
 
 ## 8. قائمة العملاء — `features/clients/ClientsPage.tsx`
 

@@ -98,6 +98,10 @@ export default function UsersPage() {
                   <p className="truncate text-[12px] text-muted" dir="ltr">
                     {row.email}
                   </p>
+                  {/* the mobile the member was added with, so the row can be checked against the sheet */}
+                  <p className="truncate text-[11.5px] text-muted" dir="ltr">
+                    {row.mobile || t("common.none")}
+                  </p>
                 </div>
                 <div className="hidden min-w-0 flex-col items-end gap-1 text-end sm:flex">
                   <Badge tone="b">{row.role_name ?? row.role}</Badge>
@@ -171,7 +175,6 @@ export default function UsersPage() {
           onClose={() => setCreating(false)}
           onCreated={async () => {
             await queryClient.invalidateQueries({ queryKey: ["users"] });
-            toast(t("users.permsSaved"));
           }}
         />
       ) : null}
@@ -179,27 +182,62 @@ export default function UsersPage() {
   );
 }
 
-function NewUserDialog({
-  roles,
-  onClose,
-  onCreated,
-}: {
-  roles: Role[];
-  onClose: () => void;
-  onCreated: () => void | Promise<void>;
-}) {
+function NewUserDialog({ roles, onClose, onCreated }: { roles: Role[]; onClose: () => void; onCreated: () => void | Promise<void> }) {
   const { t } = useTranslation();
   const toast = useToast();
-  const [form, setForm] = useState({ email: "", full_name: "", password: "", role_code: roles[0]?.code ?? "", mobile: "" });
+  const [form, setForm] = useState({ email: "", full_name: "", password: "", role_code: roles[0]?.code ?? "", mobile: "", is_active: true });
+  // a generated password is kept on screen until it has been copied; a toast would fade with the only copy
+  const [issued, setIssued] = useState<{ email: string; password: string } | null>(null);
+
   const create = useMutation({
-    mutationFn: () => api.post("/users", { ...form, is_active: true }),
-    onSuccess: async () => {
+    mutationFn: () =>
+      api.post<{ id: string; email: string; role: string; temporary_password?: string | null }>("/users", {
+        ...form,
+        // blank means "the server generates one", and the answer carries it back exactly once
+        password: form.password.trim(),
+      }),
+    onSuccess: async (created) => {
       await onCreated();
-      onClose();
+      const password = created.temporary_password;
+      if (password) setIssued({ email: created.email, password });
+      else {
+        toast(t("users.userCreated"));
+        onClose();
+      }
     },
     onError: (error: Error) => toast(error.message, "error"),
   });
-  const valid = form.email.includes("@") && form.password.length >= 10 && form.full_name.trim().length >= 2;
+  const valid = form.email.includes("@") && form.full_name.trim().length >= 2 && (form.password.trim().length === 0 || form.password.trim().length >= 10);
+
+  if (issued !== null) {
+    return (
+      <Modal
+        title={t("users.newUser")}
+        onClose={onClose}
+        actions={
+          <Button variant="primary" onClick={onClose}>
+            {t("common.close")}
+          </Button>
+        }
+      >
+        <p className="text-[13px] leading-[22px] text-muted">{t("users.issuedNote")}</p>
+        <dl className="mt-3 space-y-2 rounded-card border border-line bg-[var(--kanban-col)] px-3 py-2.5 text-[13px]">
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-muted">{t("auth.email")}</dt>
+            <dd className="font-semibold text-ink" dir="ltr">
+              {issued.email}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-muted">{t("users.fieldPassword")}</dt>
+            <dd className="select-all font-mono font-bold text-ink" dir="ltr" data-testid="user-issued-password">
+              {issued.password}
+            </dd>
+          </div>
+        </dl>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -222,11 +260,15 @@ function NewUserDialog({
         {t("auth.email")}
       </label>
       <input id="nu-email" dir="ltr" className="field" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+      <label className="label mt-3" htmlFor="nu-mobile">
+        {t("users.colMobile")}
+      </label>
+      <input id="nu-mobile" dir="ltr" className="field" placeholder={t("users.mobileHint")} value={form.mobile} onChange={(event) => setForm({ ...form, mobile: event.target.value })} />
       <label className="label mt-3" htmlFor="nu-password">
         {t("auth.password")}
       </label>
       <input id="nu-password" type="password" dir="ltr" className="field" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
-      <p className="mt-1 text-[11.5px] text-muted">{t("newLead.required")}</p>
+      <p className="mt-1 text-[11.5px] text-muted">{t("users.passwordOptionalHint")}</p>
       <label className="label mt-3" htmlFor="nu-role">
         {t("users.colRole")}
       </label>
@@ -237,6 +279,10 @@ function NewUserDialog({
           </option>
         ))}
       </select>
+      <div className="mt-4 flex items-center justify-between gap-3 rounded-btn bg-[var(--kanban-col)] px-3 py-2">
+        <span className="text-[12.5px] font-semibold text-ink">{t("users.activateNow")}</span>
+        <Toggle label={t("users.activateNow")} checked={form.is_active} onChange={(next) => setForm({ ...form, is_active: next })} />
+      </div>
     </Modal>
   );
 }

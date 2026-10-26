@@ -17,6 +17,13 @@ from app.models.auth import Role, User
 from app.models.leads import Lead, LeadActivity, LeadMeeting
 from app.repositories.scope_filters import with_scope
 
+#: the unassigned pool: nobody owns it, and it is not already finished. `list_page(unassigned=true)`,
+#: `unassigned_ids` and the count on the team card all read this one definition.
+_UNASSIGNED_POOL: tuple[Any, ...] = (
+    Lead.assigned_to.is_(None),
+    Lead.status.notin_([LeadStatus.WON, LeadStatus.LOST]),
+)
+
 _SORTABLE = {
     "name": Lead.name,
     "status": Lead.status,
@@ -56,8 +63,9 @@ async def list_page(
     if assigned_to is not None:
         conds.append(Lead.assigned_to == assigned_to)
     if unassigned:
-        # screen 6 lets a manager drain the pool of leads nobody owns yet
-        conds.append(Lead.assigned_to.is_(None))
+        # screen 6 lets a manager drain the pool of leads nobody owns yet — the same predicate
+        # `unassigned_ids` uses for the actual redistribution, or the card would list rows the button skips
+        conds.extend(_UNASSIGNED_POOL)
     if q:
         like = f"%{q.strip().lower()}%"
         conds.append(
@@ -84,6 +92,12 @@ async def list_page(
     items = list((await session.execute(stmt)).scalars().unique())
     total = int((await session.execute(count_stmt)).scalar_one())
     return items, total
+
+
+async def unassigned_ids(session: AsyncSession, scope: Scope, *, limit: int = 2_000) -> list[UUID]:
+    """Ids of the unassigned pool, in the order a redistribution should hand them out (oldest first)."""
+    stmt = with_scope(select(Lead.id).where(and_(*_UNASSIGNED_POOL)), scope, "lead").order_by(Lead.created_at).limit(limit)
+    return list((await session.execute(stmt)).scalars())
 
 
 async def board(session: AsyncSession, scope: Scope, *, assigned_to: UUID | None = None, q: str | None = None) -> dict[str, list[Lead]]:
@@ -215,11 +229,14 @@ async def rep_workload(session: AsyncSession) -> list[dict[str, Any]]:
             func.count(Lead.id).filter(Lead.status.notin_([LeadStatus.WON, LeadStatus.LOST])).label("open_leads"),
             func.count(Lead.id).filter(Lead.status == LeadStatus.MEETING_SCHEDULED).label("meetings"),
             func.count(Lead.id).filter(Lead.status == LeadStatus.WON).label("won"),
+            User.is_active,
         )
         .outerjoin(Lead, and_(Lead.assigned_to == User.id, Lead.deleted_at.is_(None)))
         .join(Role, Role.id == User.role_id)
-        .where(func.lower(Role.code) == "sales_rep")
-        .group_by(User.id, User.full_name)
+        # a deleted seat is nobody's workload; a suspended one still is — its open leads did not evaporate —
+        # and `is_active` is what keeps it out of the redistribution picker
+        .where(func.lower(Role.code) == "sales_rep", User.deleted_at.is_(None))
+        .group_by(User.id, User.full_name, User.is_active)
     )
     rows = (await session.execute(stmt)).all()
 
@@ -232,15 +249,7 @@ async def rep_workload(session: AsyncSession) -> list[dict[str, Any]]:
     for assigned_to, status, count in (await session.execute(stage_stmt)).all():
         stages.setdefault(assigned_to, {})[status.value if hasattr(status, "value") else status] = int(count)
 
-    unassigned = int(
-        (
-            await session.execute(
-                select(func.count(Lead.id)).where(
-                    Lead.assigned_to.is_(None), Lead.deleted_at.is_(None), Lead.status.notin_([LeadStatus.WON, LeadStatus.LOST])
-                )
-            )
-        ).scalar_one()
-    )
+    unassigned = int((await session.execute(select(func.count(Lead.id)).where(Lead.deleted_at.is_(None), *_UNASSIGNED_POOL))).scalar_one())
     return [
         {
             "rep_id": str(r.id),
@@ -250,6 +259,7 @@ async def rep_workload(session: AsyncSession) -> list[dict[str, Any]]:
             "won": int(r.won),
             "stages": stages.get(r.id, {}),
             "unassigned": unassigned,
+            "is_active": bool(r.is_active),
         }
         for r in rows
     ]

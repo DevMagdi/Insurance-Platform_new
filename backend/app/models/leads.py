@@ -10,7 +10,7 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.domain.enums import ActivityType, ClientType, LeadStatus
+from app.domain.enums import ActivityType, ClientType, ImportJobStatus, LeadStatus
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin, TZDateTime, UUIDPkMixin, enum_col
 
 if TYPE_CHECKING:
@@ -33,6 +33,10 @@ class Lead(UUIDPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     type: Mapped[ClientType] = mapped_column(enum_col(ClientType), default=ClientType.COMPANY, nullable=False)
     name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
     contact_name: Mapped[str | None] = mapped_column(sa.String(160))
+    #: job title of `contact_name` at the company. It exists because the Excel import carries a
+    #: "البوزيشن" column and there was no honest place for it: `contact_name` holds a person, not a title,
+    #: and stuffing it into `needs_text` would make it unqueryable and invisible in the detail sheet.
+    contact_title: Mapped[str | None] = mapped_column(sa.String(120))
     mobile: Mapped[str | None] = mapped_column(sa.String(20))  # E.164, normalized
     email: Mapped[str | None] = mapped_column(sa.String(255))
     source: Mapped[str | None] = mapped_column(sa.String(80))
@@ -91,3 +95,33 @@ class LeadMeeting(UUIDPkMixin, TimestampMixin, Base):
     created_by: Mapped[UUID | None] = mapped_column(sa.Uuid(), sa.ForeignKey("users.id"))
 
     lead: Mapped[Lead] = relationship()
+
+
+class LeadImportJob(UUIDPkMixin, TimestampMixin, Base):
+    """One Excel/CSV upload of leads, previewed before it is applied (dry-run → commit → report).
+
+    A separate table from `import_jobs`, deliberately: that one is keyed by `client_id NOT NULL` and its
+    commit path authorises through the *client* scope, which a pool of not-yet-owned leads has no part of.
+    Reusing it would mean dropping a NOT NULL and branching every existing query on `client_id IS NULL` —
+    so the *pattern* is copied (status/total_rows/stats/error_report/rows_payload, `import_job_brief`
+    shape) and the table is not. The same `importjobstatus_v` check constraint keeps the states identical.
+
+    `rows_payload` is the prepared rows — the only thing commit reads, so a row cannot change shape between
+    the preview a manager approved and the insert that follows it.
+    """
+
+    __tablename__ = "lead_import_jobs"
+    __table_args__ = (sa.Index("ix_lead_import_jobs_created", "created_by", "created_at"),)
+
+    status: Mapped[ImportJobStatus] = mapped_column(enum_col(ImportJobStatus), default=ImportJobStatus.DRY_RUN, nullable=False)
+    filename: Mapped[str | None] = mapped_column(sa.String(255))
+    total_rows: Mapped[int] = mapped_column(sa.Integer, default=0, nullable=False)
+    #: {"rows": n, "ready": n, "errors": n, "skipped_duplicate": n, "warnings": n, "created": n, ...}
+    stats: Mapped[dict[str, Any]] = mapped_column(sa.JSON, default=dict, nullable=False)
+    #: every row the file got wrong or read differently: {row, field, message, kind: error|warning}
+    error_report: Mapped[list[dict[str, Any]]] = mapped_column(sa.JSON, default=list, nullable=False)
+    rows_payload: Mapped[list[dict[str, Any]]] = mapped_column(sa.JSON, default=list, nullable=False)
+    #: who uploaded it, and who pressed commit — not always the same manager
+    created_by: Mapped[UUID | None] = mapped_column(sa.Uuid(), sa.ForeignKey("users.id", ondelete="SET NULL"))
+    committed_by: Mapped[UUID | None] = mapped_column(sa.Uuid(), sa.ForeignKey("users.id", ondelete="SET NULL"))
+    committed_at: Mapped[datetime | None] = mapped_column(TZDateTime())

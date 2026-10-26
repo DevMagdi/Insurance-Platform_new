@@ -8,6 +8,10 @@ __pycache__/
 .coverage
 htmlcov/
 *.db
+# SQLite sidecars a test run leaves behind while it writes
+*.db-journal
+*.db-wal
+*.db-shm
 # node
 node_modules/
 dist/
