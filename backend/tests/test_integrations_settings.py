@@ -442,6 +442,7 @@ async def test_the_saved_retention_row_is_what_the_beat_actually_applies(session
 
     from app.models.requests import CallRecord
     from app.workers.tasks.media import purge_expired
+
     from tests.helpers import login
 
     async with login(client, ADMIN) as h:

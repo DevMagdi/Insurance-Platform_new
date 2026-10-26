@@ -21,44 +21,48 @@
 | M7 البورتال | ✅ منتهية | `services/portal.py` · `tests/test_portal.py` (اختبار يمنع تسرّب أي مفتاح حسّاس) |
 | M8 المرحلة الثانية (وثائق/أقساط/عمولات/إصدار/تقارير) خلف flag | 🟡 واجهات كاملة + API مقروء؛ الأعمال اليدوية فقط | `api/v1/endpoints/phase2.py` · `tests/test_dashboard_phase2.py` · الشاشات 12–14 تعمل عند تفعيل `phase2.enabled` |
 | M9 التوثيق والمحاكاة وتشغيل UI | 🟡 جزئي | هذا الملف + [`runbook.md`](runbook.md) + [`ui-parity/`](ui-parity/README.md) · لقطات الشاشة تُنتَج في CI فقط (انظر «ما لم يُشغَّل») |
-| M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | backend أخضر على **PostgreSQL 16** (138) وعلى SQLite (129 + 9 مُتخطَّاة بعلامة `postgres_only`) · frontend أخضر (51 اختبار وحدة + build) · e2e: typecheck ✓ واكتشاف 114 اختبارًا ✓ لكنها **لم تُشغَّل** (لا متصفح — «ما لم يُشغَّل» 1) · ruff/mypy/تغطية النواة/استقرار الـOpenAPI كلها نظيفة |
+| M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | backend أخضر على **PostgreSQL 16** (154) وعلى SQLite (145 + 9 مُتخطَّاة بعلامة `postgres_only`) · frontend أخضر (68 اختبار وحدة + build) · e2e: typecheck ✓ و8 ملفات ✓ لكنها **لم تُشغَّل** محلياً (لا متصفح — «ما لم يُشغَّل» 1) · ruff/mypy/تغطية النواة/استقرار الـOpenAPI/**تمرير كل النقاط** نظيفة |
+| R1 مركز الإعدادات: تكاملات حقيقية + إنشاء وثيقة | ✅ منتهية (محلياً) | `/settings` بثلاث بطاقات + حيّ/محاكاة بتأكيد + سجلّ `webhook_events` + `POST /policies` بجدول أقساط وعمولة · `tests/test_integrations_settings.py` (16) · `frontend/tests/settingsView.test.tsx` (14) · ADR-016 |
 | مزوّد AI (§11 M10): واجهة واحدة خلف `ai.enabled` + مراجعة بشرية | ✅ السطح كامل بسائق محاكاة · ⬜ بلا مزوّد حقيقي | `integrations/ai_sim.py` (حتمي، استخلاصي) · `endpoints/ai.py`: `GET /ai/status` · `POST /ai/calls/{id}/transcribe` · `POST /ai/requests/{id}/summarize` · `POST /ai/classify` · `tests/test_ai.py` (7) · زر «تلخيص آلي» في `InboxPage` يظهر فقط عند تشغيل الراية · ADR-013 |
 
-## ما شُغِّل فعليًا (هذه الجلسة، نفس نتائج CI)
+## ما شُغِّل فعليًا (جولة R1 — مركز الإعدادات؛ الأرقام من نفس الجلسة)
 
 backend — **على محرّكَي القاعدة**، لأن `DATABASE_URL_TEST` صار يحدّد المحرّك (ADR-014):
 
 ```
-ruff check .            → All checks passed!           (129 ملفاً)
-ruff format --check .   → 129 files already formatted
-mypy app                → Success: no issues found in 96 source files
-python -m pytest        → 129 passed, 9 skipped in 97.91s      (SQLite؛ التسعة هي `postgres_only`)
+ruff check .            → All checks passed!           (139 ملفاً)
+ruff format --check .   → 139 files already formatted
+mypy app                → Success: no issues found in 104 source files
+python -m pytest        → rc 0 · 154 مُجمَّعة، منها 9 بعلامة `postgres_only` ⇒ 145 ناجحاً + 9 مُتخطَّاة (~228s SQLite)
 DATABASE_URL_TEST=postgresql+asyncpg://… python -m pytest
-                        → 138 passed in 113.92s                (PostgreSQL 16.2 حقيقي، بلا تخطٍّ)
-coverage report         → TOTAL 5601/979 → 82.5% · بوابة النواة `scripts/check_core_coverage.py` ✓
-scripts/check_openapi_fresh.py → openapi.json is fresh (84 paths, 110 schemas)
-scripts/check_migrations.py    → migration immutability ok (2 merged, 0 new)
-alembic upgrade head    (PostgreSQL 16، قاعدة فارغة)      → rc 0
-alembic downgrade base  →  upgrade head (نفس القاعدة)     → rc 0
-   33 جدولاً · 55 مفتاحاً أجنبياً · سِياسَتا `leads_scope`/`clients_scope` · `relforcerowsecurity = t` عليهما
-   · دور `brokerhub_app` بـ`bypass=false login=false`
-alembic upgrade head    (ملف SQLite فارغ)                 → rc 0 (41 فهرساً، وقيد `clients→leads` موجود)
+                        → rc 0 · 154 ناجحاً بلا تخطٍّ (PostgreSQL 16.2 حقيقي، ~4 دقائق)
+coverage run -m pytest  → rc 0 · بوابة النواة `scripts/check_core_coverage.py` → 12/12 فوق 80% (أدنى 80.4%)
+scripts/check_openapi_fresh.py → openapi.json is fresh (92 paths)
+scripts/check_migrations.py    → migration immutability ok (3 merged, 0 new)
+scripts/smoke_api.py           → SMOKE OK — 107 نداءً من 109 في الوثيقة، واثنان مستثنيان بسببهما مكتوب
 ```
 
-PostgreSQL شُغِّل هنا بـحزمة `pgserver` (محرّك مضمّن، بلا Docker) — لا ادّعاء تغطية على PG بغير تشغيله.
-13 اختباراً جديداً في هذه الجولة: `tests/test_rls_postgres.py` (8، كلها `postgres_only`) و
-`tests/test_migrations.py` (5، واحد منها `postgres_only`). لذلك الفرق بين رقمَي المحرّكين = 9: ثمانية
-مُتخطَّاة + اختبار السلسلة على PG الذي يعمل هناك وحده.
+ملخّص `pytest -q` لا يُطبع هنا لأن `addopts` يضيف `-q` ثانية؛ الأرقام مأخوذة من `--collect-only -q` (154) ومن
+حروف التقدّم (`9×s` على SQLite، وصفر `s` وصفر `F` على PostgreSQL) مع `rc=0` — لا «تمّ» بلا مخرجات.
+سلسلة الترقية 0001→0004 على قاعدة PostgreSQL فارغة يثبتها `tests/test_migrations.py` (جزء من الـ154، يعمل
+هناك وحده)، و`tests/test_rls_postgres.py` (8) يثبّت أن الجدول الجديد لم يفتح ثغرة عزل.
+
+أسطر جديدة قِيست بالتغطية ولا تدخل بوابة النواة (لا إخفاء لرقم منخفض):
+`endpoints/settings.py` 98.2% · `core/secrets.py` 90.6% · `integrations/registry.py` 87.3% ·
+`services/policies.py` 85.7% · `services/policy_settings.py` 83.9% · `core/rate_limit.py` 80.0% ·
+`services/integrations_settings.py` **71.2%** · `workers/tasks/media.py` **62.8%** — السبب والقرار مسجَّلان
+في «اختصارات» سطر 17.
 
 frontend (Node 22):
 
 ```
 eslint . --max-warnings 0 → 0 مشكلة
-npm run typecheck         → نظيف (tsconfig.json + tsconfig.e2e.json؛ الأول يغطي `tests/` أيضاً)
-vitest run                → 51 passed / 7 files  (منها 8 لـ`navModel` و3 لبوابة مسارات المستندات)
-npm run build             → ✓ (chunks لكل شاشة)
-playwright test --list    → 114 tests in 8 files (desktop + mobile)
+tsc -p tsconfig.json --noEmit && tsc -p tsconfig.e2e.json --noEmit → نظيف
+npx vitest run            → 68 passed / 8 files (منها 14 في `settingsView.test.tsx` و5 في `i18n-parity.test.ts`)
+npm run build             → ✓ في 7.3s (chunk لكل شاشة)
+e2e (Playwright)          → typecheck ✓ · **لم تُشغَّل محلياً**: لا متصفح بلا root (`libnss3` غائب) ⇒ الدليل من CI
 ```
+
 
 تحقق حيّ من التشغيل (بدون متصفح): رفع الـAPI بقاعدةSeed جديدة ثم
 `GET /healthz` · `POST /auth/login` · `POST /dev/sim/whatsapp` (رسالة صوتية → طلب #1025 + مرفق صوتي عبر رابط موقّع يُرجع 200) ·
@@ -138,6 +142,7 @@ playwright test --list    → 114 tests in 8 files (desktop + mobile)
 | 14 | الـe2e لا يضغط «اختبار الاتصال» بعد التحوّل إلى الحيّ | CI لا يصرف حِصّة Meta الحقيقية ولا يتعلّق بشبكة الخارج؛ المسار الحيّ مُغطّى بوهميّة نقل في `backend/tests/test_integrations_settings.py` |
 | 15 | لقطة باسم `15b-settings-hub.png` خارج تسلسل `01…16` | شاشة 15 صارت تبويباً داخل الـhub (`/settings?tab=users`)؛ اسم الملف يبقى حتى لا تنكسر مراجع `ui-parity/screens.md`، و`Shot.who` وسّع `admin` لأن `users.manage` ليست في دور المدير |
 | 16 | تمرير `scripts/smoke_api.py` يستثني نقطتين (بسبب مكتوب أمام كل واحدة) | `/media/{key}` رابط موقّع لمرّة واحدة ويُستهلك في نفس السكربت؛ ومرفق البوابة برقمه من قائمة البوابة (`tests/test_portal.py`). الباقي: 107 نداءً من 109 مُجاب عليه، والتمرير صار خطوة CI |
+| 17 | بوابة تغطية النواة بقيت على قائمتها (12 ملفاً)؛ ملفات الجولة الجديدة خارجها | الرقم **مقيس لا مدّعى**: `services/integrations_settings.py` 71.2% و`workers/tasks/media.py` 62.8%. السبب: فحوص الوضع الحيّ (debug_token، `EHLO`+`AUTH`) تحتاج وهايماً للمزوّد، وغلاف Celery لا يُستدعى داخل حلقة اختبار (`run_async` يحلّق على حلقة pytest) — ولا اختبار مهمة عامل في المستودع أصلاً. القرار: لا تُخفض البوابة ولا تُزيَّن؛ تُضاف عند كتابة الـstubs |
 
 ## قرارات اتُّخذت نيابة عن المالك (لأن الأسئلة غير مسموحة)
 
