@@ -237,6 +237,10 @@ async def rep_workload(session: AsyncSession) -> list[dict[str, Any]]:
         # and `is_active` is what keeps it out of the redistribution picker
         .where(func.lower(Role.code) == "sales_rep", User.deleted_at.is_(None))
         .group_by(User.id, User.full_name, User.is_active)
+        # deterministic order: the redistribute dialog renders this list as-is, and an unordered result put
+        # whichever rep the planner returned first behind the first checkbox (R3: the e2e moved a lead to a
+        # seat created minutes earlier in the same run, and no seeded rep could see it)
+        .order_by(User.full_name)
     )
     rows = (await session.execute(stmt)).all()
 

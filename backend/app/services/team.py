@@ -62,6 +62,7 @@ async def list_members(session: AsyncSession, scope: Scope) -> list[dict[str, An
         )
     ).all()
     loads: dict[UUID, int] = {owner: int(value or 0) for owner, value in counts if owner is not None}
+    owners = await _lead_owning_roles(session)
     out: list[dict[str, Any]] = []
     for user, role_code, role_name in rows:
         out.append(
@@ -74,10 +75,29 @@ async def list_members(session: AsyncSession, scope: Scope) -> list[dict[str, An
                 "role_name": role_name,
                 "is_active": user.is_active,
                 "open_leads": int(loads.get(user.id, 0) or 0),
+                # the redistribute picker filters on this: a customer-service seat is in the office but a
+                # lead handed to it disappears from every sales board (see `leads._require_rep`)
+                "accepts_leads": str(role_code).lower() in owners,
                 "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
             }
         )
     return out
+
+
+async def _lead_owning_roles(session: AsyncSession) -> set[str]:
+    """Role codes whose permissions include `leads.view_own` — the seats that can hold a lead."""
+    from app.models.auth import Permission, role_permissions
+
+    rows = (
+        await session.execute(
+            select(Role.code)
+            .select_from(Role)
+            .join(role_permissions, role_permissions.c.role_id == Role.id)
+            .join(Permission, Permission.id == role_permissions.c.permission_id)
+            .where(Permission.code == "leads.view_own")
+        )
+    ).scalars()
+    return {str(code).lower() for code in rows}
 
 
 async def create_member(session: AsyncSession, actor: User, payload: dict[str, Any], *, ip: str | None = None) -> tuple[User, str | None]:

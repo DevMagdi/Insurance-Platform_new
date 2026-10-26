@@ -46,7 +46,9 @@ export function Modal({
             type="button"
             className="grid h-8 w-8 place-items-center rounded-full text-muted transition-colors duration-150 hover:bg-[#F3F4F9] hover:text-ink"
             onClick={onClose}
-            aria-label={t("common.close")}
+            // «إغلاق» is also the footer action's own label, so an accessible query for the dialog's close
+            // button resolved to two elements and failed in strict mode — the X is named for what it does
+            aria-label={t("common.closeDialog")}
           >
             <X size={16} strokeWidth={2} />
           </button>

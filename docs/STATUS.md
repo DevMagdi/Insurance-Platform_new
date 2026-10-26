@@ -1,9 +1,12 @@
 # STATUS — منصة إدارة الوساطة التأمينية (Broker Hub)
 
-آخر تحديث: 2026-10-27 · فرع العمل: `arena/c14f4d07-insurance-platform-new` (`main` عند `b8f5e7f`، PR #5
-مفتوح عليه). هذه الجولة = **R2**: مقاعد مكتب المبيعات، استيراد Leads من ملف يكتب في القاعدة فعلًا، وزرّ
-«إعادة توزيع الـLeads» يحرّك الحوض كله. القاعدة نفسها من R0: لا يُكتب «تم» إلا مع الأمر ومخرجاته، وما لا
+آخر تحديث: 2026-10-27 · فرع العمل: `arena/24d9b3b0-insurance-platform-new` من `main` عند `78085fa`.
+هذه الجولة = **R3**: إصلاح جذري لـ e2e المتبقّي + إقلاع `docker compose` + هاردننغ استيراد/إعادة
+توزيع/مقاعد بحزام اختبارات أوسع. القاعدة نفسها من R0: لا يُكتب «تم» إلا مع الأمر ومخرجاته، وما لا
 يُشغَّل يُكتب «لم يُشغَّل» مع سببه الحرفي.
+
+جولة R2 (السابقة) = مقاعد مكتب المبيعات، استيراد Leads من ملف يكتب في القاعدة فعلًا، وزرّ «إعادة توزيع
+الـLeads» يحرّك الحوض كله — تفاصيلها باقية في هذا الملف وفي ADR-017.
 
 مرجع التحقق: ملف تصميم الواجهات (16 شاشة) المرفق من صاحب المشروع + نصّ المواصفات §1–§13.
 قاعدة العمل: لا يُكتب «مطابقة» إلا بموافقة المالك — انظر [`ui-parity/`](ui-parity/README.md).
@@ -26,6 +29,74 @@
 | R1 مركز الإعدادات: تكاملات حقيقية + إنشاء وثيقة | ✅ منتهية (محلياً) | `/settings` بثلاث بطاقات + حيّ/محاكاة بتأكيد + سجلّ `webhook_events` + `POST /policies` بجدول أقساط وعمولة · `tests/test_integrations_settings.py` (16) · `frontend/tests/settingsView.test.tsx` (14) · ADR-016 |
 | R2 مكتب المبيعات: مقاعد + استيراد Excel/CSV + إعادة توزيع الحوض | ✅ منتهية (محلياً؛ e2e تُقاس في CI) | `POST /leads/import` ⇒ `lead_import_jobs` + `POST /leads/assign-bulk` + `/sales-team/members` · `tests/test_lead_import.py` (10) `tests/test_team_members.py` (6) `tests/test_lead_redistribute.py` (11) · `frontend/tests/teamRound.test.tsx` (8) · `frontend/e2e/team-round.spec.ts` (4) · ADR-017 · جدول Proof حيّ في هذا الملف |
 | مزوّد AI (§11 M10): واجهة واحدة خلف `ai.enabled` + مراجعة بشرية | ✅ السطح كامل بسائق محاكاة · ⬜ بلا مزوّد حقيقي | `integrations/ai_sim.py` (حتمي، استخلاصي) · `endpoints/ai.py`: `GET /ai/status` · `POST /ai/calls/{id}/transcribe` · `POST /ai/requests/{id}/summarize` · `POST /ai/classify` · `tests/test_ai.py` (7) · زر «تلخيص آلي» في `InboxPage` يظهر فقط عند تشغيل الراية · ADR-013 |
+
+## جولة R3 — ما كان أحمر، ولماذا، وما أُصلح
+
+### 1) e2e: الفشل الـ13 على `main` عند `78085fa` (لقطة CI الحقيقية)
+
+سُحبت القائمة من `gh api repos/DevMagdi/Insurance-Platform_new/check-runs/<id>/annotations` (لا من ذاكرة):
+**13 غير متوقع · 89 ناجح · 29 مُتخطًّى + 15 لم تُشغَّل**. لكل فشل، السبب الجذري والإصلاح:
+
+| الاختبار | السبب الجذري (بالمخرجات) | الإصلاح |
+|---|---|---|
+| client file (شاشة 5) + لقطة `05-client-file.png` | `GET /clients/{id}/overview` يرد **500** لأي عميل له وثيقة: الحقل `policy.insurance_type` كان `{code,name}` والمخطط يتوقّع `{id,code,name}` ⇒ `ResponseValidationError` يأكل الرد كله، والصفحة تعرض `notfound` | `services/clients.overview` يرسل `id` — وبند اختبار جديد `test_the_overview_of_a_client_that_has_a_policy_serialises_its_insurance_type` (لم يكن هناك اختبار واحد يقرأ overview لعميل **له** وثيقة) |
+| dashboard (جوال) | عنوان KPI بصندوق `width: 0`: الهيكل يرسم شريطاً جانبياً 264px بلا كسر عند `lg`، فعلى 390px بقي للمحتوى 126px | هيكل متجاوب (ADR-018) + اختبار الهيكل يقيس الشكلين |
+| inbox (سطح مكتب) | الردّ محفوظ و`first_response_at` لم يُقرأ في قراءة واحدة أُخذت فور إعادة الرسم | `expect.poll` على `GET /requests/{id}` (نفس نمط `settings.spec.ts`)، والتأكيد كما هو؛ والقاعدة مثبّتة في `tests/test_requests_flow.py` |
+| isolation (المشروعان) | لافتة التحويل تطابق نصاً عاماً، وبعد أول تحويل تُصبح عنصرين ⇒ strict mode | اسم الـLead صار فريداً لكل تشغيل واللافتة تُطابَق باسمه (`toHaveCount(1)`) — تأكيد أقوى لا أضعف |
+| members (المشروعان) | زرّا «إغلاق» في النافذة (X + زر التذييل) بنفس اسم الوصول | X صار «إغلاق النافذة» (`common.closeDialog`) + الاختبار يستهدف زر التذييل صراحةً |
+| lead import (سطح مكتب) | التأكيد كان على النص "2" الذي يتحقّق عبر «صفوف: 3» | تأكيد على الأرقام الأربعة الحقيقية: `صفوف: 3 · جاهز: 1 · مكرر: 1 · خطأ: 1` ثم `أُنشئ: 1` |
+| lead import (جوال) | الخطوة التمهيدية تحجز رقم موبايل **ثابتاً** `+201000777777`، فاصطدمت بليد المشروع الأول في نفس القاعدة (409) | كل الأرقام في الملف مُولَّدة لكل تشغيل |
+| redistribute (المشروعان) | «أول checkbox» في النافذة اختير، و`/sales/team` بلا `ORDER BY` ومع مقعد أُنشئ في نفس التشغيل قبله ⇒ الـlead انتقل لمقعد لا يراه أي بياع | `/sales/team` مرتّب بـ`full_name` + الاختبار يسمّي المستلم ويؤكد أن بياعاً واحداً يراه والآخر يرد 404 عليه |
+
+### 2) عيب منتج حقيقي كشفته إعادة التوزيع
+
+`_require_rep` كان يتحقّق من الوجود و`is_active` فقط، فكان يمكن إسناد Lead لمقعد **خدمة عملاء**:
+الـlead يخرج من الحوض، والمدير يُبلَّغ «1 moved»، ولا لوحة مبيعات (النطاق `assigned_to == me`) ولا
+طابور CS يعرضه بعدها. الآن: `_require_rep` يطلب `leads.view_own` (422 مع `details.required`)، وواجهة
+الاختيار تقرأ الحقيقة من الخادم (`TeamMemberOut.accepts_leads`) — والاثنان مغطّيان باختبارات.
+
+### 3) docker
+
+الوظيفة تفشل على `main` بنفس الخطوة («Boot the stack…»)، ومخرجها غير قابل للقراءة من هذه البيئة
+(سجلات GitHub تُخدَم من blob storage محجوب هنا) — فلا يُخمَّن السبب. ما نُفِّذ:
+
+* `minio` كان له `healthcheck` بـ`CMD-SHELL curl …`، وصورة `minio/minio` مبنية على `ubi-micro` **بلا
+  curl وبلا shell** ⇒ الفحص لا ينجح أبداً، و`minio-init` (`service_healthy`) لا يبدأ، والترحيل لا يعمل،
+  و`up --wait` يفشل من أول خطوة. أُزيل الفحص، و`minio-init` نفسه ينتظر مع إعادة محاولة عبر `mc`.
+* `up -d --wait --wait-timeout 420` بدل انتظار غير محدود يستهلك مهلة الوظيفة كلها.
+* **الوظيفة صارت تنشر تشخيصها على الـPR** عند الفشل (`ps -a` + آخر 200 سطر) — مثل ملخّص e2e — لأن
+  «locator timeout» وحدها لا تُشخَّص من بعيد. نتيجة الوظيفة على هذا الفرع تُذكر في وصف الـPR بعد تشغيل CI.
+
+### 4) أوامر التحقق في هذه الجلسة (مخرجات حقيقية)
+
+backend (SQLite؛ PostgreSQL يقيسه CI وحده):
+
+```
+ruff check .                → All checks passed!
+ruff format --check .       → 146 files already formatted
+mypy app                    → Success: no issues found in 107 source files
+pytest -q                   → rc 0 · 198 مُجمَّعة، منها 9 `postgres_only` ⇒ 189 ناجحاً
+scripts/smoke_api.py        → SMOKE OK — 114/116 نداءً موثَّقاً، والاستثناءان بسببهما
+scripts/check_openapi_fresh → openapi.json is fresh (98 paths)
+scripts/check_migrations.py → migration immutability ok (5 merged, 0 new)
+scripts/check_core_coverage → 14/14 فوق البوابة (أدنى: leads 85.3%، clients 88.3%، lead_import 84.8%)
+```
+
+frontend (Node 22):
+
+```
+eslint . --max-warnings 0   → 0 مشكلة
+tsc (app + e2e)             → نظيف
+vitest run                  → 77 passed / 9 files
+npm run build               → ✓ 7.5s
+```
+
+### 5) ما لم يُشغَّل محلياً في هذه الجولة
+
+| البند | لماذا | كيف يُقاس |
+|---|---|---|
+| `npx playwright test` | لا متصفح في هذه الحاوية: `libnss3` غائب ولا root/شبكة لنصب الحزم (`apt` و CDN محجوبان — جُرِّب `@sparticuz/chromium` فسقط على نفس المكتبة) | CI job `e2e`؛ أرقام قبل/بعد في وصف الـPR |
+| `docker compose up` | `docker` غير موجود في هذه الحاوية | CI job `docker` + تشخيصه المنشور على الـPR |
 
 ## ما شُغِّل فعليًا (جولة R1 — مركز الإعدادات؛ الأرقام من نفس الجلسة)
 

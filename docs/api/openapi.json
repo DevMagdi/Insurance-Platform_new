@@ -6335,6 +6335,11 @@
         "additionalProperties": true,
         "description": "One seat of the sales office, as screen 6's team tab lists it.",
         "properties": {
+          "accepts_leads": {
+            "default": false,
+            "title": "Accepts Leads",
+            "type": "boolean"
+          },
           "email": {
             "title": "Email",
             "type": "string"

@@ -92,21 +92,26 @@ services:
     ports:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
+    # NO healthcheck on purpose. `minio/minio` is a `ubi-micro` image: it ships neither `curl` nor a shell,
+    # so `CMD-SHELL curl …` could never pass — minio stayed "unhealthy", `minio-init` never started, the
+    # migration never ran and `docker compose up --wait` failed at the first step of the documented boot
+    # (the `docker` CI job reproduced it on `main` for three rounds). Readiness is proven where the client
+    # lives instead: `minio-init` retries with the `mc` binary that is actually in its own image.
 
   # one-shot: creates the bucket, then exits. `depends_on: service_completed_successfully` gates the API on it.
   minio-init:
     image: minio/mc:latest
     depends_on:
+      # `service_started`, not `service_healthy`: the minio image has no shell/curl to answer a probe with,
+      # so this container is the thing that waits (the retry loop below, with its own `mc`).
       minio:
-        condition: service_healthy
+        condition: service_started
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      for attempt in $$(seq 1 60); do
+        mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} >/dev/null 2>&1 && break;
+        echo "waiting for minio ($$attempt/60)"; sleep 2;
+      done;
       mc mb --ignore-existing local/$${BUCKET} &&
       mc anonymous set none local/$${BUCKET} &&
       echo bucket-ready

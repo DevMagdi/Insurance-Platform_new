@@ -4030,6 +4030,11 @@ export interface components {
          * @description One seat of the sales office, as screen 6's team tab lists it.
          */
         TeamMemberOut: {
+            /**
+             * Accepts Leads
+             * @default false
+             */
+            accepts_leads: boolean;
             /** Email */
             email: string;
             /** Full Name */

@@ -249,3 +249,94 @@ async def test_the_commit_is_audited_and_the_pool_stays_scoped(client) -> None:
     async with login(client, REP_A) as rep:
         mine = (await client.get("/api/v1/leads?unassigned=true", headers=rep)).json()
         assert all(row["name"] != "شركة الوارد" for row in mine["items"])
+
+
+async def test_an_unknown_rep_name_is_a_warning_and_the_row_stays_unassigned(client) -> None:
+    """The «البياع المسؤول» column is a convenience, not a foreign key: an unknown name must not invent an owner."""
+    async with login(client, MANAGER) as auth:
+        sheet = _csv(("الاسم", "الموبايل", "البياع المسؤول"), [("صف بلا بياع", "01099887766", "بياع غير موجود")])
+        preview = await client.post("/api/v1/leads/import", headers=auth, files={"file": ("leads.csv", sheet, "text/csv")})
+        assert preview.status_code == 201, preview.text
+        job = preview.json()
+        assert job["stats"]["ready"] == 1
+        assert job["stats"]["assigned"] == 0
+        warnings = [entry for entry in job["error_report"] if entry["kind"] == "warning"]
+        assert any("لا بياع باسم" in entry["message"] for entry in warnings), job["error_report"]
+
+        commit = await client.post(f"/api/v1/leads/import/{job['id']}/commit", headers=auth)
+        assert commit.status_code == 200, commit.text
+        found = (await client.get("/api/v1/leads?q=صف بلا بياع", headers=auth)).json()
+        assert found["total"] == 1
+        assert found["items"][0]["assignee_id"] is None
+
+
+async def test_a_named_rep_column_assigns_the_lead_to_that_rep(client, ids: dict[str, dict[str, str]]) -> None:
+    async with login(client, MANAGER) as auth:
+        sheet = _csv(("الاسم", "الموبايل", "البياع"), [("صف لريب A", "01099887755", "Rep A")])
+        preview = await client.post("/api/v1/leads/import", headers=auth, files={"file": ("leads.csv", sheet, "text/csv")})
+        job = preview.json()
+        assert job["stats"]["assigned"] == 1, job["stats"]
+        commit = await client.post(f"/api/v1/leads/import/{job['id']}/commit", headers=auth)
+        assert commit.status_code == 200, commit.text
+    async with login(client, REP_A) as rep:
+        mine = (await client.get("/api/v1/leads?q=صف لريب A", headers=rep)).json()
+        assert mine["total"] == 1
+        assert mine["items"][0]["assignee_id"] == ids["users"]["rep_a"]
+
+
+async def test_a_quoted_arabic_name_keeps_its_comma_and_utf8(client) -> None:
+    """Arabic + a comma inside quotes + a BOM: the three ways a real export breaks a naive parser."""
+    async with login(client, MANAGER) as auth:
+        body = "\ufeff" + 'الاسم,الموبايل\n"شركة النيل, فرع الجيزة",01099887744\n'
+        preview = await client.post(
+            "/api/v1/leads/import",
+            headers=auth,
+            files={"file": ("leads.csv", body.encode("utf-8"), "text/csv")},
+        )
+        assert preview.status_code == 201, preview.text
+        job = preview.json()
+        assert job["stats"]["ready"] == 1
+        assert job["preview"][0]["name"] == "شركة النيل, فرع الجيزة"
+        commit = await client.post(f"/api/v1/leads/import/{job['id']}/commit", headers=auth)
+        assert commit.status_code == 200, commit.text
+        found = (await client.get("/api/v1/leads?q=فرع الجيزة", headers=auth)).json()
+        assert found["total"] == 1
+        assert "فرع الجيزة" in found["items"][0]["name"]
+
+
+async def test_a_file_over_the_row_limit_is_refused_before_anything_is_written(client) -> None:
+    async with login(client, MANAGER) as auth:
+        lines = ["الاسم,الموبايل"] + [f"صف {n},01099{n:06d}" for n in range(5_001)]
+        response = await client.post(
+            "/api/v1/leads/import",
+            headers=auth,
+            files={"file": ("big.csv", "\n".join(lines).encode("utf-8"), "text/csv")},
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["details"]["limit"] == 5000
+        assert (await client.get("/api/v1/leads?q=صف 1&page_size=5", headers=auth)).json()["total"] == 0
+
+
+async def test_a_commit_is_refused_when_the_job_is_not_a_preview(client) -> None:
+    """`committed` and `failed` both answer 409 with the status in the payload — never a silent second file."""
+    async with login(client, MANAGER) as auth:
+        sheet = _csv(("الاسم", "الموبايل"), [("صف ينفذ مرة", "01099887733")])
+        job = (await client.post("/api/v1/leads/import", headers=auth, files={"file": ("leads.csv", sheet, "text/csv")})).json()
+        assert (await client.post(f"/api/v1/leads/import/{job['id']}/commit", headers=auth)).status_code == 200
+        again = await client.post(f"/api/v1/leads/import/{job['id']}/commit", headers=auth)
+        assert again.status_code == 409, again.text
+        assert again.json()["details"]["status"] == "completed"
+        assert (await client.get("/api/v1/leads?q=صف ينفذ مرة", headers=auth)).json()["total"] == 1
+
+
+def _csv(header: tuple[str, ...], rows: list[tuple[Any, ...]]) -> bytes:
+    """A UTF-8 CSV built in-test, matching `_workbook`'s contract (bytes + a real filename)."""
+    import csv as _csv_module
+    import io as _io
+
+    buffer = _io.StringIO()
+    writer = _csv_module.writer(buffer)
+    writer.writerow(header)
+    for row in rows:
+        writer.writerow(row)
+    return buffer.getvalue().encode("utf-8")

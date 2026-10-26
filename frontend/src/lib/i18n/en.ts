@@ -15,6 +15,7 @@ export const en: Messages = {
     cancel: "Cancel",
     confirm: "Confirm",
     close: "Close",
+    closeDialog: "Close dialog",
     open: "Open",
     download: "Download",
     all: "All",
@@ -41,6 +42,7 @@ export const en: Messages = {
   },
   nav: {
     ariaLabel: "Primary navigation",
+    mobileAriaLabel: "Quick navigation",
     dashboard: "Dashboard",
     inbox: "Inbox",
     leads: "Leads",

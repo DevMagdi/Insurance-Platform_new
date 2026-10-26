@@ -97,13 +97,19 @@ test.describe("sales kanban + isolation (screens 3, 6, 9)", () => {
     test.slow();
     await login(page, MANAGER);
     const auth = await apiLogin(request, MANAGER);
+    /*
+     * The name carries a stamp because the demo database is shared by both projects of one CI job: with a
+     * fixed "شركة منطق للملابس الجاهزة", the second conversion produced a second client with the same name
+     * and the banner assertion could no longer say *which* conversion it was looking at.
+     */
+    const leadName = `شركة منطق للملابس الجاهزة ${Date.now().toString(36).slice(-5)}`;
 
     const created = await request.post("/api/v1/leads", {
       headers: auth,
       // `LeadCreate` is the contract: name/contact/mobile/source/needs_text — an intake-shaped payload is a 422
       data: {
         type: "company",
-        name: "شركة منطق للملابس الجاهزة",
+        name: leadName,
         contact_name: "منى فؤاد",
         contact_title: "مسؤول الموارد البشرية",
         mobile: `+201100${String(Date.now()).slice(-6)}`,
@@ -135,10 +141,17 @@ test.describe("sales kanban + isolation (screens 3, 6, 9)", () => {
     const clientId = new URL(page.url()).pathname.split("/clients/")[1] ?? "";
     expect(clientId).toBeTruthy();
     const client = await (await request.get(`/api/v1/clients/${clientId}`, { headers: auth })).json();
-    expect(client.name).toContain("منطق");
-    // the green banner on the clients list is the designer's confirmation this came from a lead
+    expect(client.name).toBe(leadName);
+    /*
+     * The green banner on the clients list is the designer's confirmation this came from a lead — and it
+     * names the client. The first version matched the wording alone; after any earlier conversion the list
+     * carries several such banners, so the locator resolved to two elements and failed in strict mode
+     * (twice: desktop and mobile). Naming the client asks the exact question instead of a looser one.
+     */
     await page.goto("/clients");
-    await expect(page.getByText(/تم تحويله من Lead إلى عميل فعلي/)).toBeVisible();
+    const banner = page.getByText(new RegExp(`«${leadName}» تم تحويله من Lead إلى عميل فعلي`));
+    await expect(banner).toHaveCount(1);
+    await expect(banner).toBeVisible();
   });
 
   test("the mobile board renders the same queue at 390×844", async ({ page, request }) => {

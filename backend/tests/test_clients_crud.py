@@ -148,3 +148,50 @@ async def test_client_list_search_and_filters(client, ids) -> None:
         assert converted["total"] == 0
         kpis = (await client.get("/api/v1/clients/kpis", headers=h)).json()
         assert kpis["total_clients"] == 2
+
+
+async def test_the_overview_of_a_client_that_has_a_policy_serialises_its_insurance_type(client, ids: dict[str, dict[str, str]]) -> None:
+    """Screen 5 must render for a client that actually bought something.
+
+    The overview used to answer **500** for every such client: the policy block emitted
+    `insurance_type: {code, name}` while the response schema is `{id, code, name}`, so FastAPI's
+    serialisation refused the whole payload. No test ever created a policy before reading the overview,
+    which is why only the e2e screen grid caught it (and it read the failure as "the page did not load").
+    """
+    from datetime import date
+    from decimal import Decimal
+    from uuid import UUID
+
+    from app.core.db import get_sessionmaker
+    from app.domain.enums import PaymentPlan, PolicyStatus
+    from app.models.masters import InsuranceType
+    from app.models.phase2 import Policy
+    from sqlalchemy import select
+
+    async with get_sessionmaker()() as session:
+        type_id = (await session.execute(select(InsuranceType.id).limit(1))).scalar_one()
+        session.add(
+            Policy(
+                client_id=UUID(ids["clients"]["ألف"]),
+                insurance_type_id=type_id,
+                policy_no="GRP-R3-0001",
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 12, 31),
+                premium_amount=Decimal("240000.00"),
+                payment_plan=PaymentPlan.QUARTERLY,
+                commission_rate=Decimal("5.00"),
+                status=PolicyStatus.ISSUED,
+                headcount=120,
+            )
+        )
+        await session.commit()
+
+    async with login(client, MANAGER) as h:
+        overview = await client.get(f"/api/v1/clients/{ids['clients']['ألف']}/overview", headers=h)
+        assert overview.status_code == 200, overview.text
+        policy = overview.json()["policy"]
+        assert policy is not None
+        assert policy["insurance_type"]["id"] == str(type_id)
+        assert policy["insurance_type"]["code"]
+        assert policy["insurance_type"]["name"]
+        assert overview.json()["kpis"]["renewal_in_days"] is not None

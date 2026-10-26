@@ -26,6 +26,9 @@
 
 1. النسبة المئوية للتغيّر تُحسب من الأمس؛ إن لم توجد بيانات أمس تُعرض «—» بدلاً من «+12%».
 2. «الهدف 90%» قيمة سياسة لم تُحدَّد بعد: الهدف ليس في الـ API، لذلك يُعرض كعنوان لا كالتزام.
+3. الهيكل متجاوب منذ R3: الشريط الجانبي 264px يُعرض عند `lg` فأعلى فقط، وتحته شريط تنقّل سفلي ثابت
+   باسم وصول مختلف («التنقل السريع») — ADR-018. قبل ذلك كان الشريط يأخذ 264 من 390 بكسل، فانكمش
+   عنوان KPI إلى عرض صفر وفشل قياس الجوال في CI (التشخيص كامل في ADR-018).
 
 ## 2. صندوق الطلبات (3 أعمدة) — `features/inbox/InboxPage.tsx`
 
@@ -94,9 +97,11 @@
 | استيراد Excel/CSV من اللوحة | زر `leads.importLeads` عند `leads.view_all` فقط → `frontend/src/features/leads/ImportLeadsDialog.tsx` (معاينة ⇒ `POST /leads/import/{job}/commit`) | ✅ |
 | أعضاء المكتب (مقاعد + أدوار + كلمة مرور مؤقّتة) | `frontend/src/features/leads/TeamMembersCard.tsx` فوق `GET/POST/PATCH /sales-team/members[/{user_id}]`، بسقف `OFFICE_ROLES` وصلاحية `leads.assign` | ✅ |
 | لوحة الحِمل تُظهر الموقوف ولا يمنحه منتقي التوزيع | `RepWorkloadOut.is_active` ⇒ `rows.filter((row) => row.is_active)` في `RedistributeDialog` | ✅ |
+| قاعدة «من يستطيع استلام Lead» في مكان واحد | `TeamMemberOut.accepts_leads` (من `leads.view_own`) + `leads._require_rep` يرفض مقعد خدمة العملاء بـ 422 — قبل R3 كان يُقبل فيختفي الـ lead من كل لوحة | ✅ (R3) |
+| قائمة المستلمين ثابتة الترتيب | `repositories/leads.rep_workload` بـ `order_by(User.full_name)` — بلا ترتيب كان «أول بياع» هو ما يعيده المخطِّط | ✅ (R3) |
 
 لا يوجد في هذا المنتج «جدول كل الـ Leads» كشاشة مستقلة؛ إسناد الصف colocated مع الحوض ومن تفاصيل الـ lead
-(ADR-017 §7). الأرقام الحيّة لكل سطر أعلاه في `docs/STATUS.md` («جولة R2»).
+(ADR-017 §7). الأرقام الحيّة لكل سطر أعلاه في `docs/STATUS.md` («جولة R2» و«جولة R3»).
 
 ## 8. قائمة العملاء — `features/clients/ClientsPage.tsx`
 

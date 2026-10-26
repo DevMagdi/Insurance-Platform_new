@@ -49,7 +49,7 @@ test.describe("dashboard (screen 1)", () => {
     await expect(page.locator('[data-request-row], table tbody tr').first()).toBeVisible({ timeout: 15_000 });
   });
 
-  test("the shell is RTL with the sidebar nav on the logical start edge", async ({ page, request }) => {
+  test("the shell is RTL with navigation on the logical start edge", async ({ page, request }) => {
     const auth = await apiLogin(request, MANAGER);
     const open = (await (await request.get("/api/v1/requests?only_open=true&page_size=1", { headers: auth })).json()).total as number;
 
@@ -58,10 +58,31 @@ test.describe("dashboard (screen 1)", () => {
     await expect(root).toHaveAttribute("dir", "rtl");
     await expect(root).toHaveAttribute("lang", "ar");
 
+    const viewport = page.viewportSize();
+    const narrow = (viewport?.width ?? 1440) < 1024;
+    /*
+     * Two shapes, one rule: navigation sits on the logical start edge and carries the role's items.
+     * A phone has no room for a 264px sidebar — it took two thirds of a 390px screen and squeezed the
+     * dashboard's KPI label to `width: 0` (R3) — so below `lg` the shell renders a bottom bar instead.
+     * That is the product's own responsive contract, and this test asserts it in both shapes rather than
+     * asking the phone to have a sidebar the design never drew.
+     */
+    if (narrow) {
+      const rail = page.getByRole("navigation", { name: "التنقل السريع", exact: true });
+      await expect(rail).toBeVisible();
+      const railBox = await rail.boundingBox();
+      expect(railBox).not.toBeNull();
+      expect(railBox!.y + railBox!.height).toBeGreaterThanOrEqual((viewport?.height ?? 844) - 2); // pinned to the bottom
+      expect(railBox!.width).toBeGreaterThan((viewport?.width ?? 390) * 0.9); // spans the screen, not a column
+      await expect(page.getByRole("navigation", { name: "التنقل الرئيسي", exact: true })).toHaveCount(0);
+      await expect(rail.getByText("صندوق الطلبات", { exact: true }).first()).toBeVisible();
+      await expect(rail.getByText("العملاء", { exact: true }).first()).toBeVisible();
+      return;
+    }
+
     const nav = page.getByRole("navigation", { name: "التنقل الرئيسي", exact: true });
     await expect(nav).toBeVisible();
     const box = await nav.boundingBox();
-    const viewport = page.viewportSize();
     expect(box).not.toBeNull();
     expect(box!.x).toBeGreaterThan((viewport?.width ?? 1440) / 2); // RTL ⇒ sidebar sits on the right
 

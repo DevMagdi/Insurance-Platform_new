@@ -211,7 +211,9 @@ jobs:
         # parses; this proves the documented commands actually come up: migrate, API health, worker,
         # and the SPA served by nginx with /api proxied — all on one `up`.
         run: |
-          docker compose -f infra/docker-compose.yml up -d --wait
+          # `--wait-timeout` is finite on purpose: without it a stuck stack burns the job's whole timeout
+          # and the log says nothing but "still waiting".
+          docker compose -f infra/docker-compose.yml up -d --wait --wait-timeout 420
           docker compose -f infra/docker-compose.yml ps
       - name: The stack answers over HTTP
         run: |
@@ -237,6 +239,29 @@ jobs:
       - name: Compose logs on failure
         if: failure()
         run: docker compose -f infra/docker-compose.yml logs --tail=120
+      - name: Docker failure digest on the PR
+        # WHY: the job log is served from blob storage a reviewer's sandbox cannot fetch, so "docker failed
+        # at Boot the stack" was the whole story for three rounds and the cause had to be guessed. This puts
+        # `ps -a` and the containers' own logs where a human (or an agent) can read them.
+        if: failure() && github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "### docker · compose boot failed"
+            echo
+            echo '**services**'
+            echo '```'
+            docker compose -f infra/docker-compose.yml ps -a || true
+            echo '```'
+            echo
+            echo '**last 200 log lines**'
+            echo '```'
+            docker compose -f infra/docker-compose.yml logs --tail=200 --no-color 2>&1 || true
+            echo '```'
+          } > /tmp/docker-boot.md
+          gh pr comment "${{ github.event.number }}" --repo "$GITHUB_REPOSITORY" --body-file /tmp/docker-boot.md
       - name: Tear down
         if: always()
         run: docker compose -f infra/docker-compose.yml down -v

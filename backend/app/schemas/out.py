@@ -111,6 +111,9 @@ class TeamMemberOut(Open):
     role_name: str | None = None
     is_active: bool = True
     open_leads: int = 0
+    #: can this seat receive a lead? Served so the redistribute picker and the API agree on one rule
+    #: (`leads.view_own`), instead of the UI offering every office seat and the API accepting it (R3).
+    accepts_leads: bool = False
     last_login_at: str | None = None
 
 

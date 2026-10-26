@@ -157,9 +157,12 @@ async def overview(session: AsyncSession, client: Client, scope: Scope) -> dict[
             "premium_amount": float(policy.premium_amount) if policy.premium_amount else None,
             "commission_rate": float(policy.commission_rate) if policy.commission_rate is not None else None,
             "insurer": None if policy.insurer is None else {"id": str(policy.insurer.id), "name": policy.insurer.name},
+            # `InsuranceTypeRefOut` is `{id, code, name}`: leaving `id` out made FastAPI refuse to serialise
+            # the whole overview (500) for every client that actually has a policy — the screen the design
+            # review photographs on screen 5.
             "insurance_type": None
             if policy.insurance_type is None
-            else {"code": policy.insurance_type.code, "name": policy.insurance_type.name},
+            else {"id": str(policy.insurance_type.id), "code": policy.insurance_type.code, "name": policy.insurance_type.name},
         },
     }
 

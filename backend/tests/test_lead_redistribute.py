@@ -248,3 +248,53 @@ async def test_bulk_assignment_writes_one_audit_row_per_lead(client, ids: dict[s
         assert summary.after["assigned"] == 2
         activities = (await session.execute(select(LeadActivity).where(LeadActivity.type == ActivityType.ASSIGNMENT))).scalars().all()
         assert len(activities) == 2
+
+
+async def test_a_customer_service_seat_cannot_receive_a_lead(client, ids: dict[str, dict[str, str]]) -> None:
+    """The redistribute dialog lists office seats; only a rep seat may actually take a lead.
+
+    R3 finding: `_require_rep` checked existence and `is_active` only, so a lead could be parked on a
+    customer-service desk. It then left the unassigned pool, the manager was told "1 moved", and no sales
+    board (scope: `assigned_to == me`) and no CS queue showed it again.
+    """
+    await _pool(2)
+    cs = ids["users"]["cs"]
+    async with login(client, MANAGER) as auth:
+        before = (await client.get("/api/v1/leads?unassigned=true&page_size=50", headers=auth)).json()["total"]
+        refused = await client.post("/api/v1/leads/assign-bulk", headers=auth, json={"unassigned_only": True, "to": [cs]})
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["code"] == "validation_failed"
+        assert refused.json()["details"]["required"] == "leads.view_own"
+        after = (await client.get("/api/v1/leads?unassigned=true&page_size=50", headers=auth)).json()["total"]
+        assert after == before, "a refused target must not move half the pool"
+        # a mixed target list is refused before anything moves as well
+        mixed = await client.post(
+            "/api/v1/leads/assign-bulk",
+            headers=auth,
+            json={"unassigned_only": True, "to": [ids["users"]["rep_a"], cs]},
+        )
+        assert mixed.status_code == 422, mixed.text
+        assert (await client.get("/api/v1/leads?unassigned=true&page_size=50", headers=auth)).json()["total"] == before
+
+
+async def test_the_roster_says_which_seats_can_hold_leads(client) -> None:
+    """One rule, served: the picker filters on `accepts_leads` instead of guessing from the role name."""
+    async with login(client, MANAGER) as auth:
+        body = (await client.get("/api/v1/sales-team/members", headers=auth)).json()
+    flags = {row["role"]: row["accepts_leads"] for row in body["members"]}
+    assert flags["sales_rep"] is True
+    assert flags["customer_service"] is False
+    assert all("accepts_leads" in row for row in body["members"])
+
+
+async def test_the_redistribution_targets_are_listed_in_a_stable_order(client) -> None:
+    """`/sales/team` had no ORDER BY, so "the first rep" was whatever the planner returned first.
+
+    The e2e drove the dialog from the first checkbox and, in the same run, had created a rep minute
+    earlier — the lead went to a seat the test never looked at. The list the dialog renders is ordered now.
+    """
+    async with login(client, MANAGER) as auth:
+        rows = (await client.get("/api/v1/sales/team", headers=auth)).json()
+    names = [row["name"] for row in rows]
+    assert names == sorted(names), f"the rep list is not deterministic: {names}"
+    assert {row["is_active"] for row in rows}  # suspended seats stay listed, marked (`is_active` False)
