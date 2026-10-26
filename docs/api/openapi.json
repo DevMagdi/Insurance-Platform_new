@@ -830,6 +830,64 @@
         "title": "ClientUpdate",
         "type": "object"
       },
+      "ConnectionTestIn": {
+        "properties": {
+          "to": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "pattern": "^[^@\\s]+@[^@\\s]+\\.[A-Za-z]{2,}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "send a real test email to this address (email provider, live mode only)",
+            "title": "To"
+          }
+        },
+        "title": "ConnectionTestIn",
+        "type": "object"
+      },
+      "ConnectionTestOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "tested_at": {
+            "title": "Tested At",
+            "type": "string"
+          },
+          "took_ms": {
+            "title": "Took Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "provider",
+          "ok",
+          "detail",
+          "took_ms",
+          "mode",
+          "tested_at"
+        ],
+        "title": "ConnectionTestOut",
+        "type": "object"
+      },
       "ContactCreate": {
         "properties": {
           "email": {
@@ -1979,6 +2037,54 @@
           "name"
         ],
         "title": "InsurerRefOut",
+        "type": "object"
+      },
+      "IntegrationWriteIn": {
+        "description": "Partial update. `secrets[key] = null` removes it; `\"\"` (or omitting the key) leaves it untouched.",
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          },
+          "confirm_live": {
+            "default": false,
+            "description": "required to flip a provider to live, after a green test",
+            "title": "Confirm Live",
+            "type": "boolean"
+          },
+          "is_live": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Live"
+          },
+          "secrets": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secrets"
+          }
+        },
+        "title": "IntegrationWriteIn",
         "type": "object"
       },
       "IssuingCaseDetailOut": {
@@ -3342,6 +3448,24 @@
         "title": "LeadUpdate",
         "type": "object"
       },
+      "LiveSwitchIn": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "is_live": {
+            "title": "Is Live",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_live"
+        ],
+        "title": "LiveSwitchIn",
+        "type": "object"
+      },
       "LoginIn": {
         "properties": {
           "email": {
@@ -3636,6 +3760,141 @@
           "group"
         ],
         "title": "PermissionOut",
+        "type": "object"
+      },
+      "PolicyCreateIn": {
+        "description": "Creating a policy is the moment the installment plan exists (ADR-016 §6) — hence no `premium` default.",
+        "properties": {
+          "client_id": {
+            "format": "uuid",
+            "title": "Client Id",
+            "type": "string"
+          },
+          "commission_rate": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commission Rate"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 8,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "headcount": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headcount"
+          },
+          "insurance_type_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insurance Type Id"
+          },
+          "insurer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insurer Id"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "payment_plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Plan"
+          },
+          "policy_no": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy No"
+          },
+          "premium_amount": {
+            "exclusiveMinimum": 0.0,
+            "title": "Premium Amount",
+            "type": "number"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "start_date",
+          "premium_amount"
+        ],
+        "title": "PolicyCreateIn",
         "type": "object"
       },
       "PolicyKpisOut": {
@@ -4325,6 +4584,88 @@
           }
         },
         "title": "PortalRequestsOut",
+        "type": "object"
+      },
+      "ProviderStateOut": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "is_live": {
+            "title": "Is Live",
+            "type": "boolean"
+          },
+          "last_test_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Test Detail"
+          },
+          "last_test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Test Status"
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "secrets": {
+            "items": {
+              "$ref": "#/components/schemas/SecretFieldOut"
+            },
+            "title": "Secrets",
+            "type": "array"
+          },
+          "status": {
+            "description": "live | sim | unset | error — the badge tone in the card header",
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "provider",
+          "config",
+          "secrets",
+          "is_live",
+          "status"
+        ],
+        "title": "ProviderStateOut",
         "type": "object"
       },
       "RecordingUrlOut": {
@@ -5511,6 +5852,31 @@
         "title": "ScopesIn",
         "type": "object"
       },
+      "SecretFieldOut": {
+        "properties": {
+          "display": {
+            "description": "`••••••••` when set, `not_set` otherwise; never a prefix of the value",
+            "title": "Display",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "set": {
+            "description": "whether a value is stored — the only fact a GET may reveal",
+            "title": "Set",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "set",
+          "display"
+        ],
+        "title": "SecretFieldOut",
+        "type": "object"
+      },
       "SlaPolicyOut": {
         "additionalProperties": true,
         "properties": {
@@ -5538,6 +5904,104 @@
           "resolution_minutes"
         ],
         "title": "SlaPolicyOut",
+        "type": "object"
+      },
+      "TemplateSyncOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "synced_at": {
+            "title": "Synced At",
+            "type": "string"
+          },
+          "templates": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Templates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "provider",
+          "templates",
+          "detail",
+          "synced_at"
+        ],
+        "title": "TemplateSyncOut",
+        "type": "object"
+      },
+      "UnderwritingDefaultsIn": {
+        "properties": {
+          "default_commission_pct": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Commission Pct"
+          },
+          "default_currency": {
+            "anyOf": [
+              {
+                "maxLength": 8,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Currency"
+          },
+          "default_payment_plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Payment Plan"
+          }
+        },
+        "title": "UnderwritingDefaultsIn",
+        "type": "object"
+      },
+      "UnderwritingDefaultsOut": {
+        "properties": {
+          "default_commission_pct": {
+            "title": "Default Commission Pct",
+            "type": "number"
+          },
+          "default_currency": {
+            "title": "Default Currency",
+            "type": "string"
+          },
+          "default_payment_plan": {
+            "title": "Default Payment Plan",
+            "type": "string"
+          }
+        },
+        "required": [
+          "default_commission_pct",
+          "default_payment_plan",
+          "default_currency"
+        ],
+        "title": "UnderwritingDefaultsOut",
         "type": "object"
       },
       "UserCreate": {
@@ -5804,6 +6268,116 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WebhookEventOut": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "event_type",
+          "status"
+        ],
+        "title": "WebhookEventOut",
+        "type": "object"
+      },
+      "WebhookUrlOut": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "label",
+          "url",
+          "note"
+        ],
+        "title": "WebhookUrlOut",
+        "type": "object"
+      },
+      "WebhookUrlsOut": {
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookUrlOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "base_url",
+          "items"
+        ],
+        "title": "WebhookUrlsOut",
         "type": "object"
       },
       "_OpenRequest": {
@@ -9002,6 +9576,48 @@
         "tags": [
           "phase 2 (flagged)"
         ]
+      },
+      "post": {
+        "description": "One transaction, three writes: the policy, its schedule, its commission accrual.\n\nGated twice, in the same order as `/commissions`: the permission first (a rep is not \"blocked by a\nflag\", they simply do not issue policies), then the Phase-2 flag — which is what keeps a\nhalf-configured workspace from booking policies its insurer channels cannot service yet (spec §2).",
+        "operationId": "postApiV1Policies",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Postapiv1Policies",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue a policy → installments + commission row (Phase 2)",
+        "tags": [
+          "phase 2 (flagged)"
+        ]
       }
     },
     "/api/v1/policies/kpis": {
@@ -10119,6 +10735,403 @@
         ]
       }
     },
+    "/api/v1/settings/integrations": {
+      "get": {
+        "operationId": "getApiV1SettingsIntegrations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderStateOut"
+                  },
+                  "title": "Response Getapiv1Settingsintegrations",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Integration providers: config, secret status, live/sim",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/integrations/events": {
+      "get": {
+        "operationId": "getApiV1SettingsIntegrationsEvents",
+        "parameters": [
+          {
+            "description": "whatsapp | telephony | email",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "whatsapp | telephony | email",
+              "title": "Provider"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookEventOut"
+                  },
+                  "title": "Response Getapiv1Settingsintegrationsevents",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recent inbound webhook events (last 24h)",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/integrations/webhook-urls": {
+      "get": {
+        "operationId": "getApiV1SettingsIntegrationsWebhook-Urls",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookUrlsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Callback URLs to paste into Meta / the PBX",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/integrations/whatsapp/sync-templates": {
+      "post": {
+        "operationId": "postApiV1SettingsIntegrationsWhatsappSync-Templates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateSyncOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pull approved WhatsApp templates from Meta",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/integrations/{provider}": {
+      "get": {
+        "operationId": "getApiV1SettingsIntegrationsProvider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One provider: config, secret status, live/sim",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "operationId": "putApiV1SettingsIntegrationsProvider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationWriteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save a provider (partial; secrets are write-only)",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/integrations/{provider}/live": {
+      "post": {
+        "operationId": "postApiV1SettingsIntegrationsProviderLive",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveSwitchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Flip simulation ↔ live (live needs a green test + confirm)",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/integrations/{provider}/test": {
+      "post": {
+        "operationId": "postApiV1SettingsIntegrationsProviderTest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ConnectionTestIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test the provider connection (6/min)",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/policies": {
+      "get": {
+        "operationId": "getApiV1SettingsPolicies",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnderwritingDefaultsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Underwriting defaults (Phase 2)",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "operationId": "putApiV1SettingsPolicies",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnderwritingDefaultsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnderwritingDefaultsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save underwriting defaults",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
     "/api/v1/sla-policies": {
       "get": {
         "operationId": "getApiV1Sla-Policies",
@@ -10379,7 +11392,7 @@
         "parameters": [
           {
             "in": "query",
-            "name": "hub_mode",
+            "name": "hub.mode",
             "required": false,
             "schema": {
               "anyOf": [
@@ -10390,12 +11403,12 @@
                   "type": "null"
                 }
               ],
-              "title": "Hub Mode"
+              "title": "Hub.Mode"
             }
           },
           {
             "in": "query",
-            "name": "hub_challenge",
+            "name": "hub.challenge",
             "required": false,
             "schema": {
               "anyOf": [
@@ -10406,12 +11419,12 @@
                   "type": "null"
                 }
               ],
-              "title": "Hub Challenge"
+              "title": "Hub.Challenge"
             }
           },
           {
             "in": "query",
-            "name": "hub_verify_token",
+            "name": "hub.verify_token",
             "required": false,
             "schema": {
               "anyOf": [
@@ -10422,7 +11435,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Hub Verify Token"
+              "title": "Hub.Verify Token"
             }
           }
         ],

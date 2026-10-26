@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, cast
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +15,7 @@ from app.api.serializers import policy_brief
 from app.api.v1.deps import CurrentUser, DbSession, PageQuery, PoliciesView, ReportsView, ScopeDep
 from app.core.errors import FeatureDisabled
 from app.core.scope import Scope
+from app.domain import permissions as P
 from app.models.clients import Client
 from app.models.phase2 import Commission, Installment, IssuingCase, Policy
 from app.repositories.scope_filters import with_scope
@@ -35,6 +38,49 @@ router = APIRouter(tags=["phase 2 (flagged)"])
 async def _flag(session: AsyncSession) -> bool:
     """The single flag that gates this module (ADR-008). The lookup itself lives in `services.feature_flags`."""
     return await flag_enabled(session, _FLAG)
+
+
+class PolicyCreateIn(BaseModel):
+    """Creating a policy is the moment the installment plan exists (ADR-016 §6) — hence no `premium` default."""
+
+    client_id: UUID
+    insurer_id: UUID | None = None
+    insurance_type_id: UUID | None = None
+    policy_no: str | None = Field(default=None, max_length=64)
+    start_date: date
+    end_date: date | None = None
+    premium_amount: float = Field(gt=0)
+    currency: str | None = Field(default=None, min_length=3, max_length=8)
+    payment_plan: str | None = None
+    commission_rate: float | None = Field(default=None, ge=0, le=100)
+    headcount: int | None = Field(default=None, ge=1)
+    notes: str | None = None
+
+
+@router.post("/policies", status_code=201, summary="Issue a policy → installments + commission row (Phase 2)")
+async def create_policy(request: Request, body: PolicyCreateIn, session: DbSession, scope: ScopeDep, actor: CurrentUser) -> dict[str, Any]:
+    """One transaction, three writes: the policy, its schedule, its commission accrual.
+
+    Gated twice, in the same order as `/commissions`: the permission first (a rep is not "blocked by a
+    flag", they simply do not issue policies), then the Phase-2 flag — which is what keeps a
+    half-configured workspace from booking policies its insurer channels cannot service yet (spec §2).
+    """
+    if P.POLICIES_MANAGE not in scope.perms:
+        from app.core.errors import Forbidden
+
+        raise Forbidden("Not allowed", details={"missing": [P.POLICIES_MANAGE]})
+    if not await _flag(session):
+        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
+    from app.services.policies import create_policy as _create
+
+    return await _create(
+        session,
+        actor,
+        scope,
+        body.model_dump(),
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
 
 
 @router.get("/policies", summary="Active policies (Phase 2 · screen 12)", response_model=PageOut)

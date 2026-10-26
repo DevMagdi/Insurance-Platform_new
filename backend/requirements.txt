@@ -29,3 +29,4 @@ starlette>=0.47           # GHSA-422c-pjqp-cp3p, GHSA-p94p-q73i-4w9w
 urllib3>=2.7.0            # CVE-2025-66471
 requests>=2.32.5          # CVE-2024-47081
 aiohttp>=3.12.14          # GHSA-mf9v-mfxr-j63j
+cryptography>=46.0.7         # Fernet + HKDF for integration secrets at rest (ADR-016)

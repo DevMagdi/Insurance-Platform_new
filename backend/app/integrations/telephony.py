@@ -23,12 +23,19 @@ class TelephonySim:
 
 
 class TelephonyGeneric:
-    """HTTP-callback style central: `X-Call-Signature: sha256=<hmac>` over the raw body."""
+    """HTTP-callback style central: `X-Call-Signature: sha256=<hmac>` over the raw body.
+
+    The secret comes from the saved settings row via the registry; the env value is the fallback, so a
+    deployment that only edited `.env` keeps verifying exactly as before.
+    """
 
     name = "generic"
 
+    def __init__(self, webhook_secret: str = "") -> None:
+        self.webhook_secret = webhook_secret or get_settings().TELEPHONY_WEBHOOK_SECRET
+
     def verify_signature(self, payload: bytes, signature_header: str | None) -> bool:
-        return verify_webhook_signature(payload, signature_header, get_settings().TELEPHONY_WEBHOOK_SECRET)
+        return verify_webhook_signature(payload, signature_header, self.webhook_secret)
 
     async def fetch_recording(self, url: str) -> bytes:
         async with httpx.AsyncClient(timeout=60) as client:
