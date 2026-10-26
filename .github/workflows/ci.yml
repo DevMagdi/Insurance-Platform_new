@@ -238,7 +238,8 @@ jobs:
           python3 -c "import json;d=json.load(open('/tmp/clients.json'));print('clients page total:',d.get('total'))"
       - name: Compose logs on failure
         if: failure()
-        run: docker compose -f infra/docker-compose.yml logs --tail=120
+        continue-on-error: true
+        run: docker compose -f infra/docker-compose.yml logs --tail=120 || true
       - name: Docker failure digest on the PR
         # WHY: the job log is served from blob storage a reviewer's sandbox cannot fetch, so "docker failed
         # at Boot the stack" was the whole story for three rounds and the cause had to be guessed. This puts
@@ -264,4 +265,5 @@ jobs:
           gh pr comment "${{ github.event.number }}" --repo "$GITHUB_REPOSITORY" --body-file /tmp/docker-boot.md
       - name: Tear down
         if: always()
-        run: docker compose -f infra/docker-compose.yml down -v
+        continue-on-error: true
+        run: docker compose -f infra/docker-compose.yml down -v || true
