@@ -34,7 +34,7 @@ test.describe("authentication", () => {
     await expect(page.getByRole("navigation")).toHaveCount(0);
   });
 
-  test("an authenticated session survives a reload (refresh cookie rotation)", async ({ page, request }) => {
+  test("an authenticated session survives a reload (refresh cookie rotation)", async ({ page }) => {
     /*
      * Two premises were wrong here. A rep holds no `requests.view`, so their landing screen is their own
      * board, never the dashboard (ADR-015) — the reload is proven on the screen the role actually gets.
@@ -50,18 +50,28 @@ test.describe("authentication", () => {
     await expect(page.getByText("عرض البياع")).toBeVisible({ timeout: 15_000 });
     expect(page.url()).not.toContain("/login");
 
-    const cookie = (await page.context().cookies()).find((row) => row.name === "bh_refresh");
-    expect(cookie, "the login must set a refresh cookie on /api/v1/auth").toBeTruthy();
+    // `page.request` shares the browser context's jar, so these three calls are the *same* session the UI
+    // holds. The `request` fixture keeps its own jar: a call that answered 200 there had simply collected
+    // the `Set-Cookie` of the previous call, and `clearCookies()` on the page could not take it away.
+    const jar = async (): Promise<string> => (await page.context().cookies()).find((row) => row.name === "bh_refresh")?.value ?? "";
 
-    const rotated = await request.post("/api/v1/auth/refresh", { headers: { cookie: `bh_refresh=${cookie?.value}` } });
+    const before = await jar();
+    expect(before.length, "the login must set a refresh cookie on /api/v1/auth").toBeGreaterThan(20);
+
+    const rotated = await page.request.post("/api/v1/auth/refresh");
     expect(rotated.status(), await rotated.text()).toBe(200);
     expect((await rotated.json()).access_token as string).toMatch(/^\S+\.\S+\.\S+$/);
-    const issued = (rotated.headers()["set-cookie"] ?? "").match(/bh_refresh=([^;]+)/)?.[1] ?? "";
-    expect(issued.length, "the answer must set a new refresh cookie").toBeGreaterThan(20);
-    expect(issued, "a rotation that hands back the same value is not a rotation").not.toBe(cookie?.value);
+
+    const after = await jar();
+    expect(after.length, "the answer must set a new refresh cookie").toBeGreaterThan(20);
+    expect(after, "a rotation that leaves the jar holding the same value is not a rotation").not.toBe(before);
+
+    // and the app can still reach the API afterwards — the reload promise, not only the cookie math
+    await page.reload();
+    await expect(page.getByText("عرض البياع")).toBeVisible({ timeout: 15_000 });
 
     await page.context().clearCookies();
-    const refused = await request.post("/api/v1/auth/refresh");
+    const refused = await page.request.post("/api/v1/auth/refresh");
     expect(refused.status(), await refused.text()).toBe(403);
     expect((await refused.json()).code).toBe("forbidden");
     expect(PASSWORD.length).toBeGreaterThan(8);

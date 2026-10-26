@@ -52,5 +52,11 @@ export async function openFirstRequest(page: Page) {
   await expect(row).toBeVisible({ timeout: 20_000 });
   const requestId = await row.getAttribute("data-request-row");
   await row.click();
+  // The queue is sorted by `last_activity_at`, and the page navigates itself to /inbox/<first row> a tick
+  // after mount. Reading the id and then clicking `.first()` again could therefore write to one request and
+  // assert on another — so the click is pinned to the row whose id the test is holding, and the URL is the
+  // proof that the thread on screen is that request.
+  await page.locator(`[data-request-row="${requestId}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/inbox/${requestId}$`), { timeout: 20_000 });
   return requestId;
 }

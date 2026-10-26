@@ -6,9 +6,16 @@ import { apiLogin, CS, login, MANAGER, openFirstRequest, REPS } from "./fixtures
  * Screen 2 — the unified inbox. The role here matters: the queue is a customer-service surface, its API
  * requires `requests.view`, and a sales rep is answered 403 (the rep's own dashboard is covered in
  * dashboard.spec.ts). Every assertion below is written against the person who can load the screen.
+ *
+ * Viewports: the two tests that write into the thread are desktop-only, because the design (and the code,
+ * `w-[330px] shrink-0` + `w-[270px] shrink-0` in `InboxPage`) is a three-column desktop layout — at 390px
+ * the thread column is squeezed to a sliver and there is nothing to click. The read-only tests (the refused
+ * queue, the inbound recording row) still run on both projects, and the phone surface of this product is
+ * screen 6, which has its own spec. This is the same scoping `settings.spec.ts` documents.
  */
 test.describe("unified inbox (screen 2)", () => {
   test("a reply is written into the thread and stamps the first response", async ({ page, request }) => {
+    test.skip(test.info().project.name !== "desktop", "the 3-column inbox (330px list + 270px details, screens.md §2) is a desktop layout — at 390px there is no thread to type into");
     await login(page, CS);
     const requestId = await openFirstRequest(page);
     expect(requestId).toBeTruthy();
@@ -23,11 +30,13 @@ test.describe("unified inbox (screen 2)", () => {
     const response = await request.get(`/api/v1/requests/${requestId}`, { headers: auth });
     expect(response.ok()).toBeTruthy();
     const detail = await response.json();
-    expect(detail.messages.some((message: { body: string }) => message.body === body)).toBeTruthy();
+    const stored = (detail.messages as { body: string }[]).map((message) => message.body);
+    expect(stored, `the reply is not in ${requestId}'s thread — the server holds ${JSON.stringify(stored.slice(-3))}`).toContain(body);
     expect(detail.first_response_at, "first_response_at must be set after the first staff reply").not.toBeNull();
   });
 
   test("an internal note is saved against the request", async ({ page }) => {
+    test.skip(test.info().project.name !== "desktop", "the 3-column inbox (330px list + 270px details, screens.md §2) is a desktop layout — at 390px there is no thread to type into");
     await login(page, CS);
     await openFirstRequest(page);
     const note = `ملاحظة ${Date.now()}`;

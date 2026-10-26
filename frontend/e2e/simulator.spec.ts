@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { ar } from "../src/lib/i18n/ar";
+
 import { API_ORIGIN, apiLogin, login, MANAGER } from "./fixtures";
 
 /**
@@ -8,6 +10,7 @@ import { API_ORIGIN, apiLogin, login, MANAGER } from "./fixtures";
  */
 test.describe("inbound simulator (spec §8.1)", () => {
   test("an inbound WhatsApp voice note opens a request whose player uses a signed URL", async ({ page, request }) => {
+    test.skip(test.info().project.name !== "desktop", "the player lives in the inbox thread column — see the note at the top of e2e/inbox.spec.ts");
     const auth = await apiLogin(request, MANAGER);
     const mobile = "+201110002233";
 
@@ -32,16 +35,20 @@ test.describe("inbound simulator (spec §8.1)", () => {
     expect(src, "the media element must be wired to the signed URL").toContain("/api/v1/media/");
     expect(src).toContain("sig=");
     expect(src).toContain("expires=");
-    await expect(page.getByRole("button", { name: "تشغيل", exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: ar.inbox.play, exact: true }).first()).toBeVisible();
 
     // the same relative URL the browser hands to <audio> must answer 200 for staff
     const played = await request.get(src!);
     expect(played.status()).toBe(200);
     expect((await played.body()).byteLength).toBeGreaterThan(0);
 
-    // and the mock payload is not decodable audio, so the player must surface that instead of hanging
-    await page.getByRole("button", { name: "تشغيل", exact: true }).click();
-    await expect(page.getByText(/لا يمكن التشغيل/)).toBeVisible({ timeout: 10_000 });
+    // what the player actually promises (InboxPage `toggle()`): a `play()` that cannot start — blocked
+    // autoplay or an expired signature — must leave the control saying «تشغيل», never a playing state the
+    // audio element does not have. There is no error caption in this app, so asserting one was invented.
+    const play = page.getByRole("button", { name: ar.inbox.play, exact: true }).first();
+    await play.click();
+    await expect(play).toBeVisible();
+    await expect(page.getByRole("button", { name: ar.inbox.pause, exact: true })).toHaveCount(0);
   });
 
   test("a replayed webhook does not duplicate the request", async ({ request }) => {

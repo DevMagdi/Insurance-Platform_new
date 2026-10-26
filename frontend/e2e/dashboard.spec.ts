@@ -17,7 +17,11 @@ test.describe("dashboard (screen 1)", () => {
     await expect(page.locator("main").getByText("نظرة حية على كل الطلبات والقنوات")).toBeVisible();
 
     for (const label of ["طلبات اليوم", "متوسط زمن أول رد", "الالتزام بالـSLA", "طلبات متأخرة"]) {
-      await expect(page.getByText(label, { exact: true })).toBeVisible();
+      // the tile's own label, inside the screen — `main` scoping keeps a shell duplicate out of the frame,
+      // and the box is part of the message because a "hidden" verdict on a painted node needs the geometry
+      const tile = page.locator("main").getByText(label, { exact: true }).first();
+      const box = await tile.boundingBox().catch(() => null);
+      await expect(tile, `KPI «${label}» must be painted on the dashboard (boundingBox=${JSON.stringify(box)})`).toBeVisible();
     }
 
     // the KPI tiles must carry the API's numbers (Egyptian digits), never the mockup's hardcoded ones

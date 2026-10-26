@@ -21,7 +21,9 @@ async function expectHeading(page: Page, pattern: RegExp): Promise<void> {
 }
 
 const SCREENS: Screen[] = [
-  { route: "/login", heading: /وسيط · Broker Hub|Broker Hub|لوحة تحكم الوسيط/, who: "rep" },
+  // /login's visible title at every width is the form's own «أهلاً بعودتك»; the brand block lives in the
+  // desktop hero panel (`hidden` on a phone), which is what made this row fail only on mobile
+  { route: "/login", heading: new RegExp(ar.auth.welcome), who: "rep" },
   { route: "/dashboard", heading: /لوحة التحكم/ },
   { route: "/inbox", heading: /صندوق الطلبات الموحد/ },
   // screen 3 titles itself after the rep who owns it («ليدز سارة»), and the phone board says «ليدزي»

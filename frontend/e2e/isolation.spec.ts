@@ -81,9 +81,11 @@ test.describe("sales kanban + isolation (screens 3, 6, 9)", () => {
     // the point of the manager view is more than one owner on the same board
     const rows = (await (await request.get("/api/v1/leads?page_size=100", { headers: auth })).json()).items as {
       id: string;
-      assigned_to: string | null;
+      assignee_id: string | null;
     }[];
-    const owners = new Set(rows.map((row) => row.assigned_to).filter((id): id is string => Boolean(id)));
+    // `lead_brief` names the seat `assignee_id`; asking for `assigned_to` reads `undefined` for every row
+    // and the "board spans the office" claim then compares an empty set to itself
+    const owners = new Set(rows.map((row) => row.assignee_id).filter((id): id is string => Boolean(id)));
     expect(owners.size, "a manager's board must span the office, not one seat").toBeGreaterThan(1);
     // the same rule as the rep's test, in the other direction: the manager's board holds the office's rows
     const officeIds = new Set(rows.map((row) => row.id));
@@ -112,13 +114,17 @@ test.describe("sales kanban + isolation (screens 3, 6, 9)", () => {
       },
     });
     expect(created.status(), await created.text()).toBe(201);
-    const lead = await created.json();
+    // `POST /leads` answers `{lead_id, duplicate}` — not the lead object, so `body.id` was `undefined` and
+    // every locator below was built from it
+    const { lead_id: leadId, duplicate } = await created.json();
+    expect(duplicate, "a fresh mobile must not be reported as a duplicate").toBeNull();
+    expect(leadId as string).toMatch(/^[0-9a-f-]{36}$/);
 
     await page.goto("/leads");
-    await expect(page.locator(`[data-lead-card="${lead.id}"]`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`[data-lead-card="${leadId}"]`)).toBeVisible({ timeout: 15_000 });
 
     // the conversion happens from the lead detail, behind a two-step confirm — never a drag-only gesture
-    await page.goto(`/leads/${lead.id}`);
+    await page.goto(`/leads/${leadId}`);
     await page.getByRole("button", { name: ar.leads.convertCta }).click();
     await expect(page.getByText(ar.leads.confirmWon)).toBeVisible();
     await page.getByRole("button", { name: ar.leads.convert, exact: true }).click();

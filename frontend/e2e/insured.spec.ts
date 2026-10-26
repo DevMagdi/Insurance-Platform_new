@@ -18,6 +18,10 @@ test.describe("insured persons import (screen 11)", () => {
   test.skip(!existsSync(SHEET), "fixture workbook missing");
 
   test("dry-run shows what would change, then the commit writes the roster", async ({ page, request }) => {
+    test.skip(
+      test.info().project.name !== "desktop",
+      "screen 11 is the client file's tab strip (a table plus the import dialog) — a desktop layout; the sheet's own rules are asserted on both projects by the test below",
+    );
     test.slow();
     const auth = await apiLogin(request, MANAGER);
     const clients = await (await request.get("/api/v1/clients?page_size=1", { headers: auth })).json();

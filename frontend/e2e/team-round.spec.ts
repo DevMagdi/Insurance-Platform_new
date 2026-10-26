@@ -191,7 +191,7 @@ test.describe("sales office · redistribute", () => {
       },
     });
     expect(created.status(), await created.text()).toBe(201);
-    const leadId = (await created.json()).id as string;
+    const leadId = (await created.json()).lead_id as string;
 
     await login(page, MANAGER);
     await page.goto("/sales-team");
