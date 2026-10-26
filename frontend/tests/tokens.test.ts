@@ -43,6 +43,14 @@ describe("design tokens (spec §4)", () => {
     });
   }
 
+  it("the base soft tone is exactly one — no second indigo (ADR-016 §5)", () => {
+    const soft = [...declared.keys()].filter((name) => name.includes("soft"));
+    expect(soft).toEqual(["--primary-soft"]);
+    expect(declared.get("--primary-soft")).toBe("#eef0ff");
+    // the value the deleted `--soft-bg` carried must not have been smuggled in under another name
+    expect([...declared.values()]).not.toContain("#eef2ff");
+  });
+
   it("card, button and badge geometry come from the sheet", () => {
     // read as text on purpose: the config is plain JS and this suite should not depend on its shape
     const tailwind = readFileSync(path.join(ROOT, "tailwind.config.js"), "utf8");

@@ -3,12 +3,13 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-import { apiLogin, login, MANAGER, OWNER } from "./fixtures";
+import { ADMIN, apiLogin, login, MANAGER, OWNER } from "./fixtures";
 
 /**
  * Design-review evidence (spec §10): one capture per screen of §9, at 1440×900 — except screen 4,
  * which the spec fixes at 390×844 — written under the fixed names `01-dashboard.png` … `16-login.png`,
- * plus a contact sheet the owner can scan in one image. Files land in docs/screenshots/ and are
+ * plus `15b-settings-hub.png` for the hub that now carries screen 15 (ADR-016), and a contact sheet the
+ * owner can scan in one image. Files land in docs/screenshots/ and are
  * uploaded as a CI artifact. Nothing here asserts pixel values: it captures them, and
  * docs/ui-parity/ measures them (see docs/ui-parity/screens.md for the deltas that stay open).
  */
@@ -18,7 +19,7 @@ type Shot = {
   /** Fixed file name, `NN-slug.png`, matching the screen order of spec §9. */
   file: string;
   route: string;
-  who: "manager" | "owner" | "anon";
+  who: "manager" | "owner" | "anon" | "admin";
   ready: RegExp;
   viewport: "desktop" | "mobile";
   fullPage?: boolean;
@@ -40,7 +41,9 @@ const SHOTS: Shot[] = [
   { file: "12-policies.png", route: "/policies", who: "manager", ready: /الوثائق والأقساط/, viewport: "desktop" },
   { file: "13-issuing.png", route: "/issuing", who: "manager", ready: /حالات الإصدار|إصدار/, viewport: "desktop" },
   { file: "14-reports.png", route: "/reports", who: "manager", ready: /التقارير/, viewport: "desktop" },
-  { file: "15-users.png", route: "/users", who: "manager", ready: /المستخدمون|الأدوار/, viewport: "desktop" },
+  // `users.manage` belongs to the admin role, and screen 15 now lives inside the settings hub (ADR-016)
+  { file: "15-users.png", route: "/users", who: "admin", ready: /المستخدمون والصلاحيات/, viewport: "desktop" },
+  { file: "15b-settings-hub.png", route: "/settings", who: "manager", ready: /الإعدادات/, viewport: "desktop" },
   { file: "16-login.png", route: "/login", who: "anon", ready: /أهلاً بعودتك|تسجيل الدخول/, viewport: "desktop" },
   // extras the review asked for beyond the 16: the same inbox on a phone, and the portal on a phone
   { file: "02-inbox@390x844.png", route: "/inbox", who: "manager", ready: /صندوق الطلبات/, viewport: "mobile", fullPage: false },
@@ -75,7 +78,7 @@ test.describe("screenshots for design review", () => {
   for (const shot of SHOTS) {
     test(shot.file, async ({ page }, testInfo) => {
       test.skip(testInfo.project.name !== shot.viewport, `${shot.file} is a ${shot.viewport} capture`);
-      if (shot.who !== "anon") await login(page, shot.who === "owner" ? OWNER : MANAGER);
+      if (shot.who !== "anon") await login(page, shot.who === "owner" ? OWNER : shot.who === "admin" ? ADMIN : MANAGER);
       await page.goto(resolve(shot.route));
       await expect(page.getByText(shot.ready).first()).toBeVisible({ timeout: 20_000 });
       // let charts, avatars and skeletons settle before freezing pixels
@@ -87,7 +90,8 @@ test.describe("screenshots for design review", () => {
   test("contact sheet", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop", "the desktop pass assembles the sheet");
     const files = readdirSync(OUT)
-      .filter((file) => /^\d{2}-.+\.png$/.test(file) && !file.includes("@"))
+      // `15b-` is the settings hub, which is not a 16th screen of §9 but the screen that now carries 15
+      .filter((file) => /^\d{2}[a-z]?-.+\.png$/.test(file) && !file.includes("@"))
       .sort();
     expect(files.length).toBeGreaterThanOrEqual(14);
 

@@ -35,7 +35,7 @@ const NAV: NavItem[] = [
   { to: "/sales-team", labelKey: "leads.team", icon: <Users size={20} strokeWidth={1.8} />, permsAll: ["leads.view_all", "leads.assign"] },
   { to: "/policies", labelKey: "nav.policies", icon: <ClipboardList size={20} strokeWidth={1.8} />, perms: ["policies.view"] },
   { to: "/reports", labelKey: "nav.reports", icon: <BarChart3 size={20} strokeWidth={1.8} />, perms: ["reports.view"] },
-  { to: "/users", labelKey: "nav.settings", icon: <Settings size={20} strokeWidth={1.8} />, perms: ["users.manage"] },
+  { to: "/settings", labelKey: "nav.settings", icon: <Settings size={20} strokeWidth={1.8} />, perms: ["settings.manage"] },
 ];
 
 export function StaffShell({ children }: { children: ReactNode }) {

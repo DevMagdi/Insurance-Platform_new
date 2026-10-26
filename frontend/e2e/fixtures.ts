@@ -10,6 +10,8 @@ export const REPS = {
   nour: "nour.fahmy@brokerhub.test",
 } as const;
 export const MANAGER = "manager@brokerhub.test";
+/** `users.manage` is the system-admin role's own — the users tab inside the settings hub needs it (ADR-016). */
+export const ADMIN = "admin@brokerhub.test";
 export const OWNER = "owner.mantiq@company.test";
 
 export const LOGIN_BUTTON = { name: "تسجيل الدخول", exact: true } as const;

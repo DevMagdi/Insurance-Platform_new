@@ -1,4 +1,8 @@
-/** Router needs the same path list in tests and in the sidebar. */
+/**
+ * The staff path list, in sidebar order. `tests/settingsView.test.ts` asserts it against the `<Route>`
+ * elements in `App.tsx`, in both directions — a nav entry that points at an unregistered path renders an
+ * empty shell, and a registered path nobody links to is a screen that no role can reach.
+ */
 export const STAFF_ROUTES = [
   "/dashboard",
   "/inbox",
@@ -6,7 +10,7 @@ export const STAFF_ROUTES = [
   "/leads/new",
   "/sales-team",
   "/clients",
-  "/users",
+  "/settings",
   "/policies",
   "/reports",
   "/issuing",

@@ -1,13 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { apiLogin, login, MANAGER, OWNER } from "./fixtures";
+import { ADMIN, apiLogin, login, MANAGER, OWNER } from "./fixtures";
 
 /**
  * Every screen of spec §9 must render its own heading and survive a reload without an uncaught
  * exception. This is the cheap suite that catches a broken import or a wrong field name on a screen
  * nobody clicked in a feature test.
  */
-type Screen = { route: string; heading: RegExp; who?: "manager" | "rep" | "owner"; phase2?: boolean };
+type Screen = { route: string; heading: RegExp; who?: "manager" | "rep" | "owner" | "admin"; phase2?: boolean };
 
 const SCREENS: Screen[] = [
   { route: "/login", heading: /وسيط · Broker Hub|Broker Hub|لوحة تحكم الوسيط/, who: "rep" },
@@ -17,7 +17,10 @@ const SCREENS: Screen[] = [
   { route: "/leads/new", heading: /ليد جديد/ },
   { route: "/sales-team", heading: /فريق المبيعات|حِمل/ },
   { route: "/clients", heading: /العملاء/ },
-  { route: "/users", heading: /المستخدمون|الأدوار/, who: "manager" },
+  // the users screen lives inside the settings hub now, and the tab needs `users.manage` — which the
+  // sales-manager role does not hold, so asserting it as `manager` was the wrong premise (ADR-015/016).
+  { route: "/users", heading: /المستخدمون والصلاحيات/, who: "admin" },
+  { route: "/settings", heading: /الإعدادات/, who: "manager" },
   { route: "/policies", heading: /الوثائق والأقساط/, phase2: true },
   { route: "/issuing", heading: /حالات الإصدار/, phase2: true },
   { route: "/reports", heading: /التقارير/, phase2: true },
@@ -29,7 +32,7 @@ async function open(page: Page, screen: Screen) {
     await page.goto("/login");
     return;
   }
-  await login(page, screen.who === "owner" ? OWNER : MANAGER);
+  await login(page, screen.who === "owner" ? OWNER : screen.who === "admin" ? ADMIN : MANAGER);
   await page.goto(screen.route);
 }
 

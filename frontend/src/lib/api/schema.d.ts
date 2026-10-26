@@ -982,7 +982,15 @@ export interface paths {
         /** Active policies (Phase 2 · screen 12) */
         get: operations["getApiV1Policies"];
         put?: never;
-        post?: never;
+        /**
+         * Issue a policy → installments + commission row (Phase 2)
+         * @description One transaction, three writes: the policy, its schedule, its commission accrual.
+         *
+         *     Gated twice, in the same order as `/commissions`: the permission first (a rep is not "blocked by a
+         *     flag", they simply do not issue policies), then the Phase-2 flag — which is what keeps a
+         *     half-configured workspace from booking policies its insurer channels cannot service yet (spec §2).
+         */
+        post: operations["postApiV1Policies"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1293,6 +1301,144 @@ export interface paths {
         /** Per-rep load, meetings and conversion (manager only) */
         get: operations["getApiV1SalesTeam"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/integrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Integration providers: config, secret status, live/sim */
+        get: operations["getApiV1SettingsIntegrations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/integrations/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent inbound webhook events (last 24h) */
+        get: operations["getApiV1SettingsIntegrationsEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/integrations/webhook-urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Callback URLs to paste into Meta / the PBX */
+        get: operations["getApiV1SettingsIntegrationsWebhook-Urls"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/integrations/whatsapp/sync-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pull approved WhatsApp templates from Meta */
+        post: operations["postApiV1SettingsIntegrationsWhatsappSync-Templates"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/integrations/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One provider: config, secret status, live/sim */
+        get: operations["getApiV1SettingsIntegrationsProvider"];
+        /** Save a provider (partial; secrets are write-only) */
+        put: operations["putApiV1SettingsIntegrationsProvider"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/integrations/{provider}/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Flip simulation ↔ live (live needs a green test + confirm) */
+        post: operations["postApiV1SettingsIntegrationsProviderLive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/integrations/{provider}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test the provider connection (6/min) */
+        post: operations["postApiV1SettingsIntegrationsProviderTest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Underwriting defaults (Phase 2) */
+        get: operations["getApiV1SettingsPolicies"];
+        /** Save underwriting defaults */
+        put: operations["putApiV1SettingsPolicies"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1796,6 +1942,29 @@ export interface components {
             /** Tax Number */
             tax_number?: string | null;
         };
+        /** ConnectionTestIn */
+        ConnectionTestIn: {
+            /**
+             * To
+             * @description send a real test email to this address (email provider, live mode only)
+             */
+            to?: string | null;
+        };
+        /** ConnectionTestOut */
+        ConnectionTestOut: {
+            /** Detail */
+            detail: string;
+            /** Mode */
+            mode: string;
+            /** Ok */
+            ok: boolean;
+            /** Provider */
+            provider: string;
+            /** Tested At */
+            tested_at: string;
+            /** Took Ms */
+            took_ms: number;
+        };
         /** ContactCreate */
         ContactCreate: {
             /** Email */
@@ -2260,6 +2429,28 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * IntegrationWriteIn
+         * @description Partial update. `secrets[key] = null` removes it; `""` (or omitting the key) leaves it untouched.
+         */
+        IntegrationWriteIn: {
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Confirm Live
+             * @description required to flip a provider to live, after a green test
+             * @default false
+             */
+            confirm_live: boolean;
+            /** Is Live */
+            is_live?: boolean | null;
+            /** Secrets */
+            secrets?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
          * IssuingCaseDetailOut
          * @description Case header + the timestamps the pipeline screen needs (spec §9.13).
          */
@@ -2677,6 +2868,16 @@ export interface components {
             /** Type */
             type?: ("company" | "individual") | null;
         };
+        /** LiveSwitchIn */
+        LiveSwitchIn: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Is Live */
+            is_live: boolean;
+        };
         /** LoginIn */
         LoginIn: {
             /** Email */
@@ -2806,6 +3007,42 @@ export interface components {
             group: string;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * PolicyCreateIn
+         * @description Creating a policy is the moment the installment plan exists (ADR-016 §6) — hence no `premium` default.
+         */
+        PolicyCreateIn: {
+            /**
+             * Client Id
+             * Format: uuid
+             */
+            client_id: string;
+            /** Commission Rate */
+            commission_rate?: number | null;
+            /** Currency */
+            currency?: string | null;
+            /** End Date */
+            end_date?: string | null;
+            /** Headcount */
+            headcount?: number | null;
+            /** Insurance Type Id */
+            insurance_type_id?: string | null;
+            /** Insurer Id */
+            insurer_id?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Payment Plan */
+            payment_plan?: string | null;
+            /** Policy No */
+            policy_no?: string | null;
+            /** Premium Amount */
+            premium_amount: number;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
         };
         /** PolicyKpisOut */
         PolicyKpisOut: {
@@ -3073,6 +3310,32 @@ export interface components {
             total: number;
         } & {
             [key: string]: unknown;
+        };
+        /** ProviderStateOut */
+        ProviderStateOut: {
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Is Live */
+            is_live: boolean;
+            /** Last Test Detail */
+            last_test_detail?: string | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /** Provider */
+            provider: string;
+            /** Secrets */
+            secrets: components["schemas"]["SecretFieldOut"][];
+            /**
+             * Status
+             * @description live | sim | unset | error — the badge tone in the card header
+             */
+            status: string;
+            /** Updated At */
+            updated_at?: string | null;
         };
         /** RecordingUrlOut */
         RecordingUrlOut: {
@@ -3449,6 +3712,21 @@ export interface components {
                 [key: string]: string;
             }[];
         };
+        /** SecretFieldOut */
+        SecretFieldOut: {
+            /**
+             * Display
+             * @description `••••••••` when set, `not_set` otherwise; never a prefix of the value
+             */
+            display: string;
+            /** Key */
+            key: string;
+            /**
+             * Set
+             * @description whether a value is stored — the only fact a GET may reveal
+             */
+            set: boolean;
+        };
         /** SlaPolicyOut */
         SlaPolicyOut: {
             /** First Response Minutes */
@@ -3464,6 +3742,37 @@ export interface components {
             warn_before_minutes: number;
         } & {
             [key: string]: unknown;
+        };
+        /** TemplateSyncOut */
+        TemplateSyncOut: {
+            /** Detail */
+            detail: string;
+            /** Provider */
+            provider: string;
+            /** Synced At */
+            synced_at: string;
+            /** Templates */
+            templates: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** UnderwritingDefaultsIn */
+        UnderwritingDefaultsIn: {
+            /** Default Commission Pct */
+            default_commission_pct?: number | null;
+            /** Default Currency */
+            default_currency?: string | null;
+            /** Default Payment Plan */
+            default_payment_plan?: string | null;
+        };
+        /** UnderwritingDefaultsOut */
+        UnderwritingDefaultsOut: {
+            /** Default Commission Pct */
+            default_commission_pct: number;
+            /** Default Currency */
+            default_currency: string;
+            /** Default Payment Plan */
+            default_payment_plan: string;
         };
         /** UserCreate */
         UserCreate: {
@@ -3553,6 +3862,41 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** WebhookEventOut */
+        WebhookEventOut: {
+            /** Detail */
+            detail?: string | null;
+            /** Event Type */
+            event_type: string;
+            /** External Id */
+            external_id?: string | null;
+            /** Id */
+            id: string;
+            /** Occurred At */
+            occurred_at?: string | null;
+            /** Provider */
+            provider: string;
+            /** Status */
+            status: string;
+        };
+        /** WebhookUrlOut */
+        WebhookUrlOut: {
+            /** Label */
+            label: string;
+            /** Note */
+            note: string;
+            /** Provider */
+            provider: string;
+            /** Url */
+            url: string;
+        };
+        /** WebhookUrlsOut */
+        WebhookUrlsOut: {
+            /** Base Url */
+            base_url: string;
+            /** Items */
+            items: components["schemas"]["WebhookUrlOut"][];
         };
         /** _OpenRequest */
         _OpenRequest: {
@@ -5553,6 +5897,41 @@ export interface operations {
             };
         };
     };
+    postApiV1Policies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getApiV1PoliciesKpis: {
         parameters: {
             query?: never;
@@ -6260,6 +6639,288 @@ export interface operations {
             };
         };
     };
+    getApiV1SettingsIntegrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderStateOut"][];
+                };
+            };
+        };
+    };
+    getApiV1SettingsIntegrationsEvents: {
+        parameters: {
+            query?: {
+                /** @description whatsapp | telephony | email */
+                provider?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "getApiV1SettingsIntegrationsWebhook-Urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookUrlsOut"];
+                };
+            };
+        };
+    };
+    "postApiV1SettingsIntegrationsWhatsappSync-Templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateSyncOut"];
+                };
+            };
+        };
+    };
+    getApiV1SettingsIntegrationsProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    putApiV1SettingsIntegrationsProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntegrationWriteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1SettingsIntegrationsProviderLive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveSwitchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1SettingsIntegrationsProviderTest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConnectionTestIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionTestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiV1SettingsPolicies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnderwritingDefaultsOut"];
+                };
+            };
+        };
+    };
+    putApiV1SettingsPolicies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnderwritingDefaultsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnderwritingDefaultsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     "getApiV1Sla-Policies": {
         parameters: {
             query?: never;
@@ -6445,9 +7106,9 @@ export interface operations {
     getApiV1WebhooksWhatsapp: {
         parameters: {
             query?: {
-                hub_mode?: string | null;
-                hub_challenge?: string | null;
-                hub_verify_token?: string | null;
+                "hub.mode"?: string | null;
+                "hub.challenge"?: string | null;
+                "hub.verify_token"?: string | null;
             };
             header?: never;
             path?: never;
