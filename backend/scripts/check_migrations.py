@@ -7,13 +7,30 @@ New revisions are always fine; rewriting history is not. Falls back to "no basel
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
+#: repo root, so the pathspecs below mean the same thing whether CI runs this from `backend/` or a human
+#: runs it from the root — a relative `git ls-tree` from a subdirectory silently matches nothing, and a
+#: guard that matches nothing is a guard that passes
+ROOT = Path(__file__).resolve().parents[2]
 PREFIX = "backend/migrations/versions/"
+#: An edit to a merged revision is allowed only when the revision file itself carries this marker with a
+#: reason, so the exception is always visible in the same diff that takes it (ADR-014). Without it the rule
+#: stands exactly as ADR-001 wrote it.
+APPROVED_MARKER = "# ALEMBIC-REWRITE-APPROVED:"
 
 
 def _git(*args: str) -> str:
-    result = subprocess.run(("git", *args), capture_output=True, text=True, check=False)
+    result = subprocess.run(("git", "-C", str(ROOT), *args), capture_output=True, text=True, check=False)
     return result.stdout if result.returncode == 0 else ""
+
+
+def _approval_reason(path: str) -> str:
+    """The marker text from the file as committed on HEAD ("" when absent, so an empty marker still fails)."""
+    for line in _git("show", f"HEAD:{path}").splitlines():
+        if APPROVED_MARKER in line:
+            return line.split(APPROVED_MARKER, 1)[1].strip()
+    return ""
 
 
 def main() -> int:
@@ -31,12 +48,24 @@ def main() -> int:
         for parts in (line.split("\t") for line in _git("diff", "--name-status", f"{base}...HEAD", "--", PREFIX).splitlines())
         if len(parts) == 2
     }
-    edited = sorted({path for path, status in touched_status.items() if status in {"M", "D"} and path in merged} | (changed & merged))
+    touched_merged = sorted(
+        {path for path, status in touched_status.items() if status in {"M", "D"} and path in merged} | (changed & merged)
+    )
+    edited, approved = [], {}
+    for path in touched_merged:
+        reason = _approval_reason(path)
+        if path.endswith(".py") and reason:
+            approved[path] = reason
+        else:
+            edited.append(path)
     if edited:
         print("ERROR: already-merged migration(s) touched:")
         for name in edited:
             print(f"  - {name}   (add a new revision instead of editing a merged one)")
+        print(f"  an exception needs the marker {APPROVED_MARKER!r} + a reason inside the revision file")
         return 1
+    for name, reason in approved.items():
+        print(f"::warning file={name}::edited a merged revision under an approved exception: {reason}")
     added = sorted({path for path, status in touched_status.items() if status == "A"} - merged)
     print(f"migration immutability ok ({len(merged)} merged, {len(added)} new)")
     return 0

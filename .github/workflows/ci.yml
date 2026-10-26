@@ -44,6 +44,10 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+        with:
+          # scripts/check_migrations.py compares against origin/main, and the default shallow checkout
+          # does not carry that ref
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -72,6 +76,18 @@ jobs:
         run: pip-audit --strict -r requirements.txt
       - name: OpenAPI export must be committed (compared as data, not text)
         run: python scripts/check_openapi_fresh.py
+      - name: Merged migrations must not be edited (ADR-001, exceptions per ADR-014)
+        run: python scripts/check_migrations.py
+      - name: Migration chain on a fresh PostgreSQL database
+        # `tests/test_migrations.py::test_chain_runs_on_a_fresh_postgresql_database` does this too, inside
+        # the suite; the explicit step is here because `compose up` (the documented deployment path) runs the
+        # chain as its very first action, and a failure should read like that and not like a test failure.
+        run: |
+          psql "postgresql://broker:broker@localhost:5432/postgres" -c "DROP DATABASE IF EXISTS brokerhub_deploy;" -c "CREATE DATABASE brokerhub_deploy;"
+          DATABASE_URL="postgresql+asyncpg://broker:broker@localhost:5432/brokerhub_deploy" \
+            alembic -c alembic.ini upgrade head
+          DATABASE_URL="postgresql+asyncpg://broker:broker@localhost:5432/brokerhub_deploy" \
+            alembic -c alembic.ini current
   frontend:
     name: frontend · lint · typecheck · unit · build
     runs-on: ubuntu-latest
@@ -157,19 +173,54 @@ jobs:
           retention-days: 7
 
   docker:
-    name: docker · compose config · image builds
+    name: docker · compose config · image builds · full stack boot
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
       - name: Validate compose file
         run: docker compose -f infra/docker-compose.yml config --quiet
       - name: Build backend image
-        run: docker build -f infra/backend.Dockerfile -t broker-hub-backend:ci .
+        # tagged as compose names it, so `up` below reuses these images instead of building them again
+        run: docker build -f infra/backend.Dockerfile -t broker-hub-backend:local .
       - name: Build frontend image
-        run: docker build -f infra/frontend.Dockerfile -t broker-hub-frontend:ci .
+        run: docker build -f infra/frontend.Dockerfile -t broker-hub-frontend:local .
       - name: Smoke the backend image
         run: |
-          docker run --rm -e DATABASE_URL="sqlite+aiosqlite:////tmp/t.db" broker-hub-backend:ci \
+          docker run --rm -e DATABASE_URL="sqlite+aiosqlite:////tmp/t.db" broker-hub-backend:local \
             python -c "import app.main; print('import-ok', app.main.app.title)"
+      - name: Boot the stack the way the runbook says to
+        # G2 of the gap ledger was "compose has never been run". `config --quiet` only proves the YAML
+        # parses; this proves the documented commands actually come up: migrate, API health, worker,
+        # and the SPA served by nginx with /api proxied — all on one `up`.
+        run: |
+          docker compose -f infra/docker-compose.yml up -d --wait
+          docker compose -f infra/docker-compose.yml ps
+      - name: The stack answers over HTTP
+        run: |
+          curl -fsS localhost:8000/healthz
+          curl -fsS localhost:5173/ | grep -q 'id="root"'
+          # the SPA's /api proxy and the API's own route table, through the same nginx
+          curl -fsS localhost:5173/api/v1/openapi.json -o /tmp/spec.json
+          python3 -c "import json;d=json.load(open('/tmp/spec.json'));print('paths:',len(d['paths']))"
+      - name: Seed and log in through the stack
+        # `app/seed.py` is idempotent and demo-only; the password is overridden here so the CI run does not
+        # exercise the repo's fallback credential
+        env:
+          SEED_PASSWORD: Ci-Seed-Pass-2026
+        run: |
+          docker compose -f infra/docker-compose.yml exec -T -e SEED_PASSWORD="$SEED_PASSWORD" backend python -m app.seed \
+            || docker compose -f infra/docker-compose.yml logs --tail=80 backend
+          TOKEN=$(curl -fsS -X POST localhost:5173/api/v1/auth/login \
+            -H 'content-type: application/json' \
+            -d "{\"email\":\"admin@brokerhub.test\",\"password\":\"$SEED_PASSWORD\"}" \
+            | python3 -c "import json,sys;print(json.load(sys.stdin)['access_token'])")
+          curl -fsS "localhost:5173/api/v1/clients?limit=1" -H "authorization: Bearer $TOKEN" -o /tmp/clients.json
+          python3 -c "import json;d=json.load(open('/tmp/clients.json'));print('clients page total:',d.get('total'))"
+      - name: Compose logs on failure
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml logs --tail=120
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v
