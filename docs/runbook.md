@@ -116,6 +116,16 @@ ROLLBACK;
 - تغيير صلاحيات دور يرفع `refresh_token_version` لكل مستخدميه ⇒ جلسات تُنهى. توقّع إعادة دخول.
 - تغيير كلمة مرور من شاشة المستخدمين ينهي الجلسات القديمة أيضًا.
 
+### مكتب المبيعات: الاستيراد، وإعادة التوزيع، والمقاعد
+
+| سؤال عند التشغيل | أين الجواب | السلوك المتوقع |
+|---|---|---|
+| «البيّاع رفع ملف Excel؟» | `POST /leads/import` خلف `leads.view_all` (`backend/app/api/v1/endpoints/leads.py`) | 403 `details.missing = ["leads.view_all"]` — والزر في `KanbanPage` لا يُعرض أصلًا لنفس السبب (إخفاءٌ للواجهة، لا إذن لها) |
+| «زر إعادة التوزيع حرّك 25 فقط من 63» | `repo.unassigned_ids` (سقف 2000 صفاً) + `POST /leads/assign-bulk` | لا صفحة ولا حلقة `PATCH`: طلب واحد، و`assigned` في الردّ = عدد الحوض في البطاقة، وسطر `lead.assigned_bulk` واحد للتدقيق وسطر `assignment` لكل ليد |
+| «فلان موقوف ولا يُحمَّل شغلاً» | `RepWorkloadOut.is_active` ⇒ `rows.filter((row) => row.is_active)` في منتقي `SalesTeamPage` | الموقوف يبقى على لوحة الحِمل (أعماله الحقيقية لا تختفي) ولا يظهر في المنتقي؛ لو أُرسِل صراحةً في `assign-bulk` ⇒ 422 `Target rep does not exist or is inactive` (الفحص في الخادم، لا في الواجهة) |
+| «الملف كبير / مرفوض» | `MAX_ROWS = 5000` · `MAX_FILE_BYTES = 5_000_000` · `.xlsx` أو `.csv` (`backend/app/services/lead_import.py`) | 422 قبل القراءة. داخل الملف: بلا موبايل = error؛ نوع تأمين أو بيّاع لا يطابق = warning ويبقى الصف غير مسند؛ موبايل موجود في lead نشط = skipped ولا يُنشَف |
+| «مقعد جديد بلا كلمة مرور» / «أوقفوا حسابًا» | `POST/PATCH /api/v1/sales-team/members[/{user_id}]` | كلمة المرور يولّدها الخادم وتُعرض في الردّ مرة واحدة ولا تُكتب في `audit_logs` (ADR-017 §5)؛ `{"is_active": false}` تمنع تسجيل الدخول (403) وتُخرج المقعد من منتقي التوزيع |
+
 ### الرايات (Feature flags) — إطفاء ميزة بدون نشر
 
 تُقرأ من جدول `feature_flags` في كل طلب (ADR-008)، وتُقلَّب `PATCH /api/v1/feature-flags/{key}`

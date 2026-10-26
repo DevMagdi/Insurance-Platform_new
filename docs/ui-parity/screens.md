@@ -89,7 +89,13 @@
 |---|---|---|
 | كروت مندوبين + «حِمل مرتفع» | `leads.loadHigh` عند `active > 20` | ✅ |
 | أشرطة مراحل 10px | `h-[10px] rounded-pill` | ✅ |
-| مجموعة غير موزّعة + إعادة توزيع | `GET /leads?unassigned=true` + `POST /leads/{id}/assign` | ✅ |
+| حوض «غير مسند» + إعادة توزيع بطلب واحد | `GET /leads?unassigned=true` + `POST /leads/assign-bulk` (`{unassigned_only, to:[…]}`، لا حلقة `PATCH` على صفحة واحدة) | ✅ |
+| استيراد Excel/CSV من اللوحة | زر `leads.importLeads` عند `leads.view_all` فقط → `frontend/src/features/leads/ImportLeadsDialog.tsx` (معاينة ⇒ `POST /leads/import/{job}/commit`) | ✅ |
+| أعضاء المكتب (مقاعد + أدوار + كلمة مرور مؤقّتة) | `frontend/src/features/leads/TeamMembersCard.tsx` فوق `GET/POST/PATCH /sales-team/members[/{user_id}]`، بسقف `OFFICE_ROLES` وصلاحية `leads.assign` | ✅ |
+| لوحة الحِمل تُظهر الموقوف ولا يمنحه منتقي التوزيع | `RepWorkloadOut.is_active` ⇒ `rows.filter((row) => row.is_active)` في `RedistributeDialog` | ✅ |
+
+لا يوجد في هذا المنتج «جدول كل الـ Leads» كشاشة مستقلة؛ إسناد الصف colocated مع الحوض ومن تفاصيل الـ lead
+(ADR-017 §7). الأرقام الحيّة لكل سطر أعلاه في `docs/STATUS.md` («جولة R2»).
 
 ## 8. قائمة العملاء — `features/clients/ClientsPage.tsx`
 
