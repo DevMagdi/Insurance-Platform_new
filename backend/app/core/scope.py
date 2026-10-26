@@ -51,9 +51,10 @@ class Scope:
     def session_settings(self) -> dict[str, str]:
         """GUCs consumed by the PostgreSQL RLS policies (migration 0002, ADR-003).
 
-        Not yet applied on the request path: no caller sends these to the session, so the policies
-        stay permissive. Until that is wired up, RLS is a guard for direct database access only and
-        the enforced isolation remains the repository layer — see docs/STATUS.md and ADR-003.
+        They are published on every request by `core/rls.py` (an `after_begin` hook on the route's
+        session), so a query that forgot its repository filter is still confined to the same rows.
+        A `Scope` that never reaches the database — a worker, a health check — simply leaves the
+        settings unset, which the policies read as "system access". See ADR-003 and ADR-014.
 
         `app.bypass_rls=on` is set only for scopes that are intentionally unrestricted (managers,
         admins, system jobs). Owner/seeded/portal scopes keep it off, so RLS re-checks the row.

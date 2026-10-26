@@ -7,9 +7,9 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, Query, Request
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import rls
 from app.core.db import get_sessionmaker
 from app.core.errors import Forbidden, Unauthorized
 from app.core.pagination import PageParams
@@ -22,11 +22,12 @@ ACCESS_COOKIE = "bh_access"
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
+    """The bare session, for callers that must not carry a scope (worker tasks, scripts)."""
     async with get_sessionmaker()() as session:
         yield session
 
 
-DbSession = Annotated[AsyncSession, Depends(get_session)]
+RawSession = Annotated[AsyncSession, Depends(get_session)]
 
 
 def _token_from(request: Request) -> str | None:
@@ -61,23 +62,32 @@ CurrentUser = Annotated[User, Depends(current_user)]
 
 
 def scope_of(user: CurrentUser) -> Scope:
-    """Single source of truth for data isolation (see core/scope.py)."""
-    return build_scope(user)
+    """Single source of truth for data isolation (see core/scope.py).
+
+    Also publishes the scope for the RLS hook in `core/rls.py`: one place decides, both layers read it.
+    """
+    scope = build_scope(user)
+    rls.set_scope(scope)
+    return scope
 
 
 ScopeDep = Annotated[Scope, Depends(scope_of)]
 
 
-async def scoped_session(session: DbSession, scope: ScopeDep) -> AsyncIterator[AsyncSession]:
-    """Installs the RLS GUCs for the transaction on PostgreSQL; no-op on SQLite dev."""
-    bind = session.get_bind()
-    if bind is not None and bind.dialect.name == "postgresql":
-        for key, value in scope.session_settings().items():
-            await session.execute(text(f"SET LOCAL {key} = :v"), {"v": value})
-    yield session
+async def scoped_session() -> AsyncIterator[AsyncSession]:
+    """Every route's session, with the RLS hook installed (see core/rls.py).
+
+    The hook reads the request's scope from a contextvar rather than depending on `ScopeDep`, so an
+    unauthenticated route (login, refresh) keeps using the same alias and simply gets no settings —
+    while no data route can opt out of the second net, because there is only one session alias.
+    """
+    async with get_sessionmaker()() as session:
+        rls.install(session)
+        yield session
 
 
-ScopedSession = Annotated[AsyncSession, Depends(scoped_session)]
+DbSession = Annotated[AsyncSession, Depends(scoped_session)]
+ScopedSession = DbSession  # kept as a name for readability where the net matters
 
 
 def require_perm(*codes: str) -> Callable[[User], Awaitable[User]]:
