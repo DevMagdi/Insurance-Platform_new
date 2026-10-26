@@ -1,16 +1,35 @@
+import path from "node:path";
+
 import { defineConfig } from "@playwright/test";
 import { loadEnv } from "vite";
 
 /**
  * E2E runs against the real stack: the API is started with migrations + demo seed, and Vite proxies
- * /api to it. `E2E_SKIP_WEBSERVER=1` points the suite at services you started yourself (e.g. CI job
+ * /api to it. `E2E_SKIP_WEBSERVER=1` points the suite at services you started yourself (e.g. a CI job
  * that boots docker compose first).
+ *
+ * Two rules that broke CI once, so they are spelled out here:
+ * - `webServer.env` *replaces* the environment, never just adds to it — so `process.env` is merged in,
+ *   otherwise the server loses `PATH` and runs a python without our dependencies.
+ * - no `bash -lc`: a login shell re-sources profiles and is the only reason the old command found a
+ *   python at all. Plain `sh -c` (what Playwright uses) plus a merged env is enough.
  */
 const env = { ...loadEnv("", process.cwd(), ""), ...process.env };
 const API_PORT = env.E2E_API_PORT ?? "8000";
 const WEB_PORT = env.E2E_WEB_PORT ?? "5173";
 const skip = env.E2E_SKIP_WEBSERVER === "1";
+const backendDir = path.resolve(process.cwd(), "../backend");
 
+/** The suite needs its own database. Locally that is SQLite in `backend/`; a CI job may export
+ *  `DATABASE_URL` for a real Postgres instead, and we must not overwrite that. */
+const apiEnv: Record<string, string> = {
+  ...process.env,
+  ENV: "dev",
+  INTEGRATIONS_DRIVER: "sim",
+  CELERY_TASK_ALWAYS_EAGER: "1",
+  STORAGE_DIR: path.resolve(process.cwd(), "../.e2e-storage"),
+  DATABASE_URL: env.DATABASE_URL ?? `sqlite+aiosqlite:///${path.join(backendDir, "e2e.db")}`,
+};
 export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,
@@ -37,23 +56,24 @@ export default defineConfig({
     ? undefined
     : [
         {
-          command: `bash -lc 'cd ../backend && (test -n "$DATABASE_URL" || export DATABASE_URL="sqlite+aiosqlite:///$(pwd)/e2e.db") && export ENV=dev INTEGRATIONS_DRIVER=sim CELERY_TASK_ALWAYS_EAGER=1 STORAGE_DIR="$(pwd)/../.e2e-storage" && rm -f e2e.db && python -m alembic -c alembic.ini upgrade head && python -m app.seed && python -m uvicorn app.main:app --host 0.0.0.0 --port ${API_PORT}'`,
-          cwd: process.cwd(),
+          command: `rm -f e2e.db && python -m alembic -c alembic.ini upgrade head && python -m app.seed && python -m uvicorn app.main:app --host 0.0.0.0 --port ${API_PORT}`,
+          cwd: backendDir,
           url: `http://127.0.0.1:${API_PORT}/healthz`,
-          reuseExistingServer: true,
+          reuseExistingServer: !process.env.CI,
           timeout: 180_000,
           stdout: "pipe",
           stderr: "pipe",
-          env: { PYTHONPATH: "backend" },
+          env: apiEnv,
         },
         {
-          command: `bash -lc 'VITE_API_ORIGIN=http://127.0.0.1:${API_PORT} npm run dev -- --port ${WEB_PORT} --strictPort'`,
+          command: `npm run dev -- --host 0.0.0.0 --port ${WEB_PORT} --strictPort`,
           cwd: process.cwd(),
           url: `http://127.0.0.1:${WEB_PORT}`,
-          reuseExistingServer: true,
+          reuseExistingServer: !process.env.CI,
           timeout: 120_000,
           stdout: "pipe",
           stderr: "pipe",
+          env: { ...process.env, VITE_API_ORIGIN: `http://127.0.0.1:${API_PORT}` },
         },
       ],
 });

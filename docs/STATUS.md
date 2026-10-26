@@ -50,6 +50,17 @@ playwright test --list    → 112 tests / 8 files (desktop + mobile)
 `GET /portal/overview` (بلا عمولات/ملاحظات) + 403 على `/requests` · `PATCH /feature-flags/phase2.enabled` ثم `/policies` + `/reports` ✓.
 و`vite dev` مع الوصلة الأمامية `/api` (تسجيل دخول عبر المنفذ 5173 → 200).
 
+## ما أصلحه أول تشغيل لـ CI على هذا الطلب
+
+| الفشل | السبب | الإصلاح |
+|---|---|---|
+| `backend · OpenAPI export must be committed` | مقارنة نصية: إصدار FastAPI يغيّر حقولاً تجميلية في الملف المولّد | `backend/scripts/check_openapi_fresh.py` يقارن JSON محلولاً ويطبع أول 12 تبايناً |
+| `e2e · config.webServer was not able to start` | `webServer.env` يستبدل البيئة ⇒ ضاع `PATH` فاشتُغل بـ python بلا alembic؛ و`bash -lc` كان يخفي المشكلة | البيئة تُدمج مع `process.env`، والقيادة `sh -c` بلا login shell، و`reuseExistingServer` مطفأ في CI |
+| بوابة تغطية النواة FAIL على ملف مغطى 100% | `skip_covered` في `pyproject.toml` يُخفي الملف من `coverage report` | البوابة تقرأ `coverage json` |
+| `ruff format --check` على 5 ملفات | تنسيق لم يُجرَ محلياً | `ruff format .` ثم أُعيد التصدير والتوليد |
+
+بعد الإصلاحات: `backend` ✅ · `frontend` ✅ · `docker` ✅ · `e2e` — النتيجة تُذكر أسفل هذا الجدول بعد إعادة التشغيل.
+
 ## ما لم يُشغَّل ولماذا
 
 1. **Playwright e2e واللقطات**: لا يوجد متصفح في هذه البيئة (لا شبكة لتنزيل `playwright install`)، لذلك

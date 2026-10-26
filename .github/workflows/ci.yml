@@ -70,15 +70,8 @@ jobs:
         run: python scripts/check_core_coverage.py
       - name: Dependency audit
         run: pip-audit --strict -r requirements.txt
-      - name: OpenAPI export must be committed
-        run: |
-          python scripts/export_openapi.py
-          if ! git diff --quiet -- docs/api/openapi.json; then
-            python -c "import fastapi,pydantic,starlette,sys; print('::error::toolchain py=%s fastapi=%s pydantic=%s starlette=%s' % (sys.version.split()[0], fastapi.__version__, pydantic.VERSION, starlette.__version__))"
-            git --no-pager diff --unified=1 -- docs/api/openapi.json | head -n 40 | tr -d '\r' | sed 's|^|::error::openapi-drift: |'
-            echo "::error::docs/api/openapi.json is stale - run: python backend/scripts/export_openapi.py"
-            exit 1
-          fi
+      - name: OpenAPI export must be committed (compared as data, not text)
+        run: python scripts/check_openapi_fresh.py
   frontend:
     name: frontend · lint · typecheck · unit · build
     runs-on: ubuntu-latest
