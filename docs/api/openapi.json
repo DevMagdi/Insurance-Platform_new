@@ -5104,6 +5104,11 @@
             ],
             "title": "Conversion Rate"
           },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
           "load": {
             "anyOf": [
               {

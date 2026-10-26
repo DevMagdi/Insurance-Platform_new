@@ -24,6 +24,7 @@ const REPS = [
   {
     rep_id: "r1",
     name: "سارة",
+    is_active: true,
     open_leads: 4,
     won: 1,
     meetings: 2,
@@ -34,6 +35,7 @@ const REPS = [
   {
     rep_id: "r2",
     name: "منى",
+    is_active: true,
     open_leads: 1,
     won: 0,
     meetings: 0,
@@ -41,7 +43,19 @@ const REPS = [
     stages_pct: {},
     conversion_rate: 0,
   },
+  {
+    rep_id: "r3",
+    name: "هالة موقوفة",
+    is_active: false,
+    open_leads: 7,
+    won: 3,
+    meetings: 1,
+    stages: {},
+    stages_pct: {},
+    conversion_rate: 30,
+  },
 ];
+const ACTIVE_REP_COUNT = REPS.filter((row) => row.is_active).length;
 const POOL = [
   {
     id: "l1",
@@ -241,9 +255,9 @@ describe("redistributing the unassigned pool", () => {
     renderWithProviders(<SalesTeamPage />);
 
     const dialog = await openRedistribute();
-    // every seat in the office is tickable: the server round-robins across whoever is chosen
+    // every seat that can still take work is tickable: the server round-robins across whoever is chosen
     const boxes = within(dialog).getAllByRole("checkbox");
-    expect(boxes).toHaveLength(REPS.length);
+    expect(boxes).toHaveLength(ACTIVE_REP_COUNT);
     boxes.forEach((box) => fireEvent.click(box));
     fireEvent.click(
       within(dialog).getByRole("button", {
@@ -277,6 +291,29 @@ describe("redistributing the unassigned pool", () => {
     await waitFor(() => expect(calls.post.length).toBeGreaterThan(0));
     expect(calls.post.at(-1)?.path).toBe("/leads/assign-bulk");
     expect(calls.post.at(-1)?.body).toEqual({ lead_ids: ["l1"], to: ["r2"] });
+  });
+
+  it("does not offer a suspended seat as a target", async () => {
+    calls.post.length = 0;
+    calls.patch.length = 0;
+    renderWithProviders(<SalesTeamPage />);
+
+    const dialog = await openRedistribute();
+    // هالة is on the workload board below (her 7 open leads are real) but not in the picker: handing her
+    // more work is a 422 from `_require_rep`, so offering her would be a button that only fails
+    expect(within(dialog).queryByText("هالة موقوفة")).toBeNull();
+    expect(screen.getByText("هالة موقوفة"), "the suspended seat disappeared from the manager's board").toBeInTheDocument();
+    const boxes = within(dialog).getAllByRole("checkbox");
+    expect(boxes).toHaveLength(ACTIVE_REP_COUNT);
+    boxes.forEach((box) => fireEvent.click(box));
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: ar.leads.redistributeGo.replace("{n}", "2"),
+      }),
+    );
+
+    await waitFor(() => expect(calls.post.length).toBeGreaterThan(0));
+    expect(calls.post.at(-1)?.body).toEqual({ unassigned_only: true, to: ["r1", "r2"] });
   });
 
   it("shows the API's own reason when the move is refused", async () => {

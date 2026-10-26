@@ -3617,6 +3617,11 @@ export interface components {
         RepWorkloadOut: {
             /** Conversion Rate */
             conversion_rate?: number | null;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
             /** Load */
             load?: string | null;
             /** Meetings */

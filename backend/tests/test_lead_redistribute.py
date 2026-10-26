@@ -6,6 +6,7 @@ which silently meant "at most 50", while the card had counted every unassigned l
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -85,6 +86,9 @@ async def test_the_whole_pool_moves_at_once_and_the_timeline_records_it(client, 
             assert entry["meta"]["to"] == rep_a
             assert entry["meta"]["via"] == "redistribute"
             assert entry["actor_name"] == "Manager"
+            # the line a manager reads, not two uuids they have to look up — the ids stay in `meta`
+            assert entry["body"] == "redistributed: unassigned → Rep A", entry["body"]
+            assert str(rep_a) not in entry["body"]
 
 
 async def test_finished_leads_are_not_part_of_the_pool(client, ids: dict[str, dict[str, str]]) -> None:
@@ -113,6 +117,8 @@ async def test_two_reps_split_the_pool_in_the_order_they_were_picked(client, ids
         activities = (await client.get(f"/api/v1/leads/{note['id']}/activities", headers=auth)).json()
         entry = next(row for row in activities if row["type"] == "assignment")
         assert "توزيع متوازن" in entry["body"], entry["body"]
+        assert entry["body"].startswith("redistributed: unassigned → "), entry["body"]
+        assert any(name in entry["body"] for name in ("Rep A", "Rep B")), "the round-robin line does not say who got the lead"
 
 
 async def test_a_selection_can_be_reassigned_and_repetition_is_reported_not_repeated(client, ids: dict[str, dict[str, str]]) -> None:
@@ -181,13 +187,35 @@ async def _unassigned_names() -> list[str]:
         return list(rows)
 
 
-async def _make_rep(email: str, *, active: bool) -> str:
+async def _make_rep(email: str, *, active: bool, deleted: bool = False) -> str:
     async with get_sessionmaker()() as session:
         role_id = (await session.execute(select(Role.id).where(Role.code == "sales_rep"))).scalar_one()
-        user = User(email=email, full_name=f"Ghost {email[:6]}", password_hash=hash_password(PASSWORD), role_id=role_id, is_active=active)
+        user = User(
+            email=email,
+            full_name=f"Ghost {email[:6]}",
+            password_hash=hash_password(PASSWORD),
+            role_id=role_id,
+            is_active=active,
+            deleted_at=datetime.now(UTC) if deleted else None,
+        )
         session.add(user)
         await session.commit()
         return str(user.id)
+
+
+async def test_the_board_keeps_a_suspended_seat_and_marks_it(client, ids: dict[str, dict[str, str]]) -> None:
+    """`is_active` is on the workload row so the picker can drop a seat the server would refuse, while the
+    board itself still counts the leads that seat is holding — hiding them would hide the work."""
+    ghost = await _make_rep(f"suspended-{uuid4().hex[:8]}@brokerhub.test", active=False)
+    gone = await _make_rep(f"deleted-{uuid4().hex[:8]}@brokerhub.test", active=True, deleted=True)
+    async with login(client, MANAGER) as auth:
+        rows = (await client.get("/api/v1/sales/team", headers=auth)).json()
+        card = next(row for row in rows if row["rep_id"] == ghost)
+        assert card["is_active"] is False
+        assert card["open_leads"] == 0
+        seeded = next(row for row in rows if row["rep_id"] == ids["users"]["rep_a"])
+        assert seeded["is_active"] is True
+        assert gone not in {row["rep_id"] for row in rows}, "a deleted account is not a workload card"
 
 
 async def test_the_two_selectors_are_exclusive(client, ids: dict[str, dict[str, str]]) -> None:

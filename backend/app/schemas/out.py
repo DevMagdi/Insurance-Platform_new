@@ -175,6 +175,7 @@ class LeadConvertOut(Open):
 class RepWorkloadOut(Open):
     rep_id: UUID
     name: str
+    is_active: bool = True
     open_leads: int
     meetings: int
     won: int

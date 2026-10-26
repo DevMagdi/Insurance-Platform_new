@@ -229,11 +229,14 @@ async def rep_workload(session: AsyncSession) -> list[dict[str, Any]]:
             func.count(Lead.id).filter(Lead.status.notin_([LeadStatus.WON, LeadStatus.LOST])).label("open_leads"),
             func.count(Lead.id).filter(Lead.status == LeadStatus.MEETING_SCHEDULED).label("meetings"),
             func.count(Lead.id).filter(Lead.status == LeadStatus.WON).label("won"),
+            User.is_active,
         )
         .outerjoin(Lead, and_(Lead.assigned_to == User.id, Lead.deleted_at.is_(None)))
         .join(Role, Role.id == User.role_id)
-        .where(func.lower(Role.code) == "sales_rep")
-        .group_by(User.id, User.full_name)
+        # a deleted seat is nobody's workload; a suspended one still is — its open leads did not evaporate —
+        # and `is_active` is what keeps it out of the redistribution picker
+        .where(func.lower(Role.code) == "sales_rep", User.deleted_at.is_(None))
+        .group_by(User.id, User.full_name, User.is_active)
     )
     rows = (await session.execute(stmt)).all()
 
@@ -256,6 +259,7 @@ async def rep_workload(session: AsyncSession) -> list[dict[str, Any]]:
             "won": int(r.won),
             "stages": stages.get(r.id, {}),
             "unassigned": unassigned,
+            "is_active": bool(r.is_active),
         }
         for r in rows
     ]

@@ -231,7 +231,9 @@ export default function SalesTeamPage() {
 
       {redistributing ? (
         <RedistributeDialog
-          reps={rows}
+          // only a live seat can take work: the server refuses an inactive target with 422, and the dialog's
+          // own empty state already says «لا يوجد بيّاع نشط» — so the list it offers is the active one
+          reps={rows.filter((row) => row.is_active)}
           poolTotal={poolTotal}
           selectedCount={picked.length}
           busy={redistribute.isPending}

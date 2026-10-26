@@ -187,6 +187,13 @@ async def set_status(
     return lead
 
 
+async def _name_of(session: AsyncSession, user_id: UUID) -> str:
+    """The seat's full name, falling back to its id when the row is gone — a deleted rep still reads as a person
+    in the history of the leads they carried."""
+    person = await session.get(User, user_id)
+    return person.full_name if person is not None else str(user_id)
+
+
 async def _apply_assignment(
     session: AsyncSession,
     actor: User,
@@ -205,8 +212,13 @@ async def _apply_assignment(
     previous = lead.assigned_to
     lead.assigned_to = to_user_id
     await session.flush()
-    label = "unassigned" if to_user_id is None else str(to_user_id)
-    body = f"reassigned: {previous or 'none'} → {label}"
+    # `meta` keeps the machine ids, the human line names the people — a manager reading a lead's history
+    # should not have to look up two uuids to learn who handed the lead to whom.
+    from_name = "unassigned" if previous is None else await _name_of(session, previous)
+    to_name = "unassigned" if to_user_id is None else await _name_of(session, to_user_id)
+    label = to_name
+    verb = {"redistribute": "redistributed", "import": "imported"}.get(via, "assigned" if previous is None else "reassigned")
+    body = f"{verb}: {from_name} → {to_name}"
     if reason:
         body = f"{body} · {reason}"
     await repo.add_activity(
