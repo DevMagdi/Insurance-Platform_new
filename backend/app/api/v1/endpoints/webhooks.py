@@ -4,19 +4,20 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, BackgroundTasks, Header, Request
+from fastapi import APIRouter, BackgroundTasks, Header, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.api.v1.deps import DbSession
 from app.core.config import get_settings
 from app.core.errors import Forbidden
+from app.integrations import registry
 from app.integrations.base import StorageProvider, WhatsAppProvider
 from app.integrations.registry import telephony_provider, whatsapp_provider
 from app.integrations.storage import storage
-from app.services import intake
+from app.services import intake, integrations_settings
 
 router = APIRouter(tags=["webhooks & simulator"])
 
@@ -40,11 +41,59 @@ async def stage_inbound_media(
     return key, mime, len(payload)
 
 
+def _expected_verify_token() -> str:
+    """The token the operator pasted into Meta, from the settings row when there is one (ADR-016 §1).
+
+    It is a *secret*, so it is read from the decrypted secret map and not from `config`: the screen writes
+    it as a secret, and a handshake that looked in `config` would answer 403 forever on a correctly
+    configured installation. An unconfigured token refuses rather than accepting `""` — otherwise the
+    verification route is open on every fresh deployment, and "Meta says it subscribed" becomes unfalsifiable.
+    """
+    return registry.resolved("whatsapp").secret("verify_token")
+
+
+async def _log_rejected(session: Any, provider: str, raw: bytes, *, detail: str = "signature mismatch") -> None:
+    """A rejected delivery is the one event the operator most needs to see — logged before the 403."""
+    await integrations_settings.record_event(
+        session,
+        provider=provider,
+        event_type="rejected",
+        status="error",
+        detail=f"{detail}; body {len(raw)} bytes",
+    )
+    await session.commit()
+
+
 @router.get("/webhooks/whatsapp", summary="Meta verification handshake")
-async def whatsapp_verify(hub_mode: str | None = None, hub_challenge: str | None = None, hub_verify_token: str | None = None) -> Any:
-    if hub_mode == "subscribe" and hub_verify_token == get_settings().WHATSAPP_VERIFY_TOKEN:
-        return PlainTextResponse(hub_challenge or "")
-    raise Forbidden("Verification failed")
+async def whatsapp_verify(
+    session: DbSession,
+    # Meta sends `hub.mode` / `hub.challenge` / `hub.verify_token`; without the aliases FastAPI looks for
+    # `hub_mode`, so a real verification request from Meta would arrive and be refused as unconfigured.
+    hub_mode: Annotated[str | None, Query(alias="hub.mode")] = None,
+    hub_challenge: Annotated[str | None, Query(alias="hub.challenge")] = None,
+    hub_verify_token: Annotated[str | None, Query(alias="hub.verify_token")] = None,
+) -> Any:
+    expected = _expected_verify_token()
+    ok = bool(expected) and hub_mode == "subscribe" and hub_verify_token == expected
+    # The outcome is worth a row: "Meta says it subscribed but nothing arrives" is answered from settings.
+    await integrations_settings.record_event(
+        session,
+        provider="whatsapp",
+        event_type="verification",
+        status="ok" if ok else "rejected",
+        detail=None
+        if ok
+        else (
+            "لا يوجد Verify Token محفوظ — أضِفه من /settings ثم أعِد المحاولة"
+            if not expected
+            else "hub.verify_token لم يطابق القيمة المحفوظة"
+        ),
+    )
+    await session.commit()
+    if not ok:
+        # the two reasons are different work for the operator, so the answer names which one it is
+        raise Forbidden("Verification failed: اضبط Verify Token في /settings أولًا" if not expected else "Verification failed")
+    return PlainTextResponse(hub_challenge or "")
 
 
 @router.post("/webhooks/whatsapp", summary="Inbound WhatsApp (signature-checked, idempotent)")
@@ -52,22 +101,28 @@ async def whatsapp_webhook(request: Request, session: DbSession, background: Bac
     raw = await request.body()
     provider = whatsapp_provider()
     if not provider.verify_signature(raw, request.headers.get("x-hub-signature-256")):
+        await _log_rejected(session, "whatsapp", raw)
         raise Forbidden("Invalid webhook signature")
     from app.integrations.whatsapp import parse_inbound
 
     events = parse_inbound(raw)
     storage_backend = storage()
+    # `receive_media` is a real switch, not decoration: media is the expensive, privacy-bearing part of
+    # the inbound stream (Meta fetch + our bucket write). Text still lands when it is off (ADR-016 §8).
+    receive_media = bool(registry.config_value("whatsapp", "receive_media", True))
 
     results = []
     for event in events:
         if event.get("status"):
             results.append({"external_id": event["external_id"], "status": "delivery_update"})
+            await integrations_settings.record_event(
+                session, provider="whatsapp", event_type="status", external_id=str(event["external_id"]), detail=event["status"]
+            )
             continue
         # Inbound media is copied into our own bucket, so playback never depends on the
         # provider keeping the file (and the portal/rep URLs stay short-lived & signed).
-        media_key, media_mime, media_size = await stage_inbound_media(
-            provider, storage_backend, str(event["external_id"]), event.get("media_id")
-        )
+        media_id = event.get("media_id") if receive_media else None
+        media_key, media_mime, media_size = await stage_inbound_media(provider, storage_backend, str(event["external_id"]), media_id)
         results.append(
             await intake.ingest_whatsapp_message(
                 session,
@@ -81,6 +136,14 @@ async def whatsapp_webhook(request: Request, session: DbSession, background: Bac
                 media_size=media_size,
                 duration_s=event.get("duration_s"),
             )
+        )
+        await integrations_settings.record_event(
+            session,
+            provider="whatsapp",
+            event_type="message",
+            external_id=str(event["external_id"]),
+            status="ok",
+            detail=f"media={'yes' if media_key else 'no'}" if event.get("media_id") else None,
         )
     await session.commit()
     _ = background
@@ -206,10 +269,12 @@ async def telephony_webhook(
 ) -> dict[str, Any]:
     raw = await request.body()
     if not telephony_provider().verify_signature(raw, x_call_signature):
+        await _log_rejected(session, "telephony", raw)
         raise Forbidden("Invalid webhook signature")
     try:
         body = json.loads(raw or b"{}")
     except json.JSONDecodeError as exc:
+        await _log_rejected(session, "telephony", raw, detail="body must be JSON")
         raise Forbidden("Body must be JSON") from exc
     result = await intake.ingest_call_event(
         session,
@@ -224,6 +289,14 @@ async def telephony_webhook(
         duration_s=body.get("duration_s"),
         recording_object_key=body.get("recording_key"),
         recording_consent=bool(body.get("recording_consent", False)),
+    )
+    await integrations_settings.record_event(
+        session,
+        provider="telephony",
+        event_type=str(body.get("event", "call.started")),
+        external_id=str(body.get("call_id") or body.get("provider_call_id") or "") or None,
+        status=str(result.get("status") or "ok"),
+        detail=None if result.get("status") != "ignored" else "duplicate/unknown — no state change",
     )
     await session.commit()
     return result

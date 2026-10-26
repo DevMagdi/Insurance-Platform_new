@@ -1,6 +1,7 @@
 from app.models.auth import ClientPortalUser, Permission, Role, User, UserScope, role_permissions
 from app.models.base import Base, TimestampMixin, utcnow
 from app.models.clients import Client, ClientContact, ImportJob, InsuredPerson
+from app.models.integrations import IntegrationConfig, WebhookEvent
 from app.models.leads import Lead, LeadActivity, LeadMeeting
 from app.models.masters import (
     BusinessHoursRow,
@@ -22,6 +23,7 @@ from app.models.requests import (
     RequestNumberCounter,
     ServiceRequest,
 )
+from app.models.settings import SystemSetting
 
 __all__ = [
     "Attachment",
@@ -40,6 +42,7 @@ __all__ = [
     "InsuranceType",
     "InsuredPerson",
     "Insurer",
+    "IntegrationConfig",
     "InternalNote",
     "IssuingCase",
     "IssuingDocument",
@@ -55,9 +58,11 @@ __all__ = [
     "Role",
     "ServiceRequest",
     "SlaPolicy",
+    "SystemSetting",
     "TimestampMixin",
     "User",
     "UserScope",
+    "WebhookEvent",
     "role_permissions",
     "utcnow",
 ]

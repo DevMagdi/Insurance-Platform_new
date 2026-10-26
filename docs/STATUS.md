@@ -21,44 +21,61 @@
 | M7 البورتال | ✅ منتهية | `services/portal.py` · `tests/test_portal.py` (اختبار يمنع تسرّب أي مفتاح حسّاس) |
 | M8 المرحلة الثانية (وثائق/أقساط/عمولات/إصدار/تقارير) خلف flag | 🟡 واجهات كاملة + API مقروء؛ الأعمال اليدوية فقط | `api/v1/endpoints/phase2.py` · `tests/test_dashboard_phase2.py` · الشاشات 12–14 تعمل عند تفعيل `phase2.enabled` |
 | M9 التوثيق والمحاكاة وتشغيل UI | 🟡 جزئي | هذا الملف + [`runbook.md`](runbook.md) + [`ui-parity/`](ui-parity/README.md) · لقطات الشاشة تُنتَج في CI فقط (انظر «ما لم يُشغَّل») |
-| M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | backend أخضر على **PostgreSQL 16** (138) وعلى SQLite (129 + 9 مُتخطَّاة بعلامة `postgres_only`) · frontend أخضر (51 اختبار وحدة + build) · e2e: typecheck ✓ واكتشاف 114 اختبارًا ✓ لكنها **لم تُشغَّل** (لا متصفح — «ما لم يُشغَّل» 1) · ruff/mypy/تغطية النواة/استقرار الـOpenAPI كلها نظيفة |
+| M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | backend أخضر على **PostgreSQL 16** (154) وعلى SQLite (145 + 9 مُتخطَّاة بعلامة `postgres_only`) · frontend أخضر (68 اختبار وحدة + build) · e2e: typecheck ✓ و8 ملفات ✓ لكنها **لم تُشغَّل** محلياً (لا متصفح — «ما لم يُشغَّل» 1) · ruff/mypy/تغطية النواة/استقرار الـOpenAPI/**تمرير كل النقاط** نظيفة |
+| R1 مركز الإعدادات: تكاملات حقيقية + إنشاء وثيقة | ✅ منتهية (محلياً) | `/settings` بثلاث بطاقات + حيّ/محاكاة بتأكيد + سجلّ `webhook_events` + `POST /policies` بجدول أقساط وعمولة · `tests/test_integrations_settings.py` (16) · `frontend/tests/settingsView.test.tsx` (14) · ADR-016 |
 | مزوّد AI (§11 M10): واجهة واحدة خلف `ai.enabled` + مراجعة بشرية | ✅ السطح كامل بسائق محاكاة · ⬜ بلا مزوّد حقيقي | `integrations/ai_sim.py` (حتمي، استخلاصي) · `endpoints/ai.py`: `GET /ai/status` · `POST /ai/calls/{id}/transcribe` · `POST /ai/requests/{id}/summarize` · `POST /ai/classify` · `tests/test_ai.py` (7) · زر «تلخيص آلي» في `InboxPage` يظهر فقط عند تشغيل الراية · ADR-013 |
 
-## ما شُغِّل فعليًا (هذه الجلسة، نفس نتائج CI)
+## ما شُغِّل فعليًا (جولة R1 — مركز الإعدادات؛ الأرقام من نفس الجلسة)
 
 backend — **على محرّكَي القاعدة**، لأن `DATABASE_URL_TEST` صار يحدّد المحرّك (ADR-014):
 
 ```
-ruff check .            → All checks passed!           (129 ملفاً)
-ruff format --check .   → 129 files already formatted
-mypy app                → Success: no issues found in 96 source files
-python -m pytest        → 129 passed, 9 skipped in 97.91s      (SQLite؛ التسعة هي `postgres_only`)
+ruff check .            → All checks passed!           (139 ملفاً)
+ruff format --check .   → 139 files already formatted
+mypy app                → Success: no issues found in 104 source files
+python -m pytest        → rc 0 · 154 مُجمَّعة، منها 9 بعلامة `postgres_only` ⇒ 145 ناجحاً + 9 مُتخطَّاة (~228s SQLite)
 DATABASE_URL_TEST=postgresql+asyncpg://… python -m pytest
-                        → 138 passed in 113.92s                (PostgreSQL 16.2 حقيقي، بلا تخطٍّ)
-coverage report         → TOTAL 5601/979 → 82.5% · بوابة النواة `scripts/check_core_coverage.py` ✓
-scripts/check_openapi_fresh.py → openapi.json is fresh (84 paths, 110 schemas)
-scripts/check_migrations.py    → migration immutability ok (2 merged, 0 new)
-alembic upgrade head    (PostgreSQL 16، قاعدة فارغة)      → rc 0
-alembic downgrade base  →  upgrade head (نفس القاعدة)     → rc 0
-   33 جدولاً · 55 مفتاحاً أجنبياً · سِياسَتا `leads_scope`/`clients_scope` · `relforcerowsecurity = t` عليهما
-   · دور `brokerhub_app` بـ`bypass=false login=false`
-alembic upgrade head    (ملف SQLite فارغ)                 → rc 0 (41 فهرساً، وقيد `clients→leads` موجود)
+                        → rc 0 · 154 ناجحاً بلا تخطٍّ (PostgreSQL 16.2 حقيقي، ~4 دقائق)
+coverage run -m pytest  → rc 0 · بوابة النواة `scripts/check_core_coverage.py` → 12/12 فوق 80% (أدنى 80.4%)
+scripts/check_openapi_fresh.py → openapi.json is fresh (92 paths)
+scripts/check_migrations.py    → migration immutability ok (3 merged, 0 new)
+scripts/smoke_api.py           → SMOKE OK — 107 نداءً من 109 في الوثيقة، واثنان مستثنيان بسببهما مكتوب
 ```
 
-PostgreSQL شُغِّل هنا بـحزمة `pgserver` (محرّك مضمّن، بلا Docker) — لا ادّعاء تغطية على PG بغير تشغيله.
-13 اختباراً جديداً في هذه الجولة: `tests/test_rls_postgres.py` (8، كلها `postgres_only`) و
-`tests/test_migrations.py` (5، واحد منها `postgres_only`). لذلك الفرق بين رقمَي المحرّكين = 9: ثمانية
-مُتخطَّاة + اختبار السلسلة على PG الذي يعمل هناك وحده.
+ملخّص `pytest -q` لا يُطبع هنا لأن `addopts` يضيف `-q` ثانية؛ الأرقام مأخوذة من `--collect-only -q` (154) ومن
+حروف التقدّم (`9×s` على SQLite، وصفر `s` وصفر `F` على PostgreSQL) مع `rc=0` — لا «تمّ» بلا مخرجات.
+سلسلة الترقية 0001→0004 على قاعدة PostgreSQL فارغة يثبتها `tests/test_migrations.py` (جزء من الـ154، يعمل
+هناك وحده)، و`tests/test_rls_postgres.py` (8) يثبّت أن الجدول الجديد لم يفتح ثغرة عزل.
+
+أسطر جديدة قِيست بالتغطية ولا تدخل بوابة النواة (لا إخفاء لرقم منخفض):
+`endpoints/settings.py` 98.2% · `core/secrets.py` 90.6% · `integrations/registry.py` 87.3% ·
+`services/policies.py` 85.7% · `services/policy_settings.py` 83.9% · `core/rate_limit.py` 80.0% ·
+`services/integrations_settings.py` **71.2%** · `workers/tasks/media.py` **62.8%** — السبب والقرار مسجَّلان
+في «اختصارات» سطر 17.
 
 frontend (Node 22):
 
 ```
 eslint . --max-warnings 0 → 0 مشكلة
-npm run typecheck         → نظيف (tsconfig.json + tsconfig.e2e.json؛ الأول يغطي `tests/` أيضاً)
-vitest run                → 51 passed / 7 files  (منها 8 لـ`navModel` و3 لبوابة مسارات المستندات)
-npm run build             → ✓ (chunks لكل شاشة)
-playwright test --list    → 114 tests in 8 files (desktop + mobile)
+tsc -p tsconfig.json --noEmit && tsc -p tsconfig.e2e.json --noEmit → نظيف
+npx vitest run            → 68 passed / 8 files (منها 14 في `settingsView.test.tsx` و5 في `i18n-parity.test.ts`)
+npm run build             → ✓ في 7.3s (chunk لكل شاشة)
+e2e (Playwright)          → typecheck ✓ · **لم تُشغَّل محلياً**: لا متصفح بلا root (`libnss3` غائب) ⇒ الدليل من CI
 ```
+
+**الدليل من CI على هذا الرأس (`e2e · playwright`)**: **25 اختبارًا فاشلًا**، وعلى `main` **28** — و**لا واحد** منها في
+`e2e/settings.spec.ts` (`screens` 7، `isolation` 5، `auth` 3، `dashboard` 2، `inbox` 2، `simulator` 2، `insured` 1:
+شاشات لم تلمسها R1، وقياسها على `main` هو ما يبقيها خارج هذا الطلب). الملف نفسه صُحِّح مرّتين بعد نشره لأن ادّعاءاته
+كُتبت من قارئ الشيفرة لا من الشيفرة: `Card` يصدر `<section>` لا `<div>`؛ لوحة الاكتتاب تؤكّد «تمّ حفظ سياسة الاكتتاب»
+لا «تمّ حفظ الإعدادات»؛ شارة الهاتف «محاكاة» لا «غير مُعدّ» لأنّ `infra/docker-compose.yml:36` يعرّف
+`TELEPHONY_WEBHOOK_SECRET` والبيئة هي المرتجع (ADR-016 §1)؛ وتسجيل دخول مستخدمَين في اختبار واحد لا يعمل لأنّ
+`/login` يعيد التوجيه فورًا إن وُجدت جلسة (`fixtures.ts:49`) ⇒ مستخدم لكلّ اختبار بسياقه النظيف. بعد ذلك يبدأ كلّ اختبار
+بسؤال ال API عن حالته وتحمل رسالة الفشل نصّ الاستجابة نفسها (الملاحظات محدودة بخمسين لكلّ job، فـ«locator timeout»
+وحدها لا تُقرأ من بعيد)، ويُقاس حفظُ السياسة بـ `expect.poll` على `GET /settings/policies` لا على توست.
+تفاصيل الفشل الباقية **تُركت ولم تُخمَّن**: سجلّات job تحوَّل إلى `*.blob.core.windows.net` المحجوب هنا، فلا دليل
+يُقرأ على مقدّمات تلك الاختبارات — وهي عمل PRّ الخاص بمحضره. `docker` يفشل على هذا الرأس وعلى `main`
+**بنفس الخطوة حرفيًا** («Boot the stack the way the runbook says to»)، فهو عيب تأليفٍ لا علاقة له بـ`0004_integration_settings.py`.
+
 
 تحقق حيّ من التشغيل (بدون متصفح): رفع الـAPI بقاعدةSeed جديدة ثم
 `GET /healthz` · `POST /auth/login` · `POST /dev/sim/whatsapp` (رسالة صوتية → طلب #1025 + مرفق صوتي عبر رابط موقّع يُرجع 200) ·
@@ -133,6 +150,12 @@ playwright test --list    → 114 tests in 8 files (desktop + mobile)
 | 10د | لا فرع `fix/rN-*` لكل مرحلة رغم التعليمات | المنصّة تجمس الجلسة على فرع واحد (`arena/16c2338f-…`) ولا تسمح بتغييره؛ البديل المطبَّق: commit مستقل لكل نقطة عمل + هذا السطر يسجّله. لا شيء يُدمج في `main` من هنا |
 | 10هـ | `docs/ui-parity/screens.md` صار يُطابق الكود لا النوايا، وبوابة `frontend/tests/docPaths.test.ts` تفشل إن سمّى مستندٌ ملفاً غير موجود | المستند كان يصف ملفات وشاشات لا توجد (`KanbanPage` بمسار خاطئ، `RenewalsKpi`، KPIs باسم «تجديدات»)؛ أسماء ورقة التصميم نفسها غير قابلة للتحقق هنا لأن الورقة ليست في المستودع — لذا لا تُكتب «مطابقة» (ADR-015) |
 | 11 | رايتا `whatsapp.enabled` و`telephony.enabled` مزروعتان في `feature_flags` لكن **لا مسار يقرأهما**: إيقافهما لا يوقف الـwebhooks | إضافتهما في §8 تخصّ المزوّدات، وتطبيقهما على `POST /webhooks/*` يحتاج قرارًا: الرفض 503 أم الإهمال الصامت للقناة. مُدرج كفجوة لا كحاجة؛ لا قناة إنتاجية موصولة أصلاً (`INTEGRATIONS_DRIVER=sim`) |
+| 12 | كاش السائق لكل عملية: الحفظ يسري في العملية التي خدمت الطلب، وبقية العمال تحتاج إعادة تشغيل | `registry.prime()` بعد كل حفظ؛ لا invalidation بين العمليات (قاع القاعدة في كل نداء صادر أثقل). الأمر في `docs/runbook.md` §5 «إعدادات التكاملات». لا يُدّعى أن الحفظ فوري في كل عملية |
+| 13 | `frontend/e2e/settings.spec.ts` **لم يُشغَّل محلياً** (لا متصفح: `libnss3/libnspr4` غائبان بلا root) | ما مُتحَّق منه محلياً: `tsc -p tsconfig.e2e.json` ✓ ونجاح اكتشاف الاختبارات. الدليل على المرور من CI وحده — لا «تم» قبله |
+| 14 | الـe2e لا يضغط «اختبار الاتصال» بعد التحوّل إلى الحيّ | CI لا يصرف حِصّة Meta الحقيقية ولا يتعلّق بشبكة الخارج؛ المسار الحيّ مُغطّى بوهميّة نقل في `backend/tests/test_integrations_settings.py` |
+| 15 | لقطة باسم `15b-settings-hub.png` خارج تسلسل `01…16` | شاشة 15 صارت تبويباً داخل الـhub (`/settings?tab=users`)؛ اسم الملف يبقى حتى لا تنكسر مراجع `ui-parity/screens.md`، و`Shot.who` وسّع `admin` لأن `users.manage` ليست في دور المدير |
+| 16 | تمرير `scripts/smoke_api.py` يستثني نقطتين (بسبب مكتوب أمام كل واحدة) | `/media/{key}` رابط موقّع لمرّة واحدة ويُستهلك في نفس السكربت؛ ومرفق البوابة برقمه من قائمة البوابة (`tests/test_portal.py`). الباقي: 107 نداءً من 109 مُجاب عليه، والتمرير صار خطوة CI |
+| 17 | بوابة تغطية النواة بقيت على قائمتها (12 ملفاً)؛ ملفات الجولة الجديدة خارجها | الرقم **مقيس لا مدّعى**: `services/integrations_settings.py` 71.2% و`workers/tasks/media.py` 62.8%. السبب: فحوص الوضع الحيّ (debug_token، `EHLO`+`AUTH`) تحتاج وهايماً للمزوّد، وغلاف Celery لا يُستدعى داخل حلقة اختبار (`run_async` يحلّق على حلقة pytest) — ولا اختبار مهمة عامل في المستودع أصلاً. القرار: لا تُخفض البوابة ولا تُزيَّن؛ تُضاف عند كتابة الـstubs |
 
 ## قرارات اتُّخذت نيابة عن المالك (لأن الأسئلة غير مسموحة)
 
@@ -153,6 +176,7 @@ playwright test --list    → 114 tests in 8 files (desktop + mobile)
 | 013 سطح الـAI: محاكاة حتمية ومراجعة قبل أي كتابة | [`decisions/013-ai-surface-sim-only-and-review-before-write.md`](decisions/013-ai-surface-sim-only-and-review-before-write.md) |
 | 014 سلسلة الترقية على PostgreSQL: ما انكشف، استثناء تحرير 0001/0002، وتوصيل RLS | [`decisions/014-migration-chain-run-for-real-on-postgres.md`](decisions/014-migration-chain-run-for-real-on-postgres.md) |
 | 015 تصحيح مقدّمات e2e، والهبوط بالصلاحية، والشارة بالعدد الحقيقي | [`decisions/015-e2e-premises-corrected-and-permission-landing.md`](decisions/015-e2e-premises-corrected-and-permission-landing.md) |
+| 016 إعدادات التكاملات في القاعدة: تخزين، أسرار مشفّرة، شارة حيّ/محاكاة، وسجلّ webhook | [`decisions/016-integrations-settings.md`](decisions/016-integrations-settings.md) |
 
 ## قائمة ما قبل «جاهز للمراجعة»
 
@@ -165,7 +189,9 @@ playwright test --list    → 114 tests in 8 files (desktop + mobile)
 - [~] لقطات الـ16 شاشة + contact sheet: مكتوبة وتُنتَج في CI؛ لم تُشغَّل محليًا — جُرِّب `@sparticuz/chromium`
   وتعذّر التشغيل لغياب `libnss3/libnspr4` بلا root (تفصيل «ما لم يُشغَّل» 1)
 - [x] README فيه تشغيل بأوامر ثلاثة + تشغيل بلا Docker
-- [x] runbook + STATUS + ui-parity (README + screens.md بكل فوارق §9) + سجل القرارات 001–015 بلا فجوة
+- [x] runbook + STATUS + ui-parity (README + screens.md بكل فوارق §9) + سجل القرارات 001–016 بلا فجوة
+- [x] **كل نقطة موثّقة تجيب**: `python scripts/smoke_api.py` يعبر على كل `(path, method)` في الوثيقة
+  (107/109، واستثناءَان بسببهما مكتوب) — خطوة CI قائمة بذاتها بعد بوابات التغطية
 - [x] CI: ruff+mypy+pytest (على PostgreSQL أيضًا)+بوابة تغطية النواة+تدقيق الاعتماديات+فحص staleness
   للـOpenAPI+**منع تحرير الترقيات**+**سلسلة الترقية على قاعدة PostgreSQL فارغة**؛ lint/typecheck/vitest/build
   للواجهة؛ e2e مع اللقطات؛ ووظيفة `docker` صارت **تُقلع الـstack بالكامل** (health + nginx + seed + login)

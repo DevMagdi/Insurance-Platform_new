@@ -45,17 +45,23 @@ class WhatsAppSim:
 
 
 class WhatsAppMeta:
-    """Meta WhatsApp Business Cloud API (v21+). Token/phone id come from env, never the repo."""
+    """Meta WhatsApp Business Cloud API (v21+).
+
+    Credentials arrive from `integrations/registry.py`, which reads the saved settings row and falls back
+    to the environment — so the repo and the container env stay secret-free either way. An empty
+    `app_secret` means "no row said otherwise", and the environment value is used.
+    """
 
     name = "meta"
     BASE = "https://graph.facebook.com/v21.0"
 
-    def __init__(self, token: str, phone_number_id: str) -> None:
+    def __init__(self, token: str, phone_number_id: str, app_secret: str = "") -> None:
         self.token = token
         self.phone_number_id = phone_number_id
+        self.app_secret = app_secret or get_settings().WHATSAPP_APP_SECRET
 
     def verify_signature(self, payload: bytes, signature_header: str | None) -> bool:
-        return verify_webhook_signature(payload, signature_header, get_settings().WHATSAPP_APP_SECRET)
+        return verify_webhook_signature(payload, signature_header, self.app_secret)
 
     async def send_text(self, *, to: str, body: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=15) as client:

@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     masters,
     phase2,
     portal,
+    settings,
     users,
     webhooks,
 )
@@ -32,3 +33,4 @@ api_router.include_router(webhooks.router)
 api_router.include_router(exports.router, prefix="/exports")
 api_router.include_router(phase2.router)
 api_router.include_router(ai.router)
+api_router.include_router(settings.router)

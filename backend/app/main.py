@@ -38,11 +38,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     setup_logging(json_logs=not settings.DEBUG)
     log.info("startup", env=settings.ENV, driver=settings.INTEGRATIONS_DRIVER, postgres=settings.is_postgres)
+    # The settings rows are the source of truth for provider credentials (ADR-016); the process loads them
+    # once here and again on every save. Logged after priming so the line says what the screen says.
     if not settings.is_postgres and settings.DEBUG:
         from app.core.db import create_dev_schema
 
         await create_dev_schema()
         log.info("dev_schema_created", note="SQLite dev mode — run alembic in prod")
+    from app.core.db import get_sessionmaker
+    from app.integrations import registry
+
+    async with get_sessionmaker()() as session:
+        await registry.prime(session)
+    log.info("integrations_primed", live=[p for p in ("whatsapp", "telephony", "email") if registry.live_mode(p)])
     yield
     log.info("shutdown")
 

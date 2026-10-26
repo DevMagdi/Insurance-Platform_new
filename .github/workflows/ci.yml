@@ -72,6 +72,8 @@ jobs:
           coverage report --skip-covered
       - name: Core coverage gate (spec §10)
         run: python scripts/check_core_coverage.py
+      - name: Smoke every documented endpoint (seeded, in-process ASGI)
+        run: python scripts/smoke_api.py
       - name: Dependency audit
         run: pip-audit --strict -r requirements.txt
       - name: OpenAPI export must be committed (compared as data, not text)

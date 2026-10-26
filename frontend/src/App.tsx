@@ -19,7 +19,7 @@ const ClientsPage = lazy(() => import("@/features/clients/ClientsPage"));
 const ClientFilePage = lazy(() => import("@/features/clients/ClientFilePage"));
 const InsuredPage = lazy(() => import("@/features/clients/InsuredPage"));
 const PortalPage = lazy(() => import("@/features/portal/PortalPage"));
-const UsersPage = lazy(() => import("@/features/users/UsersPage"));
+const SettingsHub = lazy(() => import("@/features/settings/SettingsHub"));
 const PoliciesPage = lazy(() => import("@/features/phase2/PoliciesPage"));
 const IssuingPage = lazy(() => import("@/features/phase2/IssuingPage"));
 const ReportsPage = lazy(() => import("@/features/phase2/ReportsPage"));
@@ -173,11 +173,17 @@ export default function App() {
                   </StaffRoute>
                 }
               />
+              {/*
+               * Screen 15 lives inside the hub now. The old path is kept as a redirect because the design
+               * sheet, the runbook and the e2e specs all link `/users` — a dead link there would be a
+               * regression dressed up as a refactor. The tab itself stays gated on `users.manage`.
+               */}
+              <Route path="/users" element={<Navigate to="/settings?tab=users" replace />} />
               <Route
-                path="/users"
+                path="/settings"
                 element={
-                  <StaffRoute permit={["users.manage"]}>
-                    <UsersPage />
+                  <StaffRoute permit={["settings.manage"]}>
+                    <SettingsHub />
                   </StaffRoute>
                 }
               />
