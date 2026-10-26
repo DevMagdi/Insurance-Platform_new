@@ -42,7 +42,7 @@ function IssuingContent() {
   return (
     <>
       <PageHeader
-        title={t("phase2.issuing")}
+        title={t("phase2.issuingTitle")}
         subtitle={t("phase2.policiesSubtitle")}
         actions={
           <div className="flex items-center gap-2">

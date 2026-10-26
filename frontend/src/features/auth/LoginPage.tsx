@@ -44,6 +44,13 @@ export default function LoginPage() {
         setNeedsSecondFactor(true);
         return;
       }
+      // A refused login has exactly one meaning, and the card already has a word for it. The raw envelope is
+      // English on an Arabic screen; anything else (rate limit, no network) is a different fact and is shown
+      // as the API told it, because inventing «wrong password» for a 429 would be a lie.
+      if (cause instanceof ApiError_ && cause.status === 401) {
+        setError(t("auth.invalid"));
+        return;
+      }
       setError(cause instanceof Error ? cause.message : t("auth.invalid"));
     },
   });

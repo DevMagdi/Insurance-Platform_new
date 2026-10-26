@@ -34,16 +34,36 @@ test.describe("authentication", () => {
     await expect(page.getByRole("navigation")).toHaveCount(0);
   });
 
-  test("an authenticated session survives a reload (refresh cookie rotation)", async ({ page }) => {
+  test("an authenticated session survives a reload (refresh cookie rotation)", async ({ page, request }) => {
+    /*
+     * Two premises were wrong here. A rep holds no `requests.view`, so their landing screen is their own
+     * board, never the dashboard (ADR-015) — the reload is proven on the screen the role actually gets.
+     * And the rotation is a property of the cookie, not of the page: the access token also lives in
+     * localStorage, so "the app still works" cannot show whether the refresh cookie was accepted,
+     * rotated, or never sent. Both halves are asserted where they live.
+     */
     await login(page, REPS.nour);
+    await expect(page).toHaveURL(/\/leads/);
+    await expect(page.getByText("عرض البياع")).toBeVisible();
+
     await page.reload();
-    await expect(page.getByRole("heading", { name: "لوحة التحكم" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("عرض البياع")).toBeVisible({ timeout: 15_000 });
+    expect(page.url()).not.toContain("/login");
+
+    const cookie = (await page.context().cookies()).find((row) => row.name === "bh_refresh");
+    expect(cookie, "the login must set a refresh cookie on /api/v1/auth").toBeTruthy();
+
+    const rotated = await request.post("/api/v1/auth/refresh", { headers: { cookie: `bh_refresh=${cookie?.value}` } });
+    expect(rotated.status(), await rotated.text()).toBe(200);
+    expect((await rotated.json()).access_token as string).toMatch(/^\S+\.\S+\.\S+$/);
+    const issued = (rotated.headers()["set-cookie"] ?? "").match(/bh_refresh=([^;]+)/)?.[1] ?? "";
+    expect(issued.length, "the answer must set a new refresh cookie").toBeGreaterThan(20);
+    expect(issued, "a rotation that hands back the same value is not a rotation").not.toBe(cookie?.value);
+
     await page.context().clearCookies();
-    // the access token is short-lived; with the refresh cookie gone the next call must bounce
-    await expect(async () => {
-      await page.goto("/inbox");
-      await expect(page.getByRole("heading", { name: "صندوق الطلبات" })).toHaveCount(0);
-    }).toPass({ timeout: 15_000 });
+    const refused = await request.post("/api/v1/auth/refresh");
+    expect(refused.status(), await refused.text()).toBe(403);
+    expect((await refused.json()).code).toBe("forbidden");
     expect(PASSWORD.length).toBeGreaterThan(8);
   });
 });

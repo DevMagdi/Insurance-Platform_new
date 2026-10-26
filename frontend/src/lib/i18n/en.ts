@@ -451,6 +451,7 @@ export const en: Messages = {
     policiesSubtitle: "Policy details, payment plan and commissions",
     issuePolicy: "+ Issue policy",
     issuing: "Issue a new policy",
+    issuingTitle: "Issuing cases",
     reports: "Reports",
     reportsSubtitle: "Request and insurer performance",
     disabled: "Not enabled yet",

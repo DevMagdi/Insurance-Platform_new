@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { ar } from "../src/lib/i18n/ar";
+
 import { ADMIN, apiLogin, login, MANAGER, OWNER } from "./fixtures";
 
 /**
@@ -9,11 +11,21 @@ import { ADMIN, apiLogin, login, MANAGER, OWNER } from "./fixtures";
  */
 type Screen = { route: string; heading: RegExp; who?: "manager" | "rep" | "owner" | "admin"; phase2?: boolean };
 
+/**
+ * A screen's heading has to be *readable*, and the app keeps hidden twins of some phrases for other
+ * breakpoints (the login brand panel, the shell's breadcrumb). `.first()` used to land on such a twin and
+ * report a perfectly rendered screen as missing, so the grid asks for a visible match instead.
+ */
+async function expectHeading(page: Page, pattern: RegExp): Promise<void> {
+  await expect(page.getByText(pattern).filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
+}
+
 const SCREENS: Screen[] = [
   { route: "/login", heading: /وسيط · Broker Hub|Broker Hub|لوحة تحكم الوسيط/, who: "rep" },
   { route: "/dashboard", heading: /لوحة التحكم/ },
   { route: "/inbox", heading: /صندوق الطلبات الموحد/ },
-  { route: "/leads", heading: /لوحة مبيعات|الـLeads/ },
+  // screen 3 titles itself after the rep who owns it («ليدز سارة»), and the phone board says «ليدزي»
+  { route: "/leads", heading: /ليدز|ليدزي/ },
   { route: "/leads/new", heading: /ليد جديد/ },
   { route: "/sales-team", heading: /فريق المبيعات|حِمل/ },
   { route: "/clients", heading: /العملاء/ },
@@ -58,19 +70,24 @@ test.describe("screen grid (spec §9)", () => {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await open(page, screen);
-      await expect(page.getByText(screen.heading).first()).toBeVisible({ timeout: 20_000 });
+      await expectHeading(page, screen.heading);
       await expect.poll(() => errors, { timeout: 5_000 }).toHaveLength(0);
     });
   }
 
   test("the client file, insured roster and lead detail open by id", async ({ page, request }) => {
     const auth = await apiLogin(request, MANAGER);
-    const clientId = (await (await request.get("/api/v1/clients?limit=1", { headers: auth })).json()).items[0].id as string;
+    const client = (await (await request.get("/api/v1/clients?limit=1", { headers: auth })).json()).items[0] as { id: string; name: string };
+    const clientId = client.id;
     const leadId = (await (await request.get("/api/v1/leads?limit=1", { headers: auth })).json()).items[0].id as string;
 
     await login(page, MANAGER);
+    // the file screen puts the client's name in the H1 and names its tab group «ملف العميل» for assistive
+    // tech, so that accessible name — not a decorative heading — is what proves the screen opened
     await page.goto(`/clients/${clientId}`);
-    await expect(page.getByText(/ملف العميل|معلومات الوثيقة/).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("tablist", { name: ar.clients.file.title })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(client.name).first()).toBeVisible();
+    await expect(page.getByText(ar.clients.file.contract)).toBeVisible();
 
     await page.goto(`/clients/${clientId}/insured`);
     await expect(page.getByRole("heading", { name: /الموظفون المؤمَّن عليهم/ })).toBeVisible();

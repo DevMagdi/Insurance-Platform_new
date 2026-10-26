@@ -23,12 +23,16 @@ test.describe("inbound simulator (spec §8.1)", () => {
     await login(page, MANAGER);
     await page.goto(`/inbox/${requestId}`);
 
+    // the thread's player is a custom control: the `<audio>` element carries the source and stays hidden
+    // behind the «تشغيل» button (design sheet screen 2), so the promise to check is what the element is
+    // wired to and what the user can press — not the visibility of a hidden node
     const audio = page.locator("audio").first();
-    await expect(audio).toBeVisible({ timeout: 20_000 });
+    await expect(audio).toHaveCount(1);
     const src = await audio.getAttribute("src");
-    expect(src).toContain("/api/v1/media/");
+    expect(src, "the media element must be wired to the signed URL").toContain("/api/v1/media/");
     expect(src).toContain("sig=");
     expect(src).toContain("expires=");
+    await expect(page.getByRole("button", { name: "تشغيل", exact: true }).first()).toBeVisible();
 
     // the same relative URL the browser hands to <audio> must answer 200 for staff
     const played = await request.get(src!);

@@ -460,6 +460,8 @@ export const ar = {
     policiesSubtitle: "تفاصيل الوثائق ونظام الدفع والعمولات",
     issuePolicy: "+ إصدار وثيقة",
     issuing: "إصدار وثيقة جديدة",
+    // the screen lists cases; the action phrase belongs to the CTA and the empty state
+    issuingTitle: "حالات الإصدار",
     reports: "التقارير",
     reportsSubtitle: "أداء الطلبات وشركات التأمين",
     disabled: "غير مفعّلة بعد",
