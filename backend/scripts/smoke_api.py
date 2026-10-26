@@ -7,6 +7,7 @@ and while building the UI: `python scripts/smoke_api.py [--keys]`.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import pathlib
@@ -38,6 +39,164 @@ def _prepare_db() -> None:
             await seed(session)
 
     asyncio.run(_seed())
+
+
+# ---------------------------------------------------------------------------------------------
+# exhaustive pass: every route in the document must answer, not just the curated list above
+# ---------------------------------------------------------------------------------------------
+
+#: routes a smoke run cannot exercise honestly, each with the reason a reviewer can check
+EXEMPT: dict[tuple[str, str], str] = {
+    ("GET", "/api/v1/media/{key}"): "a signed one-shot URL, exercised for real in the block above",
+    ("GET", "/api/v1/portal/attachments/{attachment_id}"): "the id belongs to the portal's own attachment list — tests/test_portal.py",
+}
+
+#: who may see what, so a 403 never reads as a broken endpoint
+ADMIN_ONLY_PREFIXES = ("/api/v1/users", "/api/v1/roles", "/api/v1/permissions", "/api/v1/settings", "/api/v1/imports")
+
+#: routes whose contract is a query string rather than a path (the Meta handshake)
+QUERY: dict[tuple[str, str], str] = {
+    ("GET", "/api/v1/webhooks/whatsapp"): "?hub.mode=subscribe&hub.verify_token=smoke-token&hub.challenge=4242",
+}
+
+
+def _first_id(client: Any, headers: dict[str, str], path: str, key: str = "id") -> str:
+    """An id taken from the list endpoint, so a detail route is asked for something that really exists.
+
+    Pages come back in three shapes in this API (`[...]`, `{items: [...]}`, `{page: {items: [...]}}`) —
+    all three are read here rather than assuming one, because the smoke pass is exactly the place a
+    response-shape surprise should surface.
+    """
+    response = client.get(path, headers=headers)
+    if response.status_code != 200:
+        return ""
+    body = response.json()
+    for _ in range(3):
+        if isinstance(body, list):
+            items = body
+            break
+        if not isinstance(body, dict):
+            return ""
+        if isinstance(body.get("items"), list):
+            items = body["items"]
+            break
+        body = body.get("page", {})
+    else:
+        return ""
+    if items and isinstance(items[0], dict):
+        return str(items[0].get(key, ""))
+    return ""
+
+
+def _items(client: Any, headers: dict[str, str], path: str) -> list[dict[str, Any]]:
+    response = client.get(path, headers=headers)
+    if response.status_code != 200:
+        return []
+    body = response.json()
+    for _ in range(3):
+        if isinstance(body, list):
+            return [row for row in body if isinstance(row, dict)]
+        if isinstance(body, dict) and isinstance(body.get("items"), list):
+            return [row for row in body["items"] if isinstance(row, dict)]
+        body = body.get("page", {}) if isinstance(body, dict) else {}
+    return []
+
+
+def _params_for(client: Any, headers: dict[str, str], known: dict[str, str]) -> dict[str, str]:
+    """Parameter name → a value that exists. The names are unique across this API except `key`, which is
+    why the feature-flag key is looked up by path in `_fill` instead."""
+    table: dict[str, str] = {
+        "client_id": _first_id(client, headers, "/api/v1/clients"),
+        "lead_id": _first_id(client, headers, "/api/v1/leads"),
+        "request_id": _first_id(client, headers, "/api/v1/requests"),
+        "policy_id": _first_id(client, headers, "/api/v1/policies"),
+        "case_id": _first_id(client, headers, "/api/v1/issuing-cases"),
+        "user_id": _first_id(client, headers, "/api/v1/users"),
+        "role_id": _first_id(client, headers, "/api/v1/roles"),
+        "notification_id": _first_id(client, headers, "/api/v1/notifications"),
+        "provider": "whatsapp",
+        "key": "phase2.enabled",
+        "kind": "insurer-performance",
+    }
+    request_id = table["request_id"]
+    if request_id:
+        table["call_id"] = _first_id(client, headers, f"/api/v1/requests/{request_id}/calls")
+    for row in _items(client, headers, "/api/v1/clients"):
+        insured = _first_id(client, headers, f"/api/v1/clients/{row['id']}/insured")
+        if insured:
+            table["insured_id"] = insured
+            break
+    table.update({name: value for name, value in known.items() if value})
+    return {name: value for name, value in table.items() if value}
+
+
+def _fill(path: str, params: dict[str, str]) -> str:
+    out = path
+    for name, value in params.items():
+        out = out.replace("{" + name + "}", value)
+    return "" if "{" in out else out
+
+
+def exhaustive_pass(client: Any, headers: dict[str, str], admin_headers: dict[str, str], portal_headers: dict[str, str]) -> list[str]:
+    """Ask every documented route for its documented behaviour.
+
+    The rules are blunt on purpose: a GET whose instance the seed can name must answer 200 (a 403 means the
+    permission gate is wrong, a 404 means the route or its serializer is), and any 5xx is a failure. Writes
+    are sent an empty body, so they answer with validation — the point is that the router, the auth
+    dependency and the serializer all work together, not that a business rule is satisfied (pytest does that).
+    """
+    document = create_app_document()
+    known: dict[str, str] = dict(SMOKE_IDS)
+    params = _params_for(client, admin_headers, known)
+    failures: list[str] = []
+    exercised = 0
+    for path, operations in sorted(document["paths"].items()):
+        for method, _operation in operations.items():
+            if (method.upper(), path) in EXEMPT:
+                print(f"skip {method.upper():6} {path} — {EXEMPT[(method.upper(), path)]}")
+                continue
+            client_path = path
+            if "{" in path:
+                client_path = _fill(path, params)
+                if not client_path:
+                    failures.append(f"{method.upper()} {path}: no instance could be resolved")
+                    continue
+            if path == "/api/v1/feature-flags/{key}" and method == "patch":
+                client_path = client_path.replace("phase2.enabled", "ai.enabled")
+            who = (
+                portal_headers
+                if client_path.startswith("/api/v1/portal/")
+                else admin_headers
+                if client_path.startswith(ADMIN_ONLY_PREFIXES)
+                else headers
+            )
+            client_path += QUERY.get((method.upper(), path), "")
+            body: dict[str, Any] | None = {} if method in ("post", "put", "patch") else None
+            response = client.request(method.upper(), client_path, headers=who, json=body)
+            exercised += 1
+            if method == "get":
+                ok = response.status_code == 200
+            else:
+                # 405 = the document promised a verb the router does not have; 404 = the instance the seed
+                # was supposed to name is unreachable; 5xx is never acceptable
+                ok = response.status_code < 500 and response.status_code not in (404, 405)
+            mark = "ok  " if ok else "FAIL"
+            print(f"{mark} {method.upper():6} {client_path} -> {response.status_code}")
+            if not ok:
+                failures.append(f"{method.upper()} {client_path} -> {response.status_code} {response.text[:160]}")
+    print(f"\nexhaustive pass: {exercised} of {sum(len(v) for v in document['paths'].values())} documented calls answered")
+    return failures
+
+
+def create_app_document() -> Any:
+    """The app's own OpenAPI document — the list of promises this pass holds it to."""
+    from app.main import create_app
+
+    return create_app().openapi()
+
+
+#: filled in while the curated checks run, so the exhaustive pass asks for instances that exist
+SMOKE_IDS: dict[str, str] = {}
 
 
 def _shape(value: Any, depth: int = 0) -> Any:
@@ -146,7 +305,6 @@ def main() -> int:
         "access_token"
     ]
     admin = {"authorization": f"Bearer {admin_token}"}
-    token = admin_token if False else token
     toggled = client.patch("/api/v1/feature-flags/phase2.enabled", json={"enabled": True}, headers=admin)
     if toggled.status_code == 200:
         for path in ["/api/v1/policies", "/api/v1/commissions", "/api/v1/issuing-cases", "/api/v1/reports/insurer-performance"]:
@@ -205,6 +363,84 @@ def main() -> int:
                     print("ok   recording url without calls.listen -> 403")
                 else:
                     failures.append(f"recording gate -> {denied.status_code}")
+
+    # — instances the exhaustive pass cannot invent: an import job, an insured row, a provider with a token —
+    if clients.get("items"):
+        from openpyxl import Workbook
+
+        client_id = str(clients["items"][0]["id"])
+        book = Workbook()
+        book.active.append(["name", "mobile", "department"])
+        book.active.append(["سمير فؤاد", "01001234567", "المشتريات"])
+        sheet = io.BytesIO()
+        book.save(sheet)
+        uploaded = client.post(
+            f"/api/v1/clients/{client_id}/insured/import",
+            headers=admin,
+            files={"file": ("smoke.xlsx", sheet.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        if uploaded.status_code == 201:
+            SMOKE_IDS["job_id"] = str(uploaded.json()["id"])
+            print(f"ok   POST /api/v1/clients/{client_id}/insured/import -> dry run {SMOKE_IDS['job_id']}")
+            committed = client.post(f"/api/v1/import-jobs/{SMOKE_IDS['job_id']}/commit", headers=admin, json={"confirm": True})
+            print(
+                f"{'ok  ' if committed.status_code == 200 else 'FAIL'} POST /api/v1/import-jobs/{{job_id}}/commit -> {committed.status_code}"
+            )
+            if committed.status_code != 200:
+                failures.append(f"import commit -> {committed.status_code} {committed.text[:160]}")
+            else:
+                SMOKE_IDS["insured_id"] = _first_id(client, admin, f"/api/v1/clients/{client_id}/insured")
+        else:
+            failures.append(f"insured import -> {uploaded.status_code} {uploaded.text[:160]}")
+
+    # the settings row is what the webhook handshake reads its token from (ADR-016 §1), so it is configured here
+    configured = client.put(
+        "/api/v1/settings/integrations/whatsapp",
+        headers=admin,
+        json={"config": {"phone_number_id": "smoke-phone"}, "secrets": {"verify_token": "smoke-token"}},
+    )
+    if configured.status_code == 200:
+        print("ok   PUT /api/v1/settings/integrations/whatsapp stores config + a masked secret")
+        secret_rows = [row for row in configured.json()["secrets"] if row["key"] == "verify_token"]
+        if not secret_rows or secret_rows[0]["display"] != "••••••••" or "smoke-token" in configured.text:
+            failures.append(f"the settings GET leaked or mislabelled a secret: {configured.text[:160]}")
+    else:
+        failures.append(f"PUT /settings/integrations/whatsapp -> {configured.status_code} {configured.text[:160]}")
+    handshake = client.get("/api/v1/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=smoke-token&hub.challenge=4242")
+    if handshake.status_code == 200 and "4242" in handshake.text:
+        print("ok   Meta handshake echoes the challenge with the token from the settings row")
+    else:
+        failures.append(f"handshake -> {handshake.status_code} {handshake.text[:160]}")
+    refused = client.get("/api/v1/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=4242")
+    if refused.status_code == 403:
+        events = client.get("/api/v1/settings/integrations/events", headers=admin).json()
+        if any(row["event_type"] == "verification" and row["status"] == "rejected" for row in events):
+            print("ok   a refused handshake is written to webhook_events, not only returned")
+        else:
+            failures.append("the refused handshake never reached webhook_events")
+    else:
+        failures.append(f"handshake with a wrong token -> {refused.status_code} (403 expected)")
+
+    # every route is asked, not only the ones this file curated by hand — with Phase 2 open so the gated
+    # half of the surface is answered for its real shape instead of a 503
+    flags = client.get("/api/v1/feature-flags", headers=admin).json()
+    keys = {row["key"] for row in flags} if isinstance(flags, list) else set(flags.get("items", []))
+    opened: list[str] = []
+    for flag in ("phase2.enabled", "ai.enabled"):
+        if client.patch(f"/api/v1/feature-flags/{flag}", json={"enabled": True}, headers=admin).status_code == 200:
+            opened.append(flag)
+        else:
+            failures.append(f"PATCH /api/v1/feature-flags/{flag} -> the exhaustive pass cannot open the gate")
+    if "sim" not in os.environ.get("INTEGRATIONS_DRIVER", "sim"):  # pragma: no cover - the file pins sim above
+        failures.append("the smoke run must not talk to a real provider")
+    portal = {"authorization": f"Bearer {portal_token}"} if portal_login.status_code == 200 else admin
+    failures += exhaustive_pass(client, admin, admin, portal)
+    for flag in opened:
+        client.patch(f"/api/v1/feature-flags/{flag}", json={"enabled": False}, headers=admin)
+    client.put(
+        "/api/v1/settings/integrations/whatsapp", headers=admin, json={"config": {"phone_number_id": ""}, "secrets": {"verify_token": None}}
+    )
+    print(f"\n(flags opened for the pass: {', '.join(sorted(opened)) or 'none'}; `keys` seen: {len(keys)})")
 
     print()
     if failures:
