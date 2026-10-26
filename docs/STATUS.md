@@ -133,6 +133,11 @@ playwright test --list    → 114 tests in 8 files (desktop + mobile)
 | 10د | لا فرع `fix/rN-*` لكل مرحلة رغم التعليمات | المنصّة تجمس الجلسة على فرع واحد (`arena/16c2338f-…`) ولا تسمح بتغييره؛ البديل المطبَّق: commit مستقل لكل نقطة عمل + هذا السطر يسجّله. لا شيء يُدمج في `main` من هنا |
 | 10هـ | `docs/ui-parity/screens.md` صار يُطابق الكود لا النوايا، وبوابة `frontend/tests/docPaths.test.ts` تفشل إن سمّى مستندٌ ملفاً غير موجود | المستند كان يصف ملفات وشاشات لا توجد (`KanbanPage` بمسار خاطئ، `RenewalsKpi`، KPIs باسم «تجديدات»)؛ أسماء ورقة التصميم نفسها غير قابلة للتحقق هنا لأن الورقة ليست في المستودع — لذا لا تُكتب «مطابقة» (ADR-015) |
 | 11 | رايتا `whatsapp.enabled` و`telephony.enabled` مزروعتان في `feature_flags` لكن **لا مسار يقرأهما**: إيقافهما لا يوقف الـwebhooks | إضافتهما في §8 تخصّ المزوّدات، وتطبيقهما على `POST /webhooks/*` يحتاج قرارًا: الرفض 503 أم الإهمال الصامت للقناة. مُدرج كفجوة لا كحاجة؛ لا قناة إنتاجية موصولة أصلاً (`INTEGRATIONS_DRIVER=sim`) |
+| 12 | كاش السائق لكل عملية: الحفظ يسري في العملية التي خدمت الطلب، وبقية العمال تحتاج إعادة تشغيل | `registry.prime()` بعد كل حفظ؛ لا invalidation بين العمليات (قاع القاعدة في كل نداء صادر أثقل). الأمر في `docs/runbook.md` §5 «إعدادات التكاملات». لا يُدّعى أن الحفظ فوري في كل عملية |
+| 13 | `frontend/e2e/settings.spec.ts` **لم يُشغَّل محلياً** (لا متصفح: `libnss3/libnspr4` غائبان بلا root) | ما مُتحَّق منه محلياً: `tsc -p tsconfig.e2e.json` ✓ ونجاح اكتشاف الاختبارات. الدليل على المرور من CI وحده — لا «تم» قبله |
+| 14 | الـe2e لا يضغط «اختبار الاتصال» بعد التحوّل إلى الحيّ | CI لا يصرف حِصّة Meta الحقيقية ولا يتعلّق بشبكة الخارج؛ المسار الحيّ مُغطّى بوهميّة نقل في `backend/tests/test_integrations_settings.py` |
+| 15 | لقطة باسم `15b-settings-hub.png` خارج تسلسل `01…16` | شاشة 15 صارت تبويباً داخل الـhub (`/settings?tab=users`)؛ اسم الملف يبقى حتى لا تنكسر مراجع `ui-parity/screens.md`، و`Shot.who` وسّع `admin` لأن `users.manage` ليست في دور المدير |
+| 16 | تمرير `scripts/smoke_api.py` يستثني نقطتين (بسبب مكتوب أمام كل واحدة) | `/media/{key}` رابط موقّع لمرّة واحدة ويُستهلك في نفس السكربت؛ ومرفق البوابة برقمه من قائمة البوابة (`tests/test_portal.py`). الباقي: 107 نداءً من 109 مُجاب عليه، والتمرير صار خطوة CI |
 
 ## قرارات اتُّخذت نيابة عن المالك (لأن الأسئلة غير مسموحة)
 
@@ -153,6 +158,7 @@ playwright test --list    → 114 tests in 8 files (desktop + mobile)
 | 013 سطح الـAI: محاكاة حتمية ومراجعة قبل أي كتابة | [`decisions/013-ai-surface-sim-only-and-review-before-write.md`](decisions/013-ai-surface-sim-only-and-review-before-write.md) |
 | 014 سلسلة الترقية على PostgreSQL: ما انكشف، استثناء تحرير 0001/0002، وتوصيل RLS | [`decisions/014-migration-chain-run-for-real-on-postgres.md`](decisions/014-migration-chain-run-for-real-on-postgres.md) |
 | 015 تصحيح مقدّمات e2e، والهبوط بالصلاحية، والشارة بالعدد الحقيقي | [`decisions/015-e2e-premises-corrected-and-permission-landing.md`](decisions/015-e2e-premises-corrected-and-permission-landing.md) |
+| 016 إعدادات التكاملات في القاعدة: تخزين، أسرار مشفّرة، شارة حيّ/محاكاة، وسجلّ webhook | [`decisions/016-integrations-settings.md`](decisions/016-integrations-settings.md) |
 
 ## قائمة ما قبل «جاهز للمراجعة»
 
@@ -165,7 +171,9 @@ playwright test --list    → 114 tests in 8 files (desktop + mobile)
 - [~] لقطات الـ16 شاشة + contact sheet: مكتوبة وتُنتَج في CI؛ لم تُشغَّل محليًا — جُرِّب `@sparticuz/chromium`
   وتعذّر التشغيل لغياب `libnss3/libnspr4` بلا root (تفصيل «ما لم يُشغَّل» 1)
 - [x] README فيه تشغيل بأوامر ثلاثة + تشغيل بلا Docker
-- [x] runbook + STATUS + ui-parity (README + screens.md بكل فوارق §9) + سجل القرارات 001–015 بلا فجوة
+- [x] runbook + STATUS + ui-parity (README + screens.md بكل فوارق §9) + سجل القرارات 001–016 بلا فجوة
+- [x] **كل نقطة موثّقة تجيب**: `python scripts/smoke_api.py` يعبر على كل `(path, method)` في الوثيقة
+  (107/109، واستثناءَان بسببهما مكتوب) — خطوة CI قائمة بذاتها بعد بوابات التغطية
 - [x] CI: ruff+mypy+pytest (على PostgreSQL أيضًا)+بوابة تغطية النواة+تدقيق الاعتماديات+فحص staleness
   للـOpenAPI+**منع تحرير الترقيات**+**سلسلة الترقية على قاعدة PostgreSQL فارغة**؛ lint/typecheck/vitest/build
   للواجهة؛ e2e مع اللقطات؛ ووظيفة `docker` صارت **تُقلع الـstack بالكامل** (health + nginx + seed + login)
