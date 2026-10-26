@@ -1,0 +1,157 @@
+"""Login / refresh rotation / lockout (spec §6)."""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import get_settings
+from app.core.errors import Forbidden, TooManyRequests, Unauthorized
+from app.core.security import (
+    decode_token,
+    hash_password,
+    make_access_token,
+    make_refresh_token,
+    needs_rehash,
+    totp_matches,
+    verify_password,
+)
+from app.domain import permissions as P
+from app.models.auth import Role, User
+from app.services import audit
+
+_ATTEMPTS: dict[str, tuple[int, float]] = {}  # email -> (count, unlocked_at) — Redis-backed in prod
+
+
+@dataclass(frozen=True)
+class Tokens:
+    access_token: str
+    refresh_token: str
+    access_ttl_seconds: int
+
+
+def _rate_key(email: str, ip: str | None) -> str:
+    return f"{email.lower()}|{ip or 'local'}"
+
+
+def _check_lockout(key: str) -> None:
+    count, unlocked_at = _ATTEMPTS.get(key, (0, 0.0))
+    if count >= get_settings().LOGIN_MAX_ATTEMPTS:
+        if time.time() < unlocked_at:
+            raise TooManyRequests(
+                "Too many failed attempts — temporarily locked",
+                details={"retry_after_seconds": int(unlocked_at - time.time())},
+            )
+        _ATTEMPTS.pop(key, None)
+
+
+def _register_failure(key: str) -> None:
+    settings = get_settings()
+    count, _ = _ATTEMPTS.get(key, (0, 0.0))
+    _ATTEMPTS[key] = (count + 1, time.time() + settings.LOGIN_LOCKOUT_SECONDS)
+
+
+def clear_failures(key: str) -> None:
+    _ATTEMPTS.pop(key, None)
+
+
+def reset_rate_limits() -> None:
+    """Test/admin hook: drop every lockout counter (the store is process-local in dev)."""
+    _ATTEMPTS.clear()
+
+
+async def login(session: AsyncSession, email: str, password: str, *, ip: str | None = None) -> tuple[User, Tokens]:
+    settings = get_settings()
+    key = _rate_key(email, ip)
+    _check_lockout(key)
+
+    user = (await session.execute(select(User).where(func.lower(User.email) == email.strip().lower()))).scalar_one_or_none()
+    if user is None or not verify_password(password, user.password_hash):
+        _register_failure(key)
+        raise Unauthorized("Email or password is incorrect")
+    if not user.is_active or user.deleted_at is not None:
+        raise Forbidden("Account is disabled")
+    clear_failures(key)
+
+    if needs_rehash(user.password_hash):
+        user.password_hash = hash_password(password)
+
+    from datetime import UTC, datetime
+
+    user.last_login_at = datetime.now(UTC)
+    tokens = issue_tokens(user)
+    await audit.write(
+        session,
+        actor=user,
+        action="auth.login",
+        entity_type="user",
+        entity_id=user.id,
+        after={"email": user.email},
+        ip=ip,
+    )
+    _ = settings
+    return user, tokens
+
+
+def issue_tokens(user: User) -> Tokens:
+    perms = tuple(sorted(user.permission_codes))
+    if user.is_portal_only:
+        perms = (*perms, P.PORTAL_ACCESS)
+    return Tokens(
+        access_token=make_access_token(user.id, perms),
+        refresh_token=make_refresh_token(user.id, user.refresh_token_version),
+        access_ttl_seconds=get_settings().ACCESS_TOKEN_TTL_MIN * 60,
+    )
+
+
+async def refresh(session: AsyncSession, refresh_token: str) -> tuple[User, Tokens]:
+    try:
+        claims = decode_token(refresh_token, "refresh")
+    except Exception as exc:
+        raise Unauthorized("Refresh token is invalid or expired") from exc
+    user = await session.get(User, UUID(str(claims["sub"])))
+    if user is None or not user.is_active or user.deleted_at is not None:
+        raise Unauthorized("Account is inactive")
+    if int(claims.get("ver", -1)) != user.refresh_token_version:
+        # Reuse of a rotated token: kill the family (spec §6 "تدوير وإبطال").
+        user.refresh_token_version += 1
+        await session.flush()
+        raise Unauthorized("Refresh token was already used — please sign in again")
+    user.refresh_token_version += 1  # rotation invalidates every previously issued refresh token
+    await session.flush()
+    return user, issue_tokens(user)
+
+
+async def logout(session: AsyncSession, user: User | None) -> None:
+    if user is not None:
+        user.refresh_token_version += 1
+        await session.flush()
+
+
+def verify_mfa_sync(user: User, code: str) -> bool:
+    if not user.mfa_enabled or not user.totp_secret_encrypted:
+        return True
+    return totp_matches(user.totp_secret_encrypted, code)
+
+
+def public_profile(user: User) -> dict[str, Any]:
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "full_name": user.full_name,
+        "role": user.role.code,
+        "role_name": user.role.name,
+        "permissions": sorted(user.permission_codes),
+        "is_active": user.is_active,
+        "mfa_enabled": user.mfa_enabled,
+        "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+    }
+
+
+async def role_by_code(session: AsyncSession, code: str) -> Role | None:
+    return (await session.execute(select(Role).where(Role.code == code))).scalar_one_or_none()

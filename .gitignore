@@ -1,0 +1,29 @@
+# python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.db
+# node
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+# (generated, but committed so a fresh clone can build without the API running)
+# env & data
+.env
+.env.*
+!.env.example
+infra/**/data/
+media/
+storage-objects/
+# ide/os
+.DS_Store
+.idea/
+.vscode/
+.e2e-storage/

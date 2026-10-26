@@ -1,0 +1,118 @@
+"""FastAPI dependencies: session, current user, permission gate, scope, pagination."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import Depends, Query, Request
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.db import get_sessionmaker
+from app.core.errors import Forbidden, Unauthorized
+from app.core.pagination import PageParams
+from app.core.scope import Scope, build_scope
+from app.core.security import decode_token
+from app.models.auth import User
+
+REFRESH_COOKIE = "bh_refresh"
+ACCESS_COOKIE = "bh_access"
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    async with get_sessionmaker()() as session:
+        yield session
+
+
+DbSession = Annotated[AsyncSession, Depends(get_session)]
+
+
+def _token_from(request: Request) -> str | None:
+    header = request.headers.get("authorization") or ""
+    if header.lower().startswith("bearer "):
+        return header[7:].strip()
+    return request.cookies.get(ACCESS_COOKIE)
+
+
+async def current_user_optional(request: Request, session: DbSession) -> User | None:
+    token = _token_from(request)
+    if not token:
+        return None
+    try:
+        claims = decode_token(token, "access")
+    except Exception as exc:
+        raise Unauthorized("Session expired — please sign in again") from exc
+    user = await session.get(User, UUID(str(claims["sub"])))
+    if user is None or not user.is_active or user.deleted_at is not None:
+        raise Unauthorized("Account is inactive")
+    return user
+
+
+async def current_user(request: Request, session: DbSession) -> User:
+    user = await current_user_optional(request, session)
+    if user is None:
+        raise Unauthorized("Authentication required")
+    return user
+
+
+CurrentUser = Annotated[User, Depends(current_user)]
+
+
+def scope_of(user: CurrentUser) -> Scope:
+    """Single source of truth for data isolation (see core/scope.py)."""
+    return build_scope(user)
+
+
+ScopeDep = Annotated[Scope, Depends(scope_of)]
+
+
+async def scoped_session(session: DbSession, scope: ScopeDep) -> AsyncIterator[AsyncSession]:
+    """Installs the RLS GUCs for the transaction on PostgreSQL; no-op on SQLite dev."""
+    bind = session.get_bind()
+    if bind is not None and bind.dialect.name == "postgresql":
+        for key, value in scope.session_settings().items():
+            await session.execute(text(f"SET LOCAL {key} = :v"), {"v": value})
+    yield session
+
+
+ScopedSession = Annotated[AsyncSession, Depends(scoped_session)]
+
+
+def require_perm(*codes: str) -> Callable[[User], Awaitable[User]]:
+    """Action-level gate. Data-level access is enforced by Scope (foreign rows are 404).
+
+    Usage: `user: Annotated[User, Depends(require_perm(P.LEADS_ASSIGN))]`
+    """
+
+    async def dependency(user: CurrentUser) -> User:
+        missing = [c for c in codes if c not in user.permission_codes]
+        if missing:
+            raise Forbidden("Not allowed to perform this action", details={"missing": missing})
+        return user
+
+    return dependency
+
+
+def require_any_perm(*codes: str) -> Callable[[User], Awaitable[User]]:
+    """Any-of gate: `leads.view_own` *or* `leads.view_all` opens a read endpoint (403 if neither)."""
+
+    async def dependency(user: CurrentUser) -> User:
+        if codes and not (set(codes) & user.permission_codes):
+            raise Forbidden("Not allowed to perform this action", details={"required_any_of": list(codes)})
+        return user
+
+    return dependency
+
+
+def page_params(
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 25,
+    sort: Annotated[str | None, Query()] = None,
+    order: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
+) -> PageParams:
+    return PageParams(page=page, page_size=page_size, sort=sort, order=order)
+
+
+PageQuery = Annotated[PageParams, Depends(page_params)]
