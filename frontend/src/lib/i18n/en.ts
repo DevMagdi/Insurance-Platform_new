@@ -5,6 +5,13 @@ import type { Messages } from "./ar";
  * so a missing or renamed key is a compile error rather than a runtime fallback (spec §11).
  */
 export const en: Messages = {
+  realtime: {
+    live: "Live",
+    polling: "Polling",
+    connecting: "Connecting",
+    offline: "Offline",
+    aria: "Live update status",
+  },
   common: {
     noMedia: "No saved clip",
     appName: "Broker Hub",

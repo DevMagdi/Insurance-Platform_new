@@ -3,6 +3,13 @@
  * Arabic is the source of truth; `en.ts` is type-checked against this file.
  */
 export const ar = {
+  realtime: {
+    live: "مباشر",
+    polling: "تحديث دوري",
+    connecting: "جارٍ الاتصال",
+    offline: "غير متصل",
+    aria: "حالة التحديث الحيّ",
+  },
   common: {
     noMedia: "لا يوجد مقطع محفوظ",
     appName: "وسيط · Broker Hub",

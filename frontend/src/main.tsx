@@ -6,6 +6,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "@/App";
 import { ToastProvider } from "@/components/Toast";
 import { AuthProvider } from "@/lib/auth";
+import { RealtimeProvider } from "@/lib/realtimeProvider";
 import { setupI18n } from "@/lib/i18n";
 import "@/styles/index.css";
 
@@ -24,11 +25,13 @@ void setupI18n().then(() => {
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <ToastProvider>
-            <BrowserRouter>
-              <App />
-            </BrowserRouter>
-          </ToastProvider>
+          <RealtimeProvider>
+            <ToastProvider>
+              <BrowserRouter>
+                <App />
+              </BrowserRouter>
+            </ToastProvider>
+          </RealtimeProvider>
         </AuthProvider>
       </QueryClientProvider>
     </StrictMode>,
