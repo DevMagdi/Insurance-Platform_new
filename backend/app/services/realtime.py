@@ -234,6 +234,13 @@ class RealtimeHub:
     def subscriber_count(self) -> int:
         return len(self._subscribers)
 
+    def reset(self) -> None:
+        """Test hook: forget revisions and subscribers. Never called by the application."""
+        self._buffer.clear()
+        self._topic_revision.clear()
+        self._subscribers.clear()
+        self._revision = 0
+
 
 #: module-level singleton — the app is one process, and `install_publisher` reads it from the middleware
 hub = RealtimeHub()

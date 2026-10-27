@@ -82,7 +82,9 @@ PROVIDER_FIELDS: dict[str, tuple[FieldSpec, ...]] = {
         FieldSpec("provider", "choice", "generic", choices=("generic", "sim")),
         #: the PBX base URL. Read twice: the connection test probes it, and `fetch_recording` refuses a
         #: recording URL on any other host (ADR-023 §4). A setting with no consumer is not offered here.
-        FieldSpec("provider_url"),
+        #: required for live: without it the connection test has nothing to probe and `fetch_recording`
+        #: refuses every URL, so "live" would mean "silently receiving nothing" (ADR-027)
+        FieldSpec("provider_url", required_for_live=True),
         #: the number the central dials in on; printed on the settings card so the operator can compare it
         #: with what the PBX says, and stored so a support call starts from the same value
         FieldSpec("number"),
@@ -445,27 +447,114 @@ def _mask_dict(provider: str, values: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _assert_switch(row: IntegrationConfig, provider: str, *, to_live: bool, confirm: bool) -> None:
-    if not to_live:
-        return  # back to simulation is always safe, and always allowed
+#: Arabic labels for the fields that can block a switch. The screen has its own translations, but the API
+#: message is read by people too (a curl, a log, a support ticket), and "missing: phone_number_id" helps
+#: nobody at 2 a.m.
+FIELD_LABELS: dict[str, str] = {
+    "phone_number_id": "معرّف رقم واتساب (Phone Number ID)",
+    "business_account_id": "معرّف حساب واتساب للأعمال (WABA ID)",
+    "access_token": "توكين الوصول (Access Token)",
+    "app_secret": "التوقيع السري لتطبيق ميتا (App Secret)",
+    "verify_token": "توكين التحقق من الـwebhook (Verify Token)",
+    "provider_url": "عنوان السنترال (PBX URL)",
+    "number": "رقم السنترال",
+    "trunk": "الخط/الترنك",
+    "webhook_secret": "سر توقيع أحداث السنترال (Webhook Secret)",
+    "api_key": "مفتاح API للسنترال",
+    "host": "مضيف SMTP",
+    "port": "منفذ SMTP",
+    "from_email": "بريد المرسل",
+    "password": "كلمة مرور SMTP",
+}
+
+
+def label(key: str) -> str:
+    return FIELD_LABELS.get(key, key)
+
+
+def switch_blockers(row: IntegrationConfig | None, provider: str, *, confirm: bool = True) -> list[dict[str, Any]]:
+    """Everything that stands between this provider and live mode, in the order `_assert_switch` checks it.
+
+    One function, three consumers: the 409 (`_assert_switch`), the preflight endpoint and — through the
+    endpoint — the screen that disables its own button. The screen used to guess (it knew only two of the
+    three providers' required fields), so it offered a button the server was always going to refuse.
+    """
+    blockers: list[dict[str, Any]] = []
     if not confirm:
-        raise Conflict(
-            "التبديل إلى الوضع الحيّ يحتاج تأكيدًا صريحًا",
-            details={"required": ["confirm_live"], "note": "أرسل confirm_live=true بعد مراجعة ما الذي سيبدأ بالكلام مع العملاء"},
+        blockers.append(
+            {
+                "code": "confirm",
+                "message": "التبديل إلى الوضع الحيّ يحتاج تأكيدًا صريحًا (confirm=true)",
+                "fields": [],
+            }
         )
-    if row.last_test_status != "ok":
-        raise Conflict(
-            "لم ينجح أي اختبار اتصال لهذا المزوّد بعد",
-            details={"required": ["test"], "note": "شغّل اختبار الاتصال أولًا — التبديل بلا اختبار أخضر هو كيف يصمت الرقم"},
+    if row is None or row.last_test_status != "ok":
+        blockers.append(
+            {
+                "code": "test",
+                "message": "لم ينجح أي اختبار اتصال لهذا المزوّد بعد — شغّل «اختبار الاتصال» أولًا",
+                "fields": [],
+            }
         )
     config = effective_config(provider, row)
-    missing = [spec.key for spec in PROVIDER_FIELDS[provider] if spec.required_for_live and not str(config.get(spec.key, "")).strip()]
     secrets = secrets_for(provider, row)
+    missing = [spec.key for spec in PROVIDER_FIELDS[provider] if spec.required_for_live and not str(config.get(spec.key, "")).strip()]
     primary = PRIMARY_SECRET[provider]
     if not secrets.get(primary):
         missing.append(primary)
     if missing:
-        raise IncompleteConfig("إعدادات ناقصة للوضع الحيّ", details={"missing": missing})
+        blockers.append(
+            {
+                "code": "fields",
+                "message": "إعدادات ناقصة للوضع الحيّ: " + "، ".join(label(key) for key in missing),
+                "fields": missing,
+            }
+        )
+    return blockers
+
+
+def _assert_switch(row: IntegrationConfig, provider: str, *, to_live: bool, confirm: bool) -> None:
+    if not to_live:
+        return  # back to simulation is always safe, and always allowed
+    blockers = switch_blockers(row, provider, confirm=confirm)
+    if not blockers:
+        return
+    first = blockers[0]
+    # `required` is the pre-R6 contract (`["confirm_live"]` / `["test"]`) and is kept as the short answer;
+    # `blockers`/`missing`/`labels` are the precise one the screen renders.
+    required = ["confirm_live"] if first["code"] == "confirm" else ["test"] if first["code"] == "test" else []
+    details: dict[str, Any] = {
+        "provider": provider,
+        "required": required,
+        "blockers": blockers,
+        "missing": [key for blocker in blockers if blocker["code"] == "fields" for key in blocker["fields"]],
+        "labels": [label(key) for blocker in blockers if blocker["code"] == "fields" for key in blocker["fields"]],
+        "hint": "شغّل اختبار الاتصال، واملأ الحقول الناقصة، ثم أكّد التبديل — لا شيء من هذا يحدث تلقائيًا",
+    }
+    if first["code"] == "fields":
+        raise IncompleteConfig(first["message"], details=details)
+    raise Conflict(first["message"], details=details)
+
+
+async def preflight(session: AsyncSession, provider: str) -> dict[str, Any]:
+    """What the screen needs to decide whether to offer «التحويل إلى الوضع الحيّ» at all."""
+    _assert_provider(provider)
+    row = await _row(session, provider)
+    blockers = switch_blockers(row, provider, confirm=True)  # the confirmation comes from the dialog
+    current = await state(session, provider)
+    return {
+        "provider": provider,
+        "ready": not blockers,
+        "blockers": blockers,
+        "missing": [key for blocker in blockers if blocker["code"] == "fields" for key in blocker["fields"]],
+        "labels": [label(key) for blocker in blockers if blocker["code"] == "fields" for key in blocker["fields"]],
+        "is_live": current.is_live,
+        "mode": "live" if current.is_live else "sim",
+        "status": current.status,
+        "test_status": row.last_test_status if row else None,
+        "tested_at": current.last_tested_at,
+        "next": "جاهز للتحويل" if not blockers else blockers[0]["message"],
+    }
 
 
 async def set_live(

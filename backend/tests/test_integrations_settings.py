@@ -7,6 +7,7 @@ gated on a green test and an explicit confirmation, and the event log shows what
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from uuid import UUID
 
@@ -475,3 +476,120 @@ async def test_the_saved_retention_row_is_what_the_beat_actually_applies(session
         await session.refresh(drop)
         assert keep.recording_object_key == "media/retention/keep.bin"
         assert drop.recording_object_key is None
+
+
+# ---------------------------------------------------------------------------------------------
+# R6: the 409 is a contract, and the screen must be able to see it *before* pressing the button
+# ---------------------------------------------------------------------------------------------
+async def test_preflight_names_every_blocker_before_the_button_is_pressed(client: Any) -> None:
+    """The operator's question is "can I go live?" — the answer arrives without a failed request."""
+    from tests.helpers import login
+
+    async with login(client, ADMIN) as h:
+        blank = await client.get("/api/v1/settings/integrations/whatsapp/preflight", headers=h)
+        assert blank.status_code == 200, blank.text
+        body = blank.json()
+        assert body["ready"] is False
+        # both problems are reported at once: fixing the test alone would only earn a second 409
+        assert [blocker["code"] for blocker in body["blockers"]] == ["test", "fields"]
+        assert body["missing"] == ["phone_number_id", "access_token"]
+        assert "اختبار الاتصال" in body["next"]
+
+        tested = await client.post("/api/v1/settings/integrations/whatsapp/test", headers=h)
+        assert tested.json()["ok"] is True
+
+        after_test = (await client.get("/api/v1/settings/integrations/whatsapp/preflight", headers=h)).json()
+        assert after_test["test_status"] == "ok"
+        assert [blocker["code"] for blocker in after_test["blockers"]] == ["fields"]
+        assert after_test["missing"] == ["phone_number_id", "access_token"]
+        # the exact fields, in Arabic, are in the payload the screen shows — not only machine keys
+        assert "معرّف رقم واتساب" in after_test["labels"][0]
+        assert "توكين الوصول" in after_test["labels"][1]
+
+        saved = await client.put(
+            "/api/v1/settings/integrations/whatsapp",
+            headers=h,
+            json={"config": {"phone_number_id": "98765"}, "secrets": {"access_token": "SECRET-XYZ"}},
+        )
+        assert saved.status_code == 200
+        ready = (await client.get("/api/v1/settings/integrations/whatsapp/preflight", headers=h)).json()
+        assert ready["ready"] is True
+        assert ready["blockers"] == []
+        assert ready["next"] == "جاهز للتحويل"
+
+        flipped = await client.post(
+            "/api/v1/settings/integrations/whatsapp/live", headers=h, json={"is_live": True, "confirm": True}
+        )
+        assert flipped.status_code == 200, flipped.text
+        assert flipped.json()["is_live"] is True
+        assert registry.live_mode("whatsapp") is True
+
+
+async def test_the_live_endpoint_accepts_confirm_live_as_an_alias(client: Any) -> None:
+    """`PUT` calls it `confirm_live`, `POST /live` called it `confirm` — and a client that copied the wrong
+    one got "needs confirmation" while it was confirming. Both names now mean yes."""
+    from tests.helpers import login
+
+    async with login(client, ADMIN) as h:
+        await client.post("/api/v1/settings/integrations/whatsapp/test", headers=h)
+        await client.put(
+            "/api/v1/settings/integrations/whatsapp",
+            headers=h,
+            json={"config": {"phone_number_id": "12345"}, "secrets": {"access_token": "TOKEN"}},
+        )
+        response = await client.post(
+            "/api/v1/settings/integrations/whatsapp/live", headers=h, json={"is_live": True, "confirm_live": True}
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["is_live"] is True
+
+
+async def test_the_409_carries_the_fields_and_the_next_step(client: Any) -> None:
+    """A 409 is only acceptable if it is actionable: status, code, the exact fields, and what to do."""
+    from tests.helpers import login
+
+    async with login(client, ADMIN) as h:
+        await client.post("/api/v1/settings/integrations/telephony/test", headers=h)
+        refused = await client.post(
+            "/api/v1/settings/integrations/telephony/live", headers=h, json={"is_live": True, "confirm": True}
+        )
+        assert refused.status_code == 409, refused.text
+        details = refused.json()["details"]
+        assert refused.json()["code"] == "incomplete_config"
+        assert details["provider"] == "telephony"
+        assert details["blockers"][0]["code"] == "fields"
+        # telephony's live fields are the PBX URL and its signing secret — the screen knew neither
+        assert "provider_url" in details["missing"]
+        assert "PBX" in details["labels"][0]
+        assert len(details["labels"]) == len(details["missing"])
+        assert details["hint"]
+
+
+async def test_two_clicks_at_once_flip_once_and_both_answer_200(client: Any, session: Any) -> None:
+    """The race a double-click produces: the second request must not 500, and the row must end up live."""
+    from tests.helpers import login
+
+    async with login(client, ADMIN) as h:
+        await client.post("/api/v1/settings/integrations/email/test", headers=h)
+        await client.put(
+            "/api/v1/settings/integrations/email",
+            headers=h,
+            json={"config": {"host": "smtp.test", "from_email": "no-reply@brokerhub.test"}, "secrets": {"password": "PW"}},
+        )
+        first, second = await asyncio.gather(
+            client.post("/api/v1/settings/integrations/email/live", headers=h, json={"is_live": True, "confirm": True}),
+            client.post("/api/v1/settings/integrations/email/live", headers=h, json={"is_live": True, "confirm": True}),
+        )
+    assert {first.status_code, second.status_code} == {200}
+    assert first.json()["is_live"] is True and second.json()["is_live"] is True
+    row = await _row(session, "email")
+    assert row.is_live is True
+
+
+async def test_preflight_is_closed_to_a_rep_and_anonymous_callers(client: Any) -> None:
+    from tests.helpers import login
+
+    anonymous = await client.get("/api/v1/settings/integrations/whatsapp/preflight")
+    assert anonymous.status_code == 401
+    async with login(client, REP) as h:
+        assert (await client.get("/api/v1/settings/integrations/whatsapp/preflight", headers=h)).status_code == 403

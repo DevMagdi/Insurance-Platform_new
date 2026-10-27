@@ -30,6 +30,15 @@ from app.services import realtime
 from tests.conftest import PASSWORD
 from tests.helpers import login
 
+
+@pytest.fixture(autouse=True)
+def _fresh_feed() -> Any:
+    """The hub is a process singleton: without this, one test's changes are the next test's replay."""
+    realtime.hub.reset()
+    yield
+    realtime.hub.reset()
+
+
 MANAGER = "manager@brokerhub.test"
 REP_A = "rep_a@brokerhub.test"
 CS = "cs@brokerhub.test"
