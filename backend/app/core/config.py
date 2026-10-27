@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -38,7 +40,9 @@ class Settings(BaseSettings):
     LOGIN_LOCKOUT_SECONDS: int = 300
 
     # --- cors / security headers ---
-    CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    # `NoDecode`: without it pydantic-settings runs `json.loads` on the raw env value *before* any validator,
+    # so the comma-separated form this repo documents (`infra/.env.example`, compose) crashes the import.
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:5173"])
     TRUST_HOPS: int = 1
 
     # --- storage (recordings & attachments) ---
@@ -99,9 +103,35 @@ class Settings(BaseSettings):
     # --- SLA defaults (mirrored in DB table sla_policies; DB wins) ---
     WORKDAY_START: str = "09:00"
     WORKDAY_END: str = "18:00"
-    WEEKEND_DAYS: list[int] = Field(default_factory=lambda: [4, 5])  # Fri, Sat (Egypt)
+    # same reason as CORS_ORIGINS: `WEEKEND_DAYS=4,5` is what a human writes in `.env`
+    WEEKEND_DAYS: Annotated[list[int], NoDecode] = Field(default_factory=lambda: [4, 5])  # Fri, Sat (Egypt)
     TIMEZONE: str = "Africa/Cairo"
     REPLY_THREAD_WINDOW_MINUTES: int = 240
+
+    @field_validator("CORS_ORIGINS", "WEEKEND_DAYS", mode="before")
+    @classmethod
+    def _list_from_env(cls, v: object) -> object:
+        """Accept the form humans actually write in `.env` / compose: `a,b` as well as `["a","b"]`.
+
+        pydantic-settings decodes any *complex* field (a `list[...]`) with `json.loads`, and a plain
+        comma-separated value raises `SettingsError: error parsing value for field "CORS_ORIGINS"` **while
+        importing the app** — the container exits before it can answer /healthz, and the stack's boot test
+        fails with a traceback that never mentions CORS. `infra/docker-compose.yml` has shipped exactly that
+        form since the stack was written, so no `docker compose up` could ever have started the API (R3: the
+        `docker` job reached this point once the image pull was fixed).
+        """
+        if isinstance(v, str):
+            text = v.strip()
+            if not text:
+                return []
+            if text.startswith("["):
+                # `NoDecode` also switches off the JSON path, so the documented JSON form is parsed here
+                try:
+                    return json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"expected a comma-separated list or a JSON array, got {text!r}") from exc
+            return [piece.strip() for piece in text.split(",") if piece.strip()]
+        return v
 
     @field_validator("SMTP_ENCRYPTION")
     @classmethod

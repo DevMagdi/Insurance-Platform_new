@@ -1,7 +1,9 @@
 # infra/ — local stack and containers
 
-One `docker compose` file brings up the whole platform on a laptop: PostgreSQL 16, Redis 7, MinIO,
-the API, a Celery worker, Celery beat, and the built SPA behind nginx.
+One `docker compose` file brings up the whole platform on a laptop: PostgreSQL 16, Redis 7, the API,
+a Celery worker, Celery beat, and the built SPA behind nginx. Attachments live on the `objectsdata`
+volume (local storage driver); point `STORAGE_BACKEND=s3` at your own S3/MinIO to use object storage —
+the MinIO *images* are no longer pullable anonymously (ADR-020).
 
 | Service | Port (host) | Notes |
 | --- | --- | --- |
@@ -9,7 +11,7 @@ the API, a Celery worker, Celery beat, and the built SPA behind nginx.
 | backend | `API_PORT` = 8000 | FastAPI, `/healthz` + `/readyz` for probes, `/docs` for OpenAPI |
 | postgres | `PG_PORT` = 5432 | `brokerhub` database, RLS policies from the migrations |
 | redis | — | broker + result backend for Celery |
-| minio | 9000 / 9001 | `brokerhub` bucket; console on `:9001` (credentials in `.env`) |
+| objects (`objectsdata`) | — | attachments on disk, `STORAGE_DIR=/srv/objects`; `STORAGE_BACKEND=s3` switches to a bucket |
 | mailpit | 1025 / 8025 | dev SMTP sink + web UI — every notification email lands here, nothing leaves the laptop |
 
 The WhatsApp/call **simulators are in-process** (`GET /api/v1/dev/sim`, `POST /api/v1/dev/sim/{whatsapp,call}`),
@@ -25,9 +27,9 @@ docker compose -f infra/docker-compose.yml exec backend python -m app.seed   # d
 open http://localhost:5173
 ```
 
-`migrate` runs `alembic upgrade head` once and exits; `minio-init` creates the bucket the same way.
-Both are gated with `service_completed_successfully`, so `up -d` alone is enough for a clean start —
-only the seed is manual, so nobody accidentally seeds a shared environment.
+`migrate` runs `alembic upgrade head` once and exits, gated with `service_completed_successfully`, so
+`up -d` alone is enough for a clean start — only the seed is manual, so nobody accidentally seeds a shared
+environment.
 
 Useful follows:
 

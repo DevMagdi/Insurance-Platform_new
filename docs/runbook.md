@@ -14,8 +14,9 @@ curl -fsS http://localhost:8000/healthz; echo
 curl -fsS http://localhost:8000/readyz; echo
 ```
 
-- `migrate` و `minio-init` مهمتان لمرة واحدة تخرجان بنجاح؛ إذا فشل أحدهما فلن يبدأ `backend` (بوابة
-  `service_completed_successfully`).
+- `migrate` مهمة لمرة واحدة تخرج بنجاح؛ إذا فشلت فلن يبدأ `backend` (بوابة `service_completed_successfully`).
+- الوسائط على وحدة `objectsdata` (`STORAGE_DIR=/srv/objects`). لاستخدام S3/MinIO خارجي: `STORAGE_BACKEND=s3`
+  و`S3_ENDPOINT_URL`/`S3_BUCKET`/المفاتيح — الصور الرسمية لـMinIO لم تعد قابلة للسحب المجهول (ADR-020).
 - الواجهة على `WEB_PORT` (5173) تمرّر `/api` للـAPI عبر nginx؛ لا يوجد أصل API مضمّن في الحزمة.
 
 ### بدون حاويات
@@ -166,8 +167,9 @@ ROLLBACK;
 - رابط التشغيل موقّع وقصير العمر: `RECORDING_SIGNED_URL_TTL_SECONDS` (120 ثانية افتراضيًا). «403/404 بعد
   قليل من الفتح» يعني أن الرابط انتهت صلاحيته — الواجهة تطلب رابطًا جديدًا عند كل ضغطة، لا تُخزّنه.
 - كل استماع يسجّل `call.recording_listened` في `audit_logs` مع `ttl_seconds` و`recording_consent`.
-- التعديل السريع عند ضياع كائن: `aws s3api head-object --bucket brokerhub --key <object_key>` أو من
-  حاوية minio (`mc ls local/brokerhub/<prefix>`).
+- التعديل السريع عند ضياع كائن: مع `STORAGE_BACKEND=s3` استخدم
+  `aws s3api head-object --bucket brokerhub --key <object_key>`؛ ومع المخزن المحلي ابحث في وحدة
+  `objectsdata` (`docker compose exec backend ls -l /srv/objects/<prefix>`).
 
 ## 7) حوادث متكررة — تشخيص من نقطتين
 

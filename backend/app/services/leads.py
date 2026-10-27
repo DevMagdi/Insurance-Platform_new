@@ -256,10 +256,41 @@ async def assign(
 
 
 async def _require_rep(session: AsyncSession, user_id: UUID) -> User:
+    """The seat a lead may be handed to: an active user whose role actually owns leads.
+
+    Existence and `is_active` were the only checks until R3, so the redistribute dialog — which lists every
+    office seat, customer service included — could hand a lead to a CS agent. The API accepted it, the
+    manager was told "1 moved", and the lead then belonged to a desk that never sees the sales board: it was
+    invisible to every rep and to the CS queue as well. Ownership is a *rep* property, so it is checked
+    against the role's own permissions (`leads.view_own`), the same predicate the scope resolver uses.
+    """
     target = await session.get(User, user_id)
     if target is None or not target.is_active or target.deleted_at is not None:
         raise ValidationFailed("Target rep does not exist or is inactive", details={"user_id": str(user_id)})
+    if not await _owns_leads(session, target):
+        raise ValidationFailed(
+            "Target seat cannot own leads (a sales rep seat is required)",
+            details={"user_id": str(user_id), "required": "leads.view_own"},
+        )
     return target
+
+
+async def _owns_leads(session: AsyncSession, user: User) -> bool:
+    """True when the user's role carries `leads.view_own` — the permission that makes a seat a rep seat."""
+    from sqlalchemy import select
+
+    from app.models.auth import Permission, Role, role_permissions
+
+    codes = (
+        await session.execute(
+            select(Permission.code)
+            .select_from(Permission)
+            .join(role_permissions, role_permissions.c.permission_id == Permission.id)
+            .join(Role, Role.id == role_permissions.c.role_id)
+            .where(Role.id == user.role_id)
+        )
+    ).scalars()
+    return "leads.view_own" in set(codes)
 
 
 async def assign_bulk(

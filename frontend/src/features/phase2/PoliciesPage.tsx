@@ -101,7 +101,7 @@ function PoliciesContent() {
                   width: 170,
                   render: (row) => (
                     <div>
-                      <p className="text-[13px] font-bold text-ink">{row.policy_no}</p>
+                      <p className="text-[13px] font-bold text-ink">{row.policy_no ?? "—"}</p>
                       <p className="text-[11.5px] text-muted">{row.insurer?.name ?? "—"}</p>
                     </div>
                   ),
@@ -151,7 +151,7 @@ function InstallmentsDialog({ policyId, onClose }: { policyId: string; onClose: 
   const today = new Date();
   return (
     <Modal
-      title={t("phase2.installments", { policy: plan.data?.policy.policy_no ?? "" })}
+      title={t("phase2.installments", { policy: plan.data?.policy.policy_no ?? "—" })}
       onClose={onClose}
       width={560}
       actions={

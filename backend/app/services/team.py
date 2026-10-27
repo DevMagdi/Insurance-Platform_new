@@ -36,11 +36,20 @@ OFFICE_ROLES: frozenset[str] = frozenset({"sales_rep", "sales_manager", "custome
 _TERMINAL = [LeadStatus.WON, LeadStatus.LOST]
 
 
+#: the order the "add a member" dialog offers the seats in. `sales_rep` first because it is the seat this
+#: screen exists to add, and because a client that defaults to `roles[0]` must not default to
+#: `account_manager` — which is exactly what an alphabetical list did (R3: a manager added a rep who landed
+#: as an account manager, could not receive leads, and the e2e test caught the mismatch).
+ROLE_ORDER: tuple[str, ...] = ("sales_rep", "sales_manager", "customer_service", "account_manager")
+
+
 async def roster(session: AsyncSession, scope: Scope) -> dict[str, Any]:
-    """The office seats plus the roles this screen may assign, so the dialog lists what the API accepts."""
+    """The office seats plus the roles this screen may assign, in the order the dialog should offer them."""
     members = await list_members(session, scope)
     names = (await session.execute(select(Role.code, Role.name).where(func.lower(Role.code).in_(sorted(OFFICE_ROLES))))).all()
-    assignable = [{"code": str(code), "name": str(name)} for code, name in sorted(names)]
+    rank = {code: index for index, code in enumerate(ROLE_ORDER)}
+    ordered = sorted(names, key=lambda row: (rank.get(str(row[0]).lower(), len(ROLE_ORDER)), str(row[0])))
+    assignable = [{"code": str(code), "name": str(name)} for code, name in ordered]
     return {"members": members, "assignable_roles": assignable}
 
 
@@ -62,6 +71,7 @@ async def list_members(session: AsyncSession, scope: Scope) -> list[dict[str, An
         )
     ).all()
     loads: dict[UUID, int] = {owner: int(value or 0) for owner, value in counts if owner is not None}
+    owners = await _lead_owning_roles(session)
     out: list[dict[str, Any]] = []
     for user, role_code, role_name in rows:
         out.append(
@@ -74,10 +84,29 @@ async def list_members(session: AsyncSession, scope: Scope) -> list[dict[str, An
                 "role_name": role_name,
                 "is_active": user.is_active,
                 "open_leads": int(loads.get(user.id, 0) or 0),
+                # the redistribute picker filters on this: a customer-service seat is in the office but a
+                # lead handed to it disappears from every sales board (see `leads._require_rep`)
+                "accepts_leads": str(role_code).lower() in owners,
                 "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
             }
         )
     return out
+
+
+async def _lead_owning_roles(session: AsyncSession) -> set[str]:
+    """Role codes whose permissions include `leads.view_own` — the seats that can hold a lead."""
+    from app.models.auth import Permission, role_permissions
+
+    rows = (
+        await session.execute(
+            select(Role.code)
+            .select_from(Role)
+            .join(role_permissions, role_permissions.c.role_id == Role.id)
+            .join(Permission, Permission.id == role_permissions.c.permission_id)
+            .where(Permission.code == "leads.view_own")
+        )
+    ).scalars()
+    return {str(code).lower() for code in rows}
 
 
 async def create_member(session: AsyncSession, actor: User, payload: dict[str, Any], *, ip: str | None = None) -> tuple[User, str | None]:

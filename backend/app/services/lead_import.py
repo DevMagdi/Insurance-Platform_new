@@ -83,10 +83,28 @@ _DATE_PATTERNS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%d.%m.%Y")
 _EMAIL_SHAPE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 
 
+#: Arabic headers differ by the definite article and by how the hamza was typed: «الإيميل» / «ايميل» /
+#: «الايميل» are the same column to a human, and an Excel file written by a broker uses all three. Folding
+#: them here means the alias list does not have to spell every variant, and a column can never be dropped
+#: just because it arrived with «ال» in front (R3: a bad-email row was imported as *ready* because
+#: «الإيميل» matched nothing and the whole column vanished).
+_AR_FOLD = str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ى": "ي", "ة": "ه", "ۀ": "ه", "ـ": ""})
+
+
 def _norm_header(value: Any) -> str:
-    """`  الشركة : ` → `الشركة`, `Mobile:` → `mobile`. Comparison is on this form only."""
+    """`  الشركة : ` → `شركه`, `Mobile:` → `mobile`. Comparison is on this form only."""
     text = str(value or "").replace("\ufeff", "").strip().rstrip(":").strip().lower()
-    return re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s+", " ", text).translate(_AR_FOLD)
+    return re.sub(r"^ال(?=\S)", "", text)
+
+
+def _header_aliases() -> dict[str, str]:
+    """normalised spelling → logical column, built from `COLUMNS` once."""
+    out: dict[str, str] = {}
+    for key, aliases in COLUMNS.items():
+        for alias in aliases:
+            out.setdefault(_norm_header(alias), key)
+    return out
 
 
 def _norm_name(value: Any) -> str:
@@ -210,17 +228,27 @@ def _read_csv(content: bytes, filename: str) -> list[dict[str, Any]]:
 
 
 def _map_header(grid: list[list[Any]]) -> list[dict[str, Any]]:
-    """First non-empty line is the header; unknown columns are ignored, a missing `name` is fatal."""
+    """First non-empty line is the header; a missing `name` is fatal, unknown columns are reported.
+
+    A column nobody recognises is not thrown away silently any more: its header is carried back on the first
+    row (`_ignored`) so the preview can say «هذه الأعمدة لم تُقرأ» — a manager who typed an e-mail column
+    should not have to discover that every address was dropped by reading the database.
+    """
     lines = [row for row in grid if any(cell is not None and str(cell).strip() != "" for cell in row)]
     if not lines:
         return []
     header = [_norm_header(cell) for cell in lines[0]]
+    aliases = _header_aliases()
     mapping: dict[str, int] = {}
-    for key, aliases in COLUMNS.items():
-        for idx, cell in enumerate(header):
-            if cell in aliases:
-                mapping[key] = idx
-                break
+    ignored: list[str] = []
+    for idx, cell in enumerate(header):
+        key = aliases.get(cell)
+        if key is None:
+            if cell:
+                ignored.append(str(lines[0][idx]).strip())
+            continue
+        # first spelling wins, so two columns that mean the same thing do not overwrite each other
+        mapping.setdefault(key, idx)
     if "name" not in mapping:
         raise ValidationFailed(
             "عمود «الاسم / Name» مطلوب في الصف الأول", details={"header": header, "mapped": sorted(mapping.values()) and sorted(mapping)}
@@ -231,6 +259,8 @@ def _map_header(grid: list[list[Any]]) -> list[dict[str, Any]]:
         for key, idx in mapping.items():
             item[key] = raw[idx] if idx < len(raw) else None
         rows.append(item)
+    if rows and ignored:
+        rows[0]["_ignored"] = ignored
     return rows
 
 
@@ -289,6 +319,18 @@ async def dry_run(session: AsyncSession, actor: User, *, rows: list[dict[str, An
     report: list[dict[str, Any]] = []
     seen: set[str] = set()
     skipped_duplicates = 0
+
+    ignored = (rows[0].get("_ignored") if rows else None) or []
+    if ignored:
+        report.append(
+            {
+                "row": 1,
+                "field": "header",
+                "message": f"أعمدة لم يتم التعرف عليها وتُركت: {'، '.join(ignored)}",
+                "kind": "warning",
+                "value": ignored,
+            }
+        )
 
     for row in rows:
         row_no = row.get("_row")

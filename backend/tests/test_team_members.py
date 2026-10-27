@@ -163,3 +163,84 @@ async def test_the_roster_counts_what_a_redistribution_handed_out(client, ids: d
 
         after_a = await _member(client, auth, REP_A)
         assert after_a["open_leads"] == before["open_leads"] + 2
+
+
+async def test_a_duplicate_email_is_a_conflict_not_a_second_seat(client) -> None:
+    async with login(client, MANAGER) as auth:
+        duplicate = await client.post(
+            "/api/v1/sales-team/members",
+            headers=auth,
+            json={"full_name": "نسخة من ريب A", "email": "rep_a@brokerhub.test", "role_code": "sales_rep"},
+        )
+        assert duplicate.status_code == 409, duplicate.text
+        assert duplicate.json()["code"] == "conflict"
+        roster = (await client.get("/api/v1/sales-team/members", headers=auth)).json()
+        assert len([row for row in roster["members"] if row["email"] == "rep_a@brokerhub.test"]) == 1
+
+
+async def test_a_suspended_seat_cannot_log_in_and_the_answer_is_a_forbidden(client) -> None:
+    """The login is the real gate: `is_active` must stop the session, with the error code the UI branches on."""
+    async with login(client, MANAGER) as auth:
+        created = await client.post(
+            "/api/v1/sales-team/members",
+            headers=auth,
+            json={"full_name": "مقعد يوقف", "email": "suspended@brokerhub.test", "role_code": "sales_rep", "password": PASSWORD},
+        )
+        assert created.status_code == 201, created.text
+        member_id = created.json()["id"]
+        off = await client.patch(f"/api/v1/sales-team/members/{member_id}", headers=auth, json={"is_active": False})
+        assert off.status_code == 200, off.text
+    refused = await client.post("/api/v1/auth/login", json={"email": "suspended@brokerhub.test", "password": PASSWORD})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["code"] == "forbidden"
+    async with login(client, MANAGER) as auth:
+        on = await client.patch(f"/api/v1/sales-team/members/{member_id}", headers=auth, json={"is_active": True})
+        assert on.status_code == 200
+    async with login(client, "suspended@brokerhub.test"):
+        pass  # the switch is reversible and the login comes back
+
+
+async def test_a_new_rep_is_isolated_from_everybody_elses_leads(client, ids: dict[str, dict[str, str]]) -> None:
+    """A seat created from the team screen must inherit isolation immediately — 404 by id, not 403."""
+    foreign_lead = ids["leads"]["ألف"]
+    async with login(client, MANAGER) as auth:
+        created = await client.post(
+            "/api/v1/sales-team/members",
+            headers=auth,
+            json={"full_name": "عضو جديد", "email": "isolated@brokerhub.test", "role_code": "sales_rep", "password": PASSWORD},
+        )
+        assert created.status_code == 201, created.text
+    async with login(client, "isolated@brokerhub.test") as mine:
+        assert (await client.get(f"/api/v1/leads/{foreign_lead}", headers=mine)).status_code == 404
+        assert (await client.get(f"/api/v1/leads/{foreign_lead}/activities", headers=mine)).status_code == 404
+        assert (await client.patch(f"/api/v1/leads/{foreign_lead}", headers=mine, json={"status": "lost"})).status_code == 404
+        listing = (await client.get("/api/v1/leads?page_size=200", headers=mine)).json()
+        assert listing["total"] == 0
+        assert (await client.get("/api/v1/requests?page_size=1", headers=mine)).status_code == 403
+        assert (await client.get("/api/v1/dashboard/summary", headers=mine)).status_code == 403
+
+
+async def test_the_roster_exposes_the_lead_owning_flag(client) -> None:
+    async with login(client, MANAGER) as auth:
+        roster = (await client.get("/api/v1/sales-team/members", headers=auth)).json()
+    rep = next(row for row in roster["members"] if row["role"] == "sales_rep")
+    cs = next((row for row in roster["members"] if row["role"] == "customer_service"), None)
+    assert rep["accepts_leads"] is True
+    if cs is not None:
+        assert cs["accepts_leads"] is False
+
+
+async def test_the_role_list_offers_the_rep_seat_first(client) -> None:
+    """
+    The dialog seeds its role field from `assignable_roles[0]`. The list used to be alphabetical, so the
+    default seat was `account_manager` — a manager who pressed «إضافة عضو» and typed a name created an
+    account manager, who then could not hold a lead (R3, `team-round.spec.ts` desktop: `seat.role` was
+    `account_manager`). The order is a product decision now, not a collation accident.
+    """
+    async with login(client, MANAGER) as auth:
+        roster = (await client.get("/api/v1/sales-team/members", headers=auth)).json()
+    codes = [row["code"] for row in roster["assignable_roles"]]
+    assert codes[0] == "sales_rep", codes
+    assert codes == ["sales_rep", "sales_manager", "customer_service", "account_manager"], codes
+    # every role named here is one the roster actually contains, so the dialog cannot offer a dead option
+    assert {row["role"] for row in roster["members"]} <= set(codes)

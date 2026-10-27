@@ -13,6 +13,7 @@ export const ar = {
     cancel: "إلغاء",
     confirm: "تأكيد",
     close: "إغلاق",
+    closeDialog: "إغلاق النافذة",
     open: "فتح",
     download: "تحميل",
     all: "الكل",
@@ -39,6 +40,7 @@ export const ar = {
   },
   nav: {
     ariaLabel: "التنقل الرئيسي",
+    mobileAriaLabel: "التنقل السريع",
     dashboard: "لوحة التحكم",
     inbox: "صندوق الطلبات",
     leads: "العملاء المحتملون",

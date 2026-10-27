@@ -111,6 +111,9 @@ class TeamMemberOut(Open):
     role_name: str | None = None
     is_active: bool = True
     open_leads: int = 0
+    #: can this seat receive a lead? Served so the redistribute picker and the API agree on one rule
+    #: (`leads.view_own`), instead of the UI offering every office seat and the API accepting it (R3).
+    accepts_leads: bool = False
     last_login_at: str | None = None
 
 
@@ -453,9 +456,18 @@ class InsuranceTypeRefOut(Open):
 
 
 class PolicyOut(Open):
+    """
+    A policy as the screens read it.
+
+    `policy_no` is nullable here *and* in the model and the create body (`PolicyCreate.policy_no` defaults to
+    `None`): a draft booked before the insurer answers carries no number yet. Declaring it `str` made FastAPI
+    refuse to serialise the whole payload — the client file answered 500 for every client holding a draft
+    policy, which is what took the `screens`, `screenshots` and therefore three e2e tests down (R3).
+    """
+
     id: UUID
     client_id: UUID | None = None
-    policy_no: str
+    policy_no: str | None = None
     status: str
     start_date: date | None = None
     end_date: date | None = None

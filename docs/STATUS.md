@@ -1,9 +1,12 @@
 # STATUS — منصة إدارة الوساطة التأمينية (Broker Hub)
 
-آخر تحديث: 2026-10-27 · فرع العمل: `arena/c14f4d07-insurance-platform-new` (`main` عند `b8f5e7f`، PR #5
-مفتوح عليه). هذه الجولة = **R2**: مقاعد مكتب المبيعات، استيراد Leads من ملف يكتب في القاعدة فعلًا، وزرّ
-«إعادة توزيع الـLeads» يحرّك الحوض كله. القاعدة نفسها من R0: لا يُكتب «تم» إلا مع الأمر ومخرجاته، وما لا
+آخر تحديث: 2026-10-27 · فرع العمل: `arena/24d9b3b0-insurance-platform-new` من `main` عند `78085fa`.
+هذه الجولة = **R3**: إصلاح جذري لـ e2e المتبقّي + إقلاع `docker compose` + هاردننغ استيراد/إعادة
+توزيع/مقاعد بحزام اختبارات أوسع. القاعدة نفسها من R0: لا يُكتب «تم» إلا مع الأمر ومخرجاته، وما لا
 يُشغَّل يُكتب «لم يُشغَّل» مع سببه الحرفي.
+
+جولة R2 (السابقة) = مقاعد مكتب المبيعات، استيراد Leads من ملف يكتب في القاعدة فعلًا، وزرّ «إعادة توزيع
+الـLeads» يحرّك الحوض كله — تفاصيلها باقية في هذا الملف وفي ADR-017.
 
 مرجع التحقق: ملف تصميم الواجهات (16 شاشة) المرفق من صاحب المشروع + نصّ المواصفات §1–§13.
 قاعدة العمل: لا يُكتب «مطابقة» إلا بموافقة المالك — انظر [`ui-parity/`](ui-parity/README.md).
@@ -22,10 +25,147 @@
 | M7 البورتال | ✅ منتهية | `services/portal.py` · `tests/test_portal.py` (اختبار يمنع تسرّب أي مفتاح حسّاس) |
 | M8 المرحلة الثانية (وثائق/أقساط/عمولات/إصدار/تقارير) خلف flag | 🟡 واجهات كاملة + API مقروء؛ الأعمال اليدوية فقط | `api/v1/endpoints/phase2.py` · `tests/test_dashboard_phase2.py` · الشاشات 12–14 تعمل عند تفعيل `phase2.enabled` |
 | M9 التوثيق والمحاكاة وتشغيل UI | 🟡 جزئي | هذا الملف + [`runbook.md`](runbook.md) + [`ui-parity/`](ui-parity/README.md) · لقطات الشاشة تُنتَج في CI فقط (انظر «ما لم يُشغَّل») |
-| M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | بعد R2: backend أخضر على SQLite (**176** + 9 مُتخطَّاة بعلامة `postgres_only`)، و**PostgreSQL 16 يقيسه CI** وحده في هذه البيئة · frontend أخضر (77 اختبار وحدة في 9 ملفات + `build` ✓) · e2e: typecheck ✓ و**10 ملفات / 146 اختبارًا مُكتشَفًا** (مشروعا desktop+mobile) لكنها **لم تُشغَّل** محلياً (لا متصفح — «ما لم يُشغَّل» 1، وسطر 18) · ruff (146 ملفاً)/mypy (107)/تغطية النواة (14/14)/استقرار الـOpenAPI (98 مساراً)/**تمرير كل النقاط** نظيفة |
+| M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | بعد R3: backend أخضر على SQLite (**198** + 9 مُتخطَّاة بعلامة `postgres_only`)، و**PostgreSQL 16 يقيسه CI** وحده في هذه البيئة · frontend أخضر (82 اختبار وحدة في 11 ملفاً + `build` ✓) · e2e: نوعان من الأدلة — typecheck محلي ✓، و**CI شغّلها فعلاً: 166 اختباراً · 131 ناجحاً · 0 فاشل · 35 مُتخطٍّ** (تعليق تلقائي بالأرقام على الـPR #6) · ruff (146 ملفاً)/mypy (107)/تغطية النواة (14/14)/استقرار الـOpenAPI (98 مساراً)/**تمرير كل النقاط** نظيفة |
 | R1 مركز الإعدادات: تكاملات حقيقية + إنشاء وثيقة | ✅ منتهية (محلياً) | `/settings` بثلاث بطاقات + حيّ/محاكاة بتأكيد + سجلّ `webhook_events` + `POST /policies` بجدول أقساط وعمولة · `tests/test_integrations_settings.py` (16) · `frontend/tests/settingsView.test.tsx` (14) · ADR-016 |
 | R2 مكتب المبيعات: مقاعد + استيراد Excel/CSV + إعادة توزيع الحوض | ✅ منتهية (محلياً؛ e2e تُقاس في CI) | `POST /leads/import` ⇒ `lead_import_jobs` + `POST /leads/assign-bulk` + `/sales-team/members` · `tests/test_lead_import.py` (10) `tests/test_team_members.py` (6) `tests/test_lead_redistribute.py` (11) · `frontend/tests/teamRound.test.tsx` (8) · `frontend/e2e/team-round.spec.ts` (4) · ADR-017 · جدول Proof حيّ في هذا الملف |
 | مزوّد AI (§11 M10): واجهة واحدة خلف `ai.enabled` + مراجعة بشرية | ✅ السطح كامل بسائق محاكاة · ⬜ بلا مزوّد حقيقي | `integrations/ai_sim.py` (حتمي، استخلاصي) · `endpoints/ai.py`: `GET /ai/status` · `POST /ai/calls/{id}/transcribe` · `POST /ai/requests/{id}/summarize` · `POST /ai/classify` · `tests/test_ai.py` (7) · زر «تلخيص آلي» في `InboxPage` يظهر فقط عند تشغيل الراية · ADR-013 |
+
+## جولة R3 — ما كان أحمر، ولماذا، وما أُصلح
+
+Round R3 ran in two passes. Pass 1 (`83f0c4f` + `607eb0a`) fixed the 13 failures measured on `main` and the
+compose entrypoint the docker job rejected; its first CI run then measured **14** failures on the new head,
+and pass 2 (this section) fixes the five distinct causes that run exposed. Both passes are recorded below,
+because "we fixed 13" is only honest next to "the next run found 14".
+
+### 0) الجولة الثانية: ما كشفه تشغيل CI على `607eb0a` (14 فشلاً)
+
+| الفشل (من ملخّص الـPR الحقيقي) | السبب الجذري | الإصلاح |
+|---|---|---|
+| `screens` + `screenshots` (المشروعان) + `05-client-file.png` | `PolicyOut.policy_no` معرَّف `str` والعمود **nullable** و`PolicyCreate` يقبل الغياب ⇒ وثيقة مسودّة واحدة تُسقط رد `/clients/{id}/overview` كله بـ`ResponseValidationError` (500) | `policy_no: str | None` في المخطط + `—` في الواجهة + اختبار `test_a_draft_policy_without_a_number_still_opens_the_client_file` و`tests/clientFile.test.tsx` |
+| `lead import › the preview writes nothing …` (المشروعان) | `ready` المقروء 1 بدل 2: عمود «الإيميل» لم يُطابق أياً من الأسماء المستعارة، فاختفى العمود كله وبقي الصف «جاهزاً» رغم بريده الفاسد | `_norm_header` يوحّد «ال/أ/إ/ى/ة» قبل المطابقة + تقرير «أعمدة لم يتم التعرف عليها» + اختباران جديدان |
+| `lead import › broken and Arabic-heavy CSV rows` | نفس السبب أعلاه (2 جاهز بدل 1، و2 أخطاء بدل 3) | نفسه — والمخرجات صارت `rows 4 · ready 1 · errors 3` للصفوف `[3,4,5]` |
+| `members › a manager adds a rep …` (سطح مكتب) | الحوار يسكن دوره من `assignable_roles[0]`، والقائمة كانت **أبجدية** ⇒ `account_manager` هو الافتراضي، فالمقعد المُضاف لا يستطيع حمل أي Lead | `ROLE_ORDER` في `services/team.py` (بياع أولاً) + الاختبار يختار «بياع» صراحةً + `test_the_role_list_offers_the_rep_seat_first` |
+| `members` / `lead import` / `redistribute` (جوال) | مهلة 60s في نقرة: `element is outside of the viewport` ×114 — الحوار بلا سقف ارتفاع يتجاوز الشاشة، فتذييله خارج أي صندوق تمرير | إصلاح حقيقي في `components/Modal.tsx` (سقف `100dvh` + تمرير داخلي + تذييل ثابت) و`tests/modal.test.tsx`؛ ونطاق المشروعين موثَّق في ADR-019 |
+| `dashboard › a rep without requests.view …` (جوال) | الاختبار يطلب «التنقل الرئيسي» وهو غير مرسوم على 390 (ADR-018) ⇒ 0 عناصر تُقرأ خطأً | الاختبار يسأل كل شكل عن تنقّله، والتأكيدات الثلاثة كما هي |
+
+
+### 1) e2e: الفشل الـ13 على `main` عند `78085fa` (لقطة CI الحقيقية)
+
+سُحبت القائمة من `gh api repos/DevMagdi/Insurance-Platform_new/check-runs/<id>/annotations` (لا من ذاكرة):
+**13 غير متوقع · 89 ناجح · 29 مُتخطًّى + 15 لم تُشغَّل**. لكل فشل، السبب الجذري والإصلاح:
+
+| الاختبار | السبب الجذري (بالمخرجات) | الإصلاح |
+|---|---|---|
+| client file (شاشة 5) + لقطة `05-client-file.png` | `GET /clients/{id}/overview` يرد **500** لأي عميل له وثيقة: الحقل `policy.insurance_type` كان `{code,name}` والمخطط يتوقّع `{id,code,name}` ⇒ `ResponseValidationError` يأكل الرد كله، والصفحة تعرض `notfound` | `services/clients.overview` يرسل `id` — وبند اختبار جديد `test_the_overview_of_a_client_that_has_a_policy_serialises_its_insurance_type` (لم يكن هناك اختبار واحد يقرأ overview لعميل **له** وثيقة) |
+| dashboard (جوال) | عنوان KPI بصندوق `width: 0`: الهيكل يرسم شريطاً جانبياً 264px بلا كسر عند `lg`، فعلى 390px بقي للمحتوى 126px | هيكل متجاوب (ADR-018) + اختبار الهيكل يقيس الشكلين |
+| inbox (سطح مكتب) | الردّ محفوظ و`first_response_at` لم يُقرأ في قراءة واحدة أُخذت فور إعادة الرسم | `expect.poll` على `GET /requests/{id}` (نفس نمط `settings.spec.ts`)، والتأكيد كما هو؛ والقاعدة مثبّتة في `tests/test_requests_flow.py` |
+| isolation (المشروعان) | لافتة التحويل تطابق نصاً عاماً، وبعد أول تحويل تُصبح عنصرين ⇒ strict mode | اسم الـLead صار فريداً لكل تشغيل واللافتة تُطابَق باسمه (`toHaveCount(1)`) — تأكيد أقوى لا أضعف |
+| members (المشروعان) | زرّا «إغلاق» في النافذة (X + زر التذييل) بنفس اسم الوصول | X صار «إغلاق النافذة» (`common.closeDialog`) + الاختبار يستهدف زر التذييل صراحةً |
+| lead import (سطح مكتب) | التأكيد كان على النص "2" الذي يتحقّق عبر «صفوف: 3» | تأكيد على الأرقام الأربعة الحقيقية: `صفوف: 3 · جاهز: 1 · مكرر: 1 · خطأ: 1` ثم `أُنشئ: 1` |
+| lead import (جوال) | الخطوة التمهيدية تحجز رقم موبايل **ثابتاً** `+201000777777`، فاصطدمت بليد المشروع الأول في نفس القاعدة (409) | كل الأرقام في الملف مُولَّدة لكل تشغيل |
+| redistribute (المشروعان) | «أول checkbox» في النافذة اختير، و`/sales/team` بلا `ORDER BY` ومع مقعد أُنشئ في نفس التشغيل قبله ⇒ الـlead انتقل لمقعد لا يراه أي بياع | `/sales/team` مرتّب بـ`full_name` + الاختبار يسمّي المستلم ويؤكد أن بياعاً واحداً يراه والآخر يرد 404 عليه |
+
+### 2) عيب منتج حقيقي كشفته إعادة التوزيع
+
+`_require_rep` كان يتحقّق من الوجود و`is_active` فقط، فكان يمكن إسناد Lead لمقعد **خدمة عملاء**:
+الـlead يخرج من الحوض، والمدير يُبلَّغ «1 moved»، ولا لوحة مبيعات (النطاق `assigned_to == me`) ولا
+طابور CS يعرضه بعدها. الآن: `_require_rep` يطلب `leads.view_own` (422 مع `details.required`)، وواجهة
+الاختيار تقرأ الحقيقة من الخادم (`TeamMemberOut.accepts_leads`) — والاثنان مغطّيان باختبارات.
+
+### 2.5) العيب الأخير الذي كشفه المكدّس بعد إصلاح الصورة: `CORS_ORIGINS` يُسقط الـAPI عند الاستيراد
+
+بعد إزالة MinIO صعدت الحاويات فعلاً: `postgres` و`redis` و`mailpit` و`migrate` (5 ترحيلات، exit 0)، ثم
+**`backend` خرج بـ(1)**. سجلّه المنشور على الـPR يقول السبب بالحرف:
+
+```
+pydantic_settings.exceptions.SettingsError: error parsing value for field "CORS_ORIGINS"
+from source "EnvSettingsSource"
+  … json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+```
+
+`infra/.env.example` و`infra/docker-compose.yml` يمرّران `CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173`،
+و`pydantic-settings` يفكّ أي `list[...]` بـ`json.loads` **قبل** أي validator — فينفجر الاستيراد نفسه،
+ولا يصل الـAPI إلى `/healthz` أبداً. أي أن `docker compose up` لم يكن يعمل من أول يوم، وكان فشل الصورة
+يخفي هذا العيب خلفه.
+
+الإصلاح: `Annotated[list[str], NoDecode]` على `CORS_ORIGINS` و`WEEKEND_DAYS` مع validator يقبل الشكلين
+(فاصلة أو JSON)، و`tests/test_config.py` (5 حالات) يثبّت السلوك، برسالة خطأ مفهومة للـJSON المشوّه.
+
+### 3) docker — السبب الحقيقي ظهر أخيراً (لا تخمين)
+
+التشخيص المنشور على الـPR بعد إصلاح `entrypoint` أعطى الجملة الحاسمة:
+
+```
+ Image minio/minio:latest Error pull access denied for minio/minio,
+       repository does not exist or may require 'docker login'
+… postgres/redis/mailpit/minio-mc كلها Interrupted
+**services**  (فارغ: لم تُنشأ حاوية واحدة)
+```
+
+أي أن الفشل في **سحب الصورة**، قبل إنشاء أي حاوية وقبل الترحيل. MinIO أرشفت مستودعها ثم حذفت
+`minio/minio` و`minio/mc` من Docker Hub (2026-09-11)، و`quay.io` بدأت ترفض السحب المجهول (2026-09-24) —
+فلا سجلّ مجهول يخدم الصورة، وما كان «تحويل السجل» لينجح.
+
+القرار (ADR-020): حُذفت خدمتا `minio` و`minio-init`، والمخزن الافتراضي للمكدّس صار القرص على وحدة
+`objectsdata` (`STORAGE_DIR=/srv/objects`، والمجلد يُنشأ داخل الصورة بمالكه `broker` لأن وحدة Docker
+تُهيّأ بملكية المسار الموجود في الصورة). دعم S3 باقٍ كما هو (`STORAGE_BACKEND=s3` + `S3_*`)، و`S3Storage`
+ينشئ الحاوية عند أول استخدام — ولهذا لم تكن `minio-init` لازمة من الأصل.
+
+وأُضيف للوظيفة ما يجعل الدورة القادمة لا تحتاج تخميناً: `compose up` يُكتب إلى `/tmp/compose-up.log`
+(`tee` + `pipefail`) ويُنشر مع `ps -a` وسجلّات الحاويات وقائمة الصور المطلوبة وحالتها.
+
+### 3.5) النتيجة النهائية على هذا الفرع (أرقام من الـPR نفسه، لا من التوقّع)
+
+| الرأس | e2e | docker | المصدر |
+|---|---|---|---|
+| `main` قبل الجولة | **13 فاشلاً** · 89 ناجح · 29 مُتخطٍّ (+15 لم تُشغَّل) | فاشل | ملاحظات الـjob + لقطة سابقة |
+| `607eb0a` (الجولة 1) | **14 فاشلاً** · 107 ناجح · 45 مُتخطٍّ | فاشل (`pull access denied`) | تعليق «فشل e2e…» على الـPR |
+| `3b0d35d` | **5 فاشلة** · 126 ناجح · 35 مُتخطٍّ | فاشل (`CORS_ORIGINS`) | نفس التعليق + تشخيص docker |
+| `055803a` | **0 فاشل** | **نجح** (المكدّس صعد، `/healthz`، الترحيلات الخمسة، الدخول عبر nginx) | `gh run view 40472703167` |
+| `a7e9994` | **0 فاشل · 131 ناجح · 35 مُتخطٍّ** من 166 | **نجح** | تعليق «e2e · الأرقام من تقرير Playwright نفسه» |
+
+التشغيل الأخير كامل: **166 اختباراً · 131 ناجحاً · 0 فاشل · 35 مُتخطٍّ · 0 متذبذب** — والتخطيات كلها
+معلنة بالاسم في تعليق تلقائي على الـPR (لقطات الشاشة لكل مقاس على حِدة، وشاشات سطح مكتب لا تُقاس على 390،
+والحوارات الإدارية بموجب ADR-019). لا اختبار واحد حُذف، ولا `timeout` واحد وُسِّع.
+
+**ما الذي كسر الثلاثة عشر وواحداً؟** كل فشل رُبط بسببه من مخرجاته، ولم يبقَ منها شيء: 500 على
+`/clients/{id}/overview` (نوعان: `insurance_type.id` الناقص ثم `policy_no` غير القابل للـnull)، هيكل غير
+متجاوب، قراءة فورية بدل `expect.poll`، لافتة ونصوص متطابقة أكثر من مرة، أرقام موبايل ثابتة/متلاصقة في
+الـfixtures، ترتيب قائمة أدوار أبجدي يُنشئ مدير حساب بدل بياع، حوار أطول من الشاشة، واختبار يسأل الجوال عن
+شريط سطح المكتب. واكتشفنا معها عيبين منتجيين لم يرهما أحد: عمود «الإيميل» يُهمَل بصمت، و`CORS_ORIGINS`
+يُسقط الـAPI عند الاستيراد.
+
+### 4) أوامر التحقق في هذه الجلسة (مخرجات حقيقية)
+
+backend (SQLite؛ PostgreSQL يقيسه CI وحده):
+
+```
+ruff check .                → All checks passed!
+ruff format --check .       → 146 files already formatted
+mypy app                    → Success: no issues found in 107 source files
+pytest                      → 198 passed, 9 skipped in 208.97s   (+9 اختبارات هذه الجولة)
+scripts/smoke_api.py        → SMOKE OK — 114/116 نداءً موثَّقاً، والاستثناءان بسببهما
+scripts/check_openapi_fresh → openapi.json is fresh (98 paths)
+scripts/check_migrations.py → migration immutability ok (5 merged, 0 new)
+scripts/check_core_coverage → 14/14 فوق البوابة (أدنى: leads 85.3%، lead_import 85.6%، portal 84.9%)
+coverage report             → TOTAL 84.2%
+```
+
+frontend (Node 22):
+
+```
+eslint . --max-warnings 0   → 0 مشكلة
+tsc (app + e2e)             → نظيف
+vitest run                  → 82 passed / 11 files   (منها `modal.test.tsx` 3 و`clientFile.test.tsx` 2)
+npm run build               → ✓ 7.95s
+```
+
+### 5) ما لم يُشغَّل محلياً في هذه الجولة
+
+| البند | لماذا | كيف يُقاس |
+|---|---|---|
+| `npx playwright test` | لا متصفح في هذه الحاوية: `libnss3` غائب ولا root/شبكة لنصب الحزم (`apt` و CDN محجوبان — جُرِّب `@sparticuz/chromium` فسقط على نفس المكتبة) | CI job `e2e`؛ أرقام قبل/بعد في وصف الـPR |
+| `docker compose up` | `docker` غير موجود في هذه الحاوية | CI job `docker` + تشخيصه المنشور على الـPR |
 
 ## ما شُغِّل فعليًا (جولة R1 — مركز الإعدادات؛ الأرقام من نفس الجلسة)
 

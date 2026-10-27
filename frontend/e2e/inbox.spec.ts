@@ -25,14 +25,24 @@ test.describe("unified inbox (screen 2)", () => {
     await page.getByRole("button", { name: "إرسال", exact: true }).click();
     await expect(page.getByText(body)).toBeVisible({ timeout: 15_000 });
 
-    // the server is the source of truth: the reply is in the thread and first response is stamped
+    /*
+     * The server is the source of truth: the reply is in the thread and the first response is stamped.
+     * It is read with `expect.poll` — the same pattern `settings.spec.ts` uses for "the write landed" —
+     * because one read taken right after the UI repainted saw the message but not yet the stamp (R3,
+     * desktop, 1 862 ms). Polling does not weaken the assertion: a reply that never stamps still fails,
+     * after 20 s, and the message prints the server's payload. `test_requests_flow` pins the same rule at
+     * the service level (`test_status_change_does_not_fake_a_first_response`).
+     */
     const auth = await apiLogin(request, CS);
-    const response = await request.get(`/api/v1/requests/${requestId}`, { headers: auth });
-    expect(response.ok()).toBeTruthy();
-    const detail = await response.json();
-    const stored = (detail.messages as { body: string }[]).map((message) => message.body);
-    expect(stored, `the reply is not in ${requestId}'s thread — the server holds ${JSON.stringify(stored.slice(-3))}`).toContain(body);
-    expect(detail.first_response_at, "first_response_at must be set after the first staff reply").not.toBeNull();
+    let lastDetail: { messages?: { body: string }[]; first_response_at?: string | null } = {};
+    await expect(async () => {
+      const response = await request.get(`/api/v1/requests/${requestId}`, { headers: auth });
+      expect(response.ok(), await response.text()).toBeTruthy();
+      lastDetail = await response.json();
+      const stored = (lastDetail.messages ?? []).map((message) => message.body);
+      expect(stored, `the reply is not in ${requestId}'s thread — the server holds ${JSON.stringify(stored.slice(-3))}`).toContain(body);
+      expect(lastDetail.first_response_at, "first_response_at must be set after the first staff reply").not.toBeNull();
+    }).toPass({ timeout: 20_000 });
   });
 
   test("an internal note is saved against the request", async ({ page }) => {

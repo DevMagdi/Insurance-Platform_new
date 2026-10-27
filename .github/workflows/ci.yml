@@ -180,6 +180,17 @@ jobs:
           name: screenshots
           path: docs/screenshots
           retention-days: 30
+      - name: Numbers on the PR, even when the suite is green
+        # `Failure digest` only fires on red, so a passing round used to leave no record of how many tests
+        # actually ran — "it is green now" is not a measurement. This posts the report's own counts (and the
+        # skip list with its reasons) on every pull_request run.
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/ci-e2e-summary.py
+          gh pr comment "${{ github.event.number }}" --repo "$GITHUB_REPOSITORY" --body-file /tmp/e2e-summary.md
       - name: Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
@@ -211,15 +222,39 @@ jobs:
         # parses; this proves the documented commands actually come up: migrate, API health, worker,
         # and the SPA served by nginx with /api proxied — all on one `up`.
         run: |
-          docker compose -f infra/docker-compose.yml up -d --wait
-          docker compose -f infra/docker-compose.yml ps
+          # `--wait-timeout` is finite on purpose: without it a stuck stack burns the job's whole timeout
+          # and the log says nothing but "still waiting".
+          #
+          # `tee` + `pipefail`: compose's own stderr ("toomanyrequests", "no such image", a pull that timed
+          # out) is the only place the *reason* for a failed boot is written, and the job log is not readable
+          # from a reviewer's sandbox. The digest step below reposts this file to the PR, so the cause travels
+          # with the failure instead of being guessed at (two rounds were spent guessing before that).
+          set -o pipefail
+          docker compose -f infra/docker-compose.yml up -d --wait --wait-timeout 420 2>&1 | tee /tmp/compose-up.log
+          docker compose -f infra/docker-compose.yml ps | tee -a /tmp/compose-up.log
       - name: The stack answers over HTTP
+        # Every check names what it measured before it fails: `curl -f` exits 22 for *any* 4xx/5xx, so the
+        # bare form this replaced told a reviewer nothing but "exit code 22" (which is exactly what the next
+        # round would have had to guess at). The OpenAPI document is served by the API at `/openapi.json`
+        # (root), not under the version prefix — asking for `/api/v1/openapi.json` was the 404.
         run: |
-          curl -fsS localhost:8000/healthz
+          set -euo pipefail
+          step() { printf '\n== %s\n' "$1"; }
+          step "API liveness (direct)"
+          curl -fsS -w '  /healthz → %{http_code}\n' -o /dev/null localhost:8000/healthz
+          step "SPA shell served by nginx"
           curl -fsS localhost:5173/ | grep -q 'id="root"'
-          # the SPA's /api proxy and the API's own route table, through the same nginx
-          curl -fsS localhost:5173/api/v1/openapi.json -o /tmp/spec.json
-          python3 -c "import json;d=json.load(open('/tmp/spec.json'));print('paths:',len(d['paths']))"
+          echo '  localhost:5173/ contains the #root mount'
+          step "OpenAPI document (direct)"
+          curl -fsS localhost:8000/openapi.json -o /tmp/spec.json
+          python3 -c "import json;d=json.load(open('/tmp/spec.json'));print('  paths:',len(d['paths']))"
+          step "the SPA's /api proxy reaches the API"
+          # an unknown credential must be answered by the API (401 unauthorized), never by nginx (404 page)
+          code=$(curl -s -o /tmp/login.json -w '%{http_code}' -X POST localhost:5173/api/v1/auth/login \
+            -H 'content-type: application/json' -d '{"email":"nobody@brokerhub.test","password":"wrong-password"}')
+          cat /tmp/login.json; echo
+          test "$code" = "401" || { echo "proxy answered $code, not the API's 401"; exit 1; }
+          echo '  the proxy answered with the API body (401)'
       - name: Seed and log in through the stack
         # `app/seed.py` is idempotent and demo-only; the password is overridden here so the CI run does not
         # exercise the repo's fallback credential
@@ -232,11 +267,51 @@ jobs:
             -H 'content-type: application/json' \
             -d "{\"email\":\"admin@brokerhub.test\",\"password\":\"$SEED_PASSWORD\"}" \
             | python3 -c "import json,sys;print(json.load(sys.stdin)['access_token'])")
-          curl -fsS "localhost:5173/api/v1/clients?limit=1" -H "authorization: Bearer $TOKEN" -o /tmp/clients.json
+          # `page_size` (1..200) is the documented page control; `limit` is not a parameter of this route.
+          curl -fsS "localhost:5173/api/v1/clients?page_size=1" -H "authorization: Bearer $TOKEN" -o /tmp/clients.json
           python3 -c "import json;d=json.load(open('/tmp/clients.json'));print('clients page total:',d.get('total'))"
+          test "$(python3 -c "import json;print(json.load(open('/tmp/clients.json')).get('total') or 0)")" -gt 0
       - name: Compose logs on failure
         if: failure()
-        run: docker compose -f infra/docker-compose.yml logs --tail=120
+        continue-on-error: true
+        run: docker compose -f infra/docker-compose.yml logs --tail=120 || true
+      - name: Docker failure digest on the PR
+        # WHY: the job log is served from blob storage a reviewer's sandbox cannot fetch, so "docker failed
+        # at Boot the stack" was the whole story for three rounds and the cause had to be guessed. This puts
+        # `ps -a` and the containers' own logs where a human (or an agent) can read them.
+        if: failure() && github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "### docker · compose boot failed"
+            echo
+            echo '**services**'
+            echo '```'
+            docker compose -f infra/docker-compose.yml ps -a || true
+            echo '```'
+            echo
+            echo
+            echo '**`docker compose up` output**'
+            echo '```'
+            cat /tmp/compose-up.log 2>/dev/null || echo '(the boot step wrote no log)'
+            echo '```'
+            echo
+            echo '**last 200 log lines**'
+            echo '```'
+            docker compose -f infra/docker-compose.yml logs --tail=200 --no-color 2>&1 || true
+            echo '```'
+            echo
+            echo '**needed images**'
+            echo '```'
+            for image in postgres:16-alpine redis:7-alpine axllent/mailpit:v1.20 broker-hub-backend:local broker-hub-frontend:local; do
+              docker image inspect "$image" --format '{{.RepoTags}} present' 2>/dev/null || echo "$image NOT PRESENT LOCALLY"
+            done
+            echo '```'
+          } > /tmp/docker-boot.md
+          gh pr comment "${{ github.event.number }}" --repo "$GITHUB_REPOSITORY" --body-file /tmp/docker-boot.md
       - name: Tear down
         if: always()
-        run: docker compose -f infra/docker-compose.yml down -v
+        continue-on-error: true
+        run: docker compose -f infra/docker-compose.yml down -v || true

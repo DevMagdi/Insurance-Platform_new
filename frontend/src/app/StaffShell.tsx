@@ -58,7 +58,13 @@ export function StaffShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-bg">
-      <aside className="sticky top-0 h-screen w-[264px] shrink-0 bg-sidebar px-[12px] py-[18px]">
+      {/*
+        * Below `lg` the sidebar is not rendered at all. It used to be: a fixed `w-[264px]` panel took 264 of
+        * 390 CSS pixels on a phone and left 126px for the screen — the dashboard's KPI label measured
+        * `width: 0` and every RTL card was squeezed to a sliver (found by the mobile e2e project, R3). The
+        * phone gets its own navigation (bottom bar, below) and the full width for content.
+        */}
+      <aside className="hidden h-screen w-[264px] shrink-0 sticky top-0 bg-sidebar px-[12px] py-[18px] lg:block">
         <div className="mb-[20px] flex items-center gap-2.5 px-2">
           <span className="grid h-[34px] w-[34px] place-items-center rounded-[10px] text-[15px] font-bold text-white" style={{ background: "var(--primary)" }}>
             و
@@ -146,8 +152,32 @@ export function StaffShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="content-pad min-w-0 flex-1">{children}</main>
+        {/* the bottom bar is fixed on a phone, so the last card must not hide behind it */}
+        <main className="content-pad min-w-0 flex-1 pb-[96px] lg:pb-0">{children}</main>
       </div>
+
+      {/* Phone navigation: the same permission-filtered items, one row, labelled separately from the
+          desktop sidebar so a test (or a screen reader) can tell which navigation it is talking about. */}
+      <nav
+        aria-label={t("nav.mobileAriaLabel")}
+        className="fixed inset-x-0 bottom-0 z-30 grid auto-cols-fr grid-flow-col border-t border-line bg-card lg:hidden"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        {items.slice(0, 5).map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={({ isActive }) =>
+              `flex flex-col items-center gap-1 px-1 py-2.5 text-[10.5px] font-semibold transition ${
+                isActive ? "text-primary" : "text-muted"
+              }`
+            }
+          >
+            {item.icon}
+            <span className="max-w-full truncate">{t(item.labelKey)}</span>
+          </NavLink>
+        ))}
+      </nav>
     </div>
   );
 }
