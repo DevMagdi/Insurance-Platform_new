@@ -124,17 +124,41 @@ test.describe("R5 · issuance, filters and portal accounts", () => {
     await expect.poll(async () => page.locator("[data-lead-card]").count(), { timeout: 20_000 }).toBeGreaterThan(0);
   });
 
-  test("a username portal login sees its own policy file", async ({ page, request, browser }, testInfo) => {
+  test("a portal account is created from the client file and its password is shown once", async ({ page, request }, testInfo) => {
     test.skip(desktopOnly(testInfo), "1440×900 client-file dialog (ADR-019)");
-    // Four flows in one test — issue through the API, create the login through the dialog, sign in as the
-    // owner in a second browser context, download the file. The 60 s default is sized for one screen.
-    test.setTimeout(150_000);
-    await phase2On(request);
     const auth = await apiLogin(request, MANAGER);
     const ownerAuth = await apiLogin(request, OWNER);
     const ownerClient = (await (await request.get("/api/v1/portal/overview", { headers: ownerAuth })).json()).client.id as string;
 
-    // one issued policy for that company, arranged through the API (the issuing itself is the test above)
+    await login(page, MANAGER);
+    await page.goto(`/clients/${ownerClient}`);
+    await expect(page.getByRole("tablist", { name: ar.clients.file.title })).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: ar.clients.portal.create }).click();
+    await page.getByLabel(ar.clients.portal.username).fill(unique("qa.portal"));
+    await page.getByRole("button", { name: ar.common.confirm }).click();
+
+    // the temporary password is shown once, in a monospace `dd`, and never returned by any list route
+    const password = page.locator("dd.font-mono");
+    await expect(password, "the one-time password must be on screen after creating the account").toBeVisible({ timeout: 20_000 });
+    expect(((await password.textContent()) ?? "").trim().length).toBeGreaterThan(7);
+
+    // and it really exists in the database, against this client only
+    const accounts = await (await request.get(`/api/v1/clients/${ownerClient}/portal-accounts`, { headers: auth })).json();
+    const rows = (accounts.items ?? accounts) as { username: string | null; temporary_password?: string }[];
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.temporary_password === undefined), "a list must never replay a password").toBeTruthy();
+  });
+
+  test("a username portal login sees its own policy file and downloads it", async ({ request, browser }, testInfo) => {
+    test.skip(desktopOnly(testInfo), "1440×900 portal screen (ADR-019)");
+    test.setTimeout(120_000);
+    await phase2On(request);
+    const auth = await apiLogin(request, MANAGER);
+
+    // Everything is arranged through the API: this test is about the *session* a client owner gets with a
+    // username, and about the file they can take away — not about the dialog (the test above covers it).
+    const ownerAuth = await apiLogin(request, OWNER);
+    const ownerClient = (await (await request.get("/api/v1/portal/overview", { headers: ownerAuth })).json()).client.id as string;
     const draft = await request.post("/api/v1/policies", {
       headers: auth,
       data: { client_id: ownerClient, start_date: "2026-11-01", end_date: "2027-10-31", premium_amount: 180000 },
@@ -144,38 +168,49 @@ test.describe("R5 · issuance, filters and portal accounts", () => {
     expect(issued.status(), await issued.text()).toBe(200);
     const policyNo = (await issued.json()).policy_no as string;
 
-    // the login is created from the client file, by a manager, and the temp password is shown once
-    const username = unique("qa.portal");
-    await login(page, MANAGER);
-    await page.goto(`/clients/${ownerClient}`);
-    await expect(page.getByRole("tablist", { name: ar.clients.file.title })).toBeVisible({ timeout: 20_000 });
-    await page.getByRole("button", { name: ar.clients.portal.create }).click();
-    await page.getByLabel(ar.clients.portal.username).fill(username);
-    await page.getByRole("button", { name: ar.common.confirm }).click();
-
-    const password = page.locator("dd.font-mono");
-    await expect(password).toBeVisible({ timeout: 20_000 });
-    const temp = (await password.textContent())?.trim() ?? "";
+    // a fresh username login, with a password only the owner and the manager ever see
+    const username = unique("qa.owner");
+    const created = await request.post(`/api/v1/clients/${ownerClient}/portal-accounts`, {
+      headers: auth,
+      data: { username, full_name: "مالك البوابة", portal_role: "owner" },
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const temp = (await created.json()).temporary_password as string;
     expect(temp.length).toBeGreaterThan(7);
-    await page.getByRole("button", { name: ar.common.close, exact: true }).click();
 
-    // a fresh context: the owner signs in with the username, and the API honours it
-    const ownerContext = await browser.newContext();
-    const ownerPage = await ownerContext.newPage();
+    const context = await browser.newContext();
+    const page = await context.newPage();
     try {
-      await login(ownerPage, username, temp);
-      await expect(ownerPage).toHaveURL(/\/portal/, { timeout: 20_000 });
-      await expect(ownerPage.getByText(policyNo).first()).toBeVisible({ timeout: 20_000 });
+      await login(page, username, temp);
+      await expect(page, "a username alone must land on the portal").toHaveURL(/\/portal/, { timeout: 20_000 });
+      await expect(page.getByText(policyNo).first(), "the owner sees the policy number").toBeVisible({ timeout: 20_000 });
 
-      const [file] = await Promise.all([ownerPage.waitForEvent("download"), ownerPage.getByLabel(ar.common.download).first().click()]);
-      expect(file.suggestedFilename().toLowerCase()).toMatch(/\.pdf$/);
+      // the download path the screen is wired to, straight from the API the browser calls
+      const policies = (await (await request.get("/api/v1/portal/policies", { headers: ownerAuth })).json()) as {
+        policy_no: string;
+        document: { download_url: string | null } | null;
+      }[];
+      const row = policies.find((entry) => entry.policy_no === policyNo);
+      expect(row, "the portal policy list must carry the issued policy").toBeTruthy();
+      const url = row?.document?.download_url ?? "";
+      expect(url, "the row must point at a document route").toContain("/document");
+
+      const button = page.getByLabel(ar.common.download).first();
+      await expect(button, "the portal offers a download control for the issued file").toBeVisible({ timeout: 20_000 });
+      const [file] = await Promise.all([
+        page.waitForEvent("download", { timeout: 30_000 }).catch((error: unknown) => {
+          throw new Error(`«${ar.common.download}» produced no browser download (download_url=${url}): ${String(error)}`);
+        }),
+        button.click(),
+      ]);
+      expect(file.suggestedFilename().toLowerCase(), "the saved file is the policy PDF").toMatch(/\.pdf$/);
 
       // and none of the staff vocabulary reaches the portal
-      const text = (await ownerPage.locator("body").textContent()) ?? "";
+      const text = (await page.locator("body").textContent()) ?? "";
       expect(text).not.toContain(ar.leads.filterRep);
       expect(text).not.toContain("عمولة");
     } finally {
-      await ownerContext.close();
+      await context.close();
     }
   });
 });

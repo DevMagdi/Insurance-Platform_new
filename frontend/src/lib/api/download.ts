@@ -32,8 +32,20 @@ export async function downloadGet(path: string, fallbackName = "document.pdf"): 
   return send(path, undefined, fallbackName);
 }
 
+/**
+ * The API hands back ready-made `download_url`s (`/api/v1/portal/policies/<id>/document`) while screens that
+ * know their own route pass a bare one (`/policies/<id>/document`). Both mean the same thing, and blindly
+ * prefixing turned the first kind into `/api/v1/api/v1/...` — a 404 behind every portal download button,
+ * which the browser reports as "no download happened" (ADR-025).
+ */
+export function downloadUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path; // an absolute/signed URL is already complete
+  const trimmed = path.startsWith(`${BASE}/`) ? path.slice(BASE.length) : path;
+  return `${BASE}${trimmed.startsWith("/") ? "" : "/"}${trimmed}`;
+}
+
 async function send(path: string, body?: string, fallbackName = "export.xlsx"): Promise<DownloadedFile> {
-  const response = await fetch(`${BASE}${path}`, {
+  const response = await fetch(downloadUrl(path), {
     method: body === undefined ? "GET" : "POST",
     credentials: "include",
     headers: {

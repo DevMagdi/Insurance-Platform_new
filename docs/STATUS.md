@@ -3,7 +3,7 @@
 آخر تحديث: 2026-10-27 · فرع العمل: `arena/1ce19bf9-insurance-platform-new` من `main` عند `ef0e149`.
 هذه الجولة = **R5 (Live-Real)**: القنوات الحيّة تعمل فعلاً (لا محاكاة)، إصدار الوثيقة يُنتج ملفاً قابلاً
 للتحميل من البوابتين، فلاتر المدير على الليدز في الـAPI والواجهة، وحسابات بوابة العميل باسم مستخدم —
-التفاصيل في [`qa/live-real-2026-10-27.md`](qa/live-real-2026-10-27.md) وADRs 021–024.
+التفاصيل في [`qa/live-real-2026-10-27.md`](qa/live-real-2026-10-27.md) وADRs 021–025.
 الجولة السابقة = **R4 (Live-Ready QA)**: مسح شامل لكل مسار تشغيلي بكل دور، ثم إصلاح كل ما سقط — التفاصيل
 في [`qa/live-ready-2026-10-27.md`](qa/live-ready-2026-10-27.md). الجولة السابقة = **R3**: إصلاح جذري لـ e2e المتبقّي + إقلاع `docker compose` + هاردننغ استيراد/إعادة
 توزيع/مقاعد بحزام اختبارات أوسع. القاعدة نفسها من R0: لا يُكتب «تم» إلا مع الأمر ومخرجاته، وما لا
@@ -512,6 +512,7 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 | 022 حساب بوابة العميل: من ملف العميل، وباسم مستخدم | [`decisions/022-portal-accounts-and-username-login.md`](decisions/022-portal-accounts-and-username-login.md) |
 | 023 القنوات الحيّة تُثبَت بعقد: توقيع، تسجيل يُنزَّل، وفحص وصول حقيقي | [`decisions/023-live-channel-contracts.md`](decisions/023-live-channel-contracts.md) |
 | 024 سعة الأعمدة النصية: PostgreSQL يرفض ما يتجاهله SQLite — 32 لـ`webhook_events.status` + قصّ دفاعي | [`decisions/024-text-column-width-postgres.md`](decisions/024-text-column-width-postgres.md) |
+| 025 مسارات التنزيل: البادئة `/api/v1` مرة واحدة، والرابط المطلق يُترك كما هو | [`decisions/025-download-url-shape.md`](decisions/025-download-url-shape.md) |
 
 ## قائمة ما قبل «جاهز للمراجعة»
 
