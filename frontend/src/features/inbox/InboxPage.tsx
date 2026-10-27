@@ -20,7 +20,7 @@ import {
   Sparkles,
   StickyNote,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
@@ -50,9 +50,28 @@ export default function InboxPage() {
   const navigate = useNavigate();
   const { requestId } = useParams<{ requestId?: string }>();
   const { can } = useAuth();
-  const [filter, setFilter] = useState<QueueFilter>("open");
-  // the top bar search lands here as ?q=…, so the queue starts filtered from the shared header field
-  const [searchParams] = useSearchParams();
+  // The queue's filter lives in the URL (`?filter=overdue`), not only in component state: the dashboard's
+  // «طلبات متأخرة» card links here, and a link someone pastes into a chat has to open the same view for the
+  // next person. Reading it here also means Back/Forward moves the queue, which is what a browser is for.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterParam = searchParams.get("filter");
+  const filter: QueueFilter = filterParam === "overdue" || filterParam === "all" ? filterParam : "open";
+  /**
+   * Opening a request keeps the queue's own query string. The auto-select below used to navigate to
+   * `/inbox/<id>` alone, which dropped `?filter=overdue` — the deep link then flipped itself back to the open
+   * queue a tick after it opened, and the "shareable filtered view" was shareable for one frame.
+   */
+  const search = searchParams.toString();
+  const openRequest = useCallback(
+    (id: string) => navigate({ pathname: `/inbox/${id}`, search }, { replace: !requestId }),
+    [navigate, search, requestId],
+  );
+  const setFilter = (next: QueueFilter) => {
+    const params = new URLSearchParams(searchParams);
+    if (next === "open") params.delete("filter");
+    else params.set("filter", next);
+    setSearchParams(params, { replace: true });
+  };
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const [draft, setDraft] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
@@ -77,8 +96,8 @@ export default function InboxPage() {
   const selected = requestId ?? rows[0]?.id ?? null;
 
   useEffect(() => {
-    if (!requestId && selected) navigate(`/inbox/${selected}`, { replace: true });
-  }, [requestId, selected, navigate]);
+    if (!requestId && selected) openRequest(selected);
+  }, [requestId, selected, openRequest]);
 
   const detail = useQuery({
     queryKey: ["requests", "detail", selected],
@@ -137,7 +156,11 @@ export default function InboxPage() {
         <div className="border-b border-line px-4 py-[14px]">
           <div className="flex items-center justify-between">
             <h2 className="text-[15px] font-bold text-ink">{t("inbox.title")}</h2>
-            <span className="rounded-pill bg-primary-soft px-2 py-[2px] text-[11px] font-bold text-primary-ink tabular-nums">
+            <span
+              className="rounded-pill bg-primary-soft px-2 py-[2px] text-[11px] font-bold text-primary-ink tabular-nums"
+              data-testid="queue-count"
+              aria-label={t("inbox.countAria", { n: formatNumber(list.data?.total ?? 0) })}
+            >
               {formatNumber(list.data?.total ?? 0)}
             </span>
           </div>
@@ -173,7 +196,18 @@ export default function InboxPage() {
           ) : list.isError ? (
             <StateBlock kind="error" action={<button type="button" className="text-primary" onClick={() => void list.refetch()}>{t("common.retry")}</button>} />
           ) : rows.length === 0 ? (
-            <StateBlock kind="empty" title={t("inbox.empty")} />
+            <StateBlock
+              kind="empty"
+              title={filter === "overdue" ? t("inbox.emptyOverdue") : t("inbox.empty")}
+              action={
+                filter === "overdue" ? (
+                  // a dead end is not an empty state: the way out is one click, back to the whole queue
+                  <button type="button" className="text-[13px] font-semibold text-primary" onClick={() => setFilter("open")}>
+                    {t("inbox.showAll")}
+                  </button>
+                ) : undefined
+              }
+            />
           ) : (
             rows.map((row) => {
               const active = row.id === selected;
@@ -182,7 +216,7 @@ export default function InboxPage() {
                   key={row.id}
                   type="button"
                   data-request-row={row.id}
-                  onClick={() => navigate(`/inbox/${row.id}`)}
+                  onClick={() => openRequest(row.id)}
                   className={`w-full border-b border-line px-4 py-3 text-start transition ${active ? "bg-primary-soft/60" : "hover:bg-[#FAFBFF]"}`}
                   style={row.is_overdue && !active ? { background: "var(--row-warn)" } : undefined}
                 >

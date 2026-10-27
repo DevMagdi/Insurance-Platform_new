@@ -4,7 +4,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { ArrowDownRight, ArrowUpRight, Clock3, Inbox, TriangleAlert, Gauge } from "lucide-react";
 
@@ -173,6 +173,11 @@ export default function DashboardPage() {
           hint={data ? { text: t("dashboard.ofOpen", { n: formatNumber(data.open_requests ?? 0) }), tone: "a" } : undefined}
           icon={<TriangleAlert size={18} strokeWidth={1.8} />}
           tone="r"
+          // The number is useless without the list behind it: «متأخرة 7» is a question, and this card is the
+          // only place that answers it. A real `<Link>` (not a click handler on a div) so it is keyboard
+          // reachable, middle-clickable, and has an accessible name that says where it goes.
+          to="/inbox?filter=overdue"
+          linkLabel={t("dashboard.overdueAria", { n: formatNumber(data?.overdue ?? 0) })}
         />
       </div>
       )}
@@ -307,15 +312,20 @@ function Kpi({
   hint,
   icon,
   tone,
+  to,
+  linkLabel,
 }: {
   label: string;
   value?: string;
   hint?: { text: string; tone: "g" | "a" | "b" | "r" };
   icon: React.ReactNode;
   tone: "b" | "g" | "a" | "r" | "t";
+  /** When set, the whole card is a link to the filtered view this number describes. */
+  to?: string;
+  linkLabel?: string;
 }) {
-  return (
-    <Card className="flex items-start justify-between gap-3">
+  const card = (
+    <Card className="flex h-full items-start justify-between gap-3">
       <div className="min-w-0">
         <div className="text-[13px] text-muted">{label}</div>
         {value === undefined ? <div className="skeleton mt-2 h-8 w-24" /> : <div className="mt-1.5 text-kpi font-bold tabular-nums text-ink">{value}</div>}
@@ -343,6 +353,17 @@ function Kpi({
         {icon}
       </span>
     </Card>
+  );
+  if (!to) return card;
+  return (
+    <Link
+      to={to}
+      aria-label={linkLabel}
+      data-testid="kpi-overdue-link"
+      className="block h-full rounded-card transition hover:-translate-y-[1px] hover:shadow-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
+    >
+      {card}
+    </Link>
   );
 }
 

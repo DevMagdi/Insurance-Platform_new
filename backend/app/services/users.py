@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.core.logging import get_logger
 from app.core.scope import Scope
-from app.core.security import generate_temp_password, hash_password
+from app.core.security import generate_temp_password, hash_password_async
 from app.domain import permissions as P
 from app.domain.enums import PortalRole, ScopeType
 from app.domain.phone import normalize_mobile
@@ -111,7 +111,7 @@ async def create_user(
     user = User(
         email=email,
         username=username,
-        password_hash=hash_password(password),
+        password_hash=await hash_password_async(password),
         full_name=payload["full_name"],
         mobile=normalize_mobile(payload.get("mobile")),
         # assign the relationship, not just the FK: callers read `user.role.code` after the commit and
@@ -188,7 +188,7 @@ async def update_user(
     if payload.get("password"):
         if len(str(payload["password"])) < 10:
             raise ValidationFailed("Password must be at least 10 characters")
-        user.password_hash = hash_password(str(payload["password"]))
+        user.password_hash = await hash_password_async(str(payload["password"]))
         user.refresh_token_version += 1  # a password change invalidates existing sessions
     await session.flush()
     await audit.write(

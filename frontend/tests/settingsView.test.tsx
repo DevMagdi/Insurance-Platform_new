@@ -229,12 +229,24 @@ describe("the card renders what the API said — and nothing it did not", () => 
     expect(screen.getByTestId("test-result-whatsapp")).toHaveTextContent("(100) invalid credentials");
     failed.unmount();
 
-    // untested: the dialog names the blocker before any request is sent (ADR-016 §3)
+    // untested: the switch is *disabled* and the card says why, with a shortcut to the test.
+    // Before R6 the button was enabled, opened the dialog, and the only thing that ever happened next was a
+    // 409 — the operator's "it does not work" started exactly here.
     const unset = mount(providerState({ status: "unset", last_test_status: null }));
     expect(unset.container.textContent).toContain(ar.settings.status.unset);
-    fireEvent.click(screen.getByRole("button", { name: ar.settings.goLive }));
-    expect(screen.getByRole("dialog", { name: ar.settings.confirmLiveTitle })).toBeInTheDocument();
-    expect(screen.getByText(/لم ينجح أي اختبار بعد/)).toBeInTheDocument();
+    expect(screen.getByTestId("live-switch-whatsapp")).toBeDisabled();
+    expect(screen.getByTestId("live-blockers-whatsapp")).toHaveTextContent(ar.settings.liveBlockedTest);
+    expect(screen.getByRole("button", { name: ar.settings.runTestNow })).toBeInTheDocument();
     unset.unmount();
+
+    // ready → the dialog still asks for an explicit confirmation, and says the prerequisites are met
+    const ready = mount(providerState({ status: "sim", last_test_status: "ok", config: { phone_number_id: "123", business_account_id: "", receive_media: true } }));
+    const goLive = screen.getByTestId("live-switch-whatsapp");
+    expect(goLive).toBeEnabled();
+    fireEvent.click(goLive);
+    expect(screen.getByRole("dialog", { name: ar.settings.confirmLiveTitle })).toBeInTheDocument();
+    expect(screen.getByTestId("live-ready")).toHaveTextContent(ar.settings.liveReady);
+    expect(screen.getByRole("button", { name: ar.settings.confirmLive })).toBeEnabled();
+    ready.unmount();
   });
 });

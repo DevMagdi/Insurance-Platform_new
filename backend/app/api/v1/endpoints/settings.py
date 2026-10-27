@@ -56,7 +56,31 @@ class IntegrationWriteIn(BaseModel):
 
 class LiveSwitchIn(BaseModel):
     is_live: bool
+    #: The explicit confirmation. `confirm_live` is accepted as an alias because `PUT /settings/integrations`
+    #: calls the same thing `confirm_live` — a client that copied that field name used to get a 409 that
+    #: said "needs confirmation" while it was busy confirming.
     confirm: bool = False
+    confirm_live: bool = False
+
+
+class PreflightBlockerOut(BaseModel):
+    code: str = Field(description="confirm | test | fields")
+    message: str
+    fields: list[str] = []
+
+
+class PreflightOut(BaseModel):
+    provider: str
+    ready: bool = Field(description="true when nothing stands between this provider and live mode")
+    blockers: list[PreflightBlockerOut]
+    missing: list[str] = Field(description="machine keys of the fields the live switch requires")
+    labels: list[str] = Field(description="Arabic labels for `missing`, for the message the operator reads")
+    is_live: bool
+    mode: str
+    status: str
+    test_status: str | None = None
+    tested_at: str | None = None
+    next: str
 
 
 class ConnectionTestIn(BaseModel):
@@ -203,6 +227,16 @@ async def put_integration(
     )
 
 
+@router.get(
+    "/settings/integrations/{provider}/preflight",
+    summary="Can this provider go live? The blockers, before the button is offered",
+    response_model=PreflightOut,
+)
+async def integration_preflight(provider: str, session: DbSession, actor: SettingsManage) -> dict[str, Any]:
+    _check_provider(provider)
+    return await integrations.preflight(session, provider)
+
+
 @router.post("/settings/integrations/{provider}/test", summary="Test the provider connection (6/min)", response_model=ConnectionTestOut)
 async def run_integration_test(
     provider: str,
@@ -240,7 +274,7 @@ async def switch_live(
         actor,
         provider,
         is_live=body.is_live,
-        confirm=body.confirm,
+        confirm=body.confirm or body.confirm_live,
         ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )

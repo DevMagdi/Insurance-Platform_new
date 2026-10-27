@@ -3697,6 +3697,11 @@
             "title": "Confirm",
             "type": "boolean"
           },
+          "confirm_live": {
+            "default": false,
+            "title": "Confirm Live",
+            "type": "boolean"
+          },
           "is_live": {
             "title": "Is Live",
             "type": "boolean"
@@ -5280,6 +5285,120 @@
           "username"
         ],
         "title": "PortalUsernameIn",
+        "type": "object"
+      },
+      "PreflightBlockerOut": {
+        "properties": {
+          "code": {
+            "description": "confirm | test | fields",
+            "title": "Code",
+            "type": "string"
+          },
+          "fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "PreflightBlockerOut",
+        "type": "object"
+      },
+      "PreflightOut": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/PreflightBlockerOut"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "is_live": {
+            "title": "Is Live",
+            "type": "boolean"
+          },
+          "labels": {
+            "description": "Arabic labels for `missing`, for the message the operator reads",
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "missing": {
+            "description": "machine keys of the fields the live switch requires",
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "next": {
+            "title": "Next",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "ready": {
+            "description": "true when nothing stands between this provider and live mode",
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Status"
+          },
+          "tested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tested At"
+          }
+        },
+        "required": [
+          "provider",
+          "ready",
+          "blockers",
+          "missing",
+          "labels",
+          "is_live",
+          "mode",
+          "status",
+          "next"
+        ],
+        "title": "PreflightOut",
         "type": "object"
       },
       "ProviderStateOut": {
@@ -11407,6 +11526,73 @@
         ]
       }
     },
+    "/api/v1/realtime/revision": {
+      "get": {
+        "operationId": "getApiV1RealtimeRevision",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Getapiv1Realtimerevision",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Change signature per topic — the polling fallback",
+        "tags": [
+          "realtime"
+        ]
+      }
+    },
+    "/api/v1/realtime/stream": {
+      "get": {
+        "operationId": "getApiV1RealtimeStream",
+        "parameters": [
+          {
+            "description": "last revision the client applied; 0 = only new changes",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "last revision the client applied; 0 = only new changes",
+              "minimum": 0,
+              "title": "Since",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Server-sent change feed (topics + revision, no row data)",
+        "tags": [
+          "realtime"
+        ]
+      }
+    },
     "/api/v1/reports/insurer-performance": {
       "get": {
         "operationId": "getApiV1ReportsInsurer-Performance",
@@ -12662,6 +12848,48 @@
           }
         },
         "summary": "Flip simulation ↔ live (live needs a green test + confirm)",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/integrations/{provider}/preflight": {
+      "get": {
+        "operationId": "getApiV1SettingsIntegrationsProviderPreflight",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreflightOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Can this provider go live? The blockers, before the button is offered",
         "tags": [
           "settings"
         ]

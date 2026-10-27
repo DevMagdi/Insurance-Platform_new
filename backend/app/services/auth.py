@@ -14,12 +14,12 @@ from app.core.config import get_settings
 from app.core.errors import Forbidden, TooManyRequests, Unauthorized
 from app.core.security import (
     decode_token,
-    hash_password,
+    hash_password_async,
     make_access_token,
     make_refresh_token,
     needs_rehash,
     totp_matches,
-    verify_password,
+    verify_password_async,
 )
 from app.domain import permissions as P
 from app.models.auth import Role, User
@@ -78,7 +78,9 @@ async def login(session: AsyncSession, identifier: str, password: str, *, ip: st
             select(User).where(or_(func.lower(User.email) == handle, func.lower(func.coalesce(User.username, "")) == handle))
         )
     ).scalar_one_or_none()
-    if user is None or not verify_password(password, user.password_hash):
+    # the hash check runs in a worker thread: 110 ms of Argon2 on the event loop is 110 ms in which no
+    # other request in this process can even be read (see `security.hash_password_async`)
+    if user is None or not await verify_password_async(password, user.password_hash):
         _register_failure(key)
         raise Unauthorized("Email or password is incorrect")
     if not user.is_active or user.deleted_at is not None:
@@ -86,7 +88,7 @@ async def login(session: AsyncSession, identifier: str, password: str, *, ip: st
     clear_failures(key)
 
     if needs_rehash(user.password_hash):
-        user.password_hash = hash_password(password)
+        user.password_hash = await hash_password_async(password)
 
     from datetime import UTC, datetime
 

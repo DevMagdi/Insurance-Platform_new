@@ -19,6 +19,7 @@ import { navItemsFor, openBadge, type NavItemModel } from "@/app/navModel";
 import { Avatar, SearchInput } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth";
+import { useRealtime } from "@/lib/realtimeProvider";
 import { changeLanguage } from "@/lib/i18n";
 
 type NavItem = NavItemModel & { labelKey: string; icon: ReactNode };
@@ -44,6 +45,7 @@ export function StaffShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const [globalTerm, setGlobalTerm] = useState("");
   const [signingOut, setSigningOut] = useState(false);
+  const realtime = useRealtime();
 
   const permissions = user?.permissions ?? [];
   const items = navItemsFor(NAV, permissions);
@@ -129,6 +131,28 @@ export function StaffShell({ children }: { children: ReactNode }) {
             >
               {i18n.language === "ar" ? "EN" : "ع"}
             </button>
+            {/* The feed's own state, visible to an operator: a screen that has quietly stopped updating is
+                the failure mode this feature exists to remove, so "how fresh is this" must be answerable
+                without opening devtools. */}
+            <span
+              role="status"
+              aria-live="polite"
+              data-testid="realtime-status"
+              data-status={realtime.status}
+              data-revision={realtime.revision}
+              title={t(`realtime.${realtime.status}`)}
+              className="flex items-center gap-1.5 rounded-pill px-2 py-[3px] text-[11.5px] font-semibold"
+              style={
+                realtime.status === "live"
+                  ? { background: "var(--g-bg)", color: "var(--g-ink)" }
+                  : realtime.status === "polling"
+                    ? { background: "var(--a-bg)", color: "var(--a-ink)" }
+                    : { background: "var(--kanban-col)", color: "var(--muted)" }
+              }
+            >
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "currentColor" }} />
+              <span className="hidden md:inline">{t(`realtime.${realtime.status}`)}</span>
+            </span>
             <Avatar name={user?.full_name ?? "?"} size={30} />
             <span className="hidden text-[13px] font-semibold text-ink sm:block">{user?.full_name}</span>
             <button

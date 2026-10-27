@@ -12,6 +12,7 @@ import { useNavigate } from "react-router-dom";
 import { Avatar, Badge, Chip, Segmented, Spinner, StateBlock } from "@/components/ui";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth";
+import { asText, includesText, lower } from "@/lib/text";
 import { followupLabel, formatNumber } from "@/lib/format";
 import type { Lead, LeadPage } from "@/lib/api/views";
 
@@ -39,8 +40,8 @@ export default function MobileLeadsPage() {
 
   const rows = useMemo(() => {
     const items = leads.data?.items ?? [];
-    const needle = query.trim().toLowerCase();
-    return needle ? items.filter((lead) => `${lead.name} ${lead.mobile ?? ""}`.toLowerCase().includes(needle)) : items;
+    const needle = lower(asText(query)).trim();
+    return needle ? items.filter((lead) => includesText(`${asText(lead.name)} ${asText(lead.mobile)}`, needle)) : items;
   }, [leads.data, query]);
 
   async function refresh() {

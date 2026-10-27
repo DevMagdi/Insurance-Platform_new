@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, NotFound, ValidationFailed
 from app.core.scope import Scope
-from app.core.security import generate_temp_password, hash_password
+from app.core.security import generate_temp_password, hash_password_async
 from app.models.auth import ClientPortalUser, Role, User
 from app.services import audit
 from app.services import users as users_svc
@@ -185,7 +185,7 @@ async def reset_password(
         password = generated
     elif len(password) < 10:
         raise ValidationFailed("Password must be at least 10 characters")
-    user.password_hash = hash_password(password)
+    user.password_hash = await hash_password_async(password)
     user.refresh_token_version += 1  # an old session elsewhere dies at its next refresh
     await session.flush()
     await audit.write(

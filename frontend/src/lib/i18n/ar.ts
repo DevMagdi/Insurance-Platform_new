@@ -3,6 +3,13 @@
  * Arabic is the source of truth; `en.ts` is type-checked against this file.
  */
 export const ar = {
+  realtime: {
+    live: "مباشر",
+    polling: "تحديث دوري",
+    connecting: "جارٍ الاتصال",
+    offline: "غير متصل",
+    aria: "حالة التحديث الحيّ",
+  },
   common: {
     noMedia: "لا يوجد مقطع محفوظ",
     appName: "وسيط · Broker Hub",
@@ -63,6 +70,7 @@ export const ar = {
     slaBreaches: "متأخر {n} من الطلبات المفتوحة",
     ofOpen: "من أصل {n} طلب مفتوح",
     kpiOverdue: "طلبات متأخرة",
+    overdueAria: "عرض الطلبات المتأخرة: {n} طلبًا متأخرًا من أصل الطلبات المفتوحة",
     byChannel: "الطلبات حسب القناة — آخر 7 أيام",
     statusCard: "حالة الطلبات",
     recent: "أحدث الطلبات",
@@ -78,6 +86,9 @@ export const ar = {
     title: "صندوق الطلبات الموحد",
     subtitle: "واتساب والمكالمات والإيميل في مكان واحد",
     empty: "لا توجد طلبات مطابقة للفلاتر",
+    emptyOverdue: "لا توجد طلبات متأخرة — كل الطلبات المفتوحة داخل مهلة الـSLA",
+    showAll: "عرض كل الطلبات المفتوحة",
+    countAria: "عدد الطلبات في هذا العرض: {n}",
     reply: "اكتب ردك…",
     send: "إرسال",
     updateStatus: "تحديث الحالة",
@@ -630,6 +641,11 @@ export const ar = {
     updated: "آخر تعديل {when}",
     nowLive: "المزوّد في الوضع الحيّ",
     nowSim: "رُجِع إلى وضع المحاكاة",
+    runTestNow: "شغّل الاختبار الآن",
+    liveBlockedTitle: "لا يمكن التحويل إلى الوضع الحيّ بعد:",
+    liveBlockedTest: "لم ينجح اختبار اتصال بعد — شغّل «اختبار الاتصال» أولًا",
+    liveBlockedFields: "حقول مطلوبة ناقصة: {fields}",
+    liveReady: "كل المتطلبات مستوفاة — الاختبار أخضر والحقول مكتملة",
     missingFields: "ناقص: {fields}",
     goLive: "التبديل إلى الحيّ",
     backToSim: "الرجوع إلى المحاكاة",

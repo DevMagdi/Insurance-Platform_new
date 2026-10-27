@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -31,6 +32,26 @@ def verify_password(password: str, hashed: str) -> bool:
         return ph.verify(hashed, password)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         return False
+
+
+#: Argon2 is slow on purpose (~110 ms and 64 MiB here) — that is what makes a stolen hash expensive. The
+#: cost is the point, so it must not be paid *on the event loop*: one burst of sign-ins then stalls every
+#: other request in the process. Measured in R6 before this wrapper: 16 concurrent wrong passwords held
+#: `/healthz` for **1.24 s** and the burst took 2.27 s; a CI e2e run lost 21 mobile tests to 20 s timeouts
+#: in exactly that window. Four slots bound the worst case at ~256 MiB of Argon2 memory.
+_HASH_SLOTS = asyncio.Semaphore(4)
+
+
+async def hash_password_async(password: str) -> str:
+    """`hash_password`, off the event loop (routes call this one)."""
+    async with _HASH_SLOTS:
+        return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(password: str, hashed: str) -> bool:
+    """`verify_password`, off the event loop (routes call this one)."""
+    async with _HASH_SLOTS:
+        return await asyncio.to_thread(verify_password, password, hashed)
 
 
 def needs_rehash(hashed: str) -> bool:

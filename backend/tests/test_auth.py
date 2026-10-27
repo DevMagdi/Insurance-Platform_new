@@ -53,3 +53,64 @@ async def test_health_and_readiness(client) -> None:
 
 
 from tests.conftest import PASSWORD  # noqa: E402
+
+
+async def test_password_hashing_does_not_block_the_event_loop(client, monkeypatch) -> None:
+    """A burst of sign-ins must not freeze every other request in the process.
+
+    Argon2 costs ~110 ms per check, so running it inline means a handful of simultaneous logins is a
+    self-inflicted outage: measured before the fix, 16 concurrent wrong passwords held `/healthz` for
+    **1.24 s**, and a CI e2e run lost 21 mobile tests to 20 s timeouts in exactly that window
+    (`settings.spec.ts` reported `login failed for manager@brokerhub.test`).
+
+    Two assertions, neither of which measures how fast the machine is:
+
+    * **overlap** — the patched hasher records how many checks run *at the same time*. On the event loop
+      that number can only ever be 1, because a blocking check stops the loop from starting the next one.
+    * **liveness** — `/healthz` must not queue behind the burst, measured against its own baseline.
+    """
+    import asyncio
+    import threading
+    import time
+
+    from app.core import security
+    from app.services import auth
+
+    lock = threading.Lock()
+    state = {"running": 0, "peak": 0}
+
+    def slow_verify(password: str, hashed: str) -> bool:  # same signature as the real one
+        with lock:
+            state["running"] += 1
+            state["peak"] = max(state["peak"], state["running"])
+        time.sleep(0.3)
+        with lock:
+            state["running"] -= 1
+        return False
+
+    monkeypatch.setattr(security, "verify_password", slow_verify)
+    auth.clear_failures("rep_a@brokerhub.test|local")
+    # a baseline first: CI's runners are busy, so an absolute millisecond limit measures the machine,
+    # not the code — what matters is the *extra* wait the hashes add on top of it.
+    base_ms = 0.0
+    for _ in range(3):
+        started = time.perf_counter()
+        assert (await client.get("/healthz")).status_code == 200
+        base_ms = max(base_ms, (time.perf_counter() - started) * 1000)
+    try:
+        # 4 concurrent failures stay under LOGIN_MAX_ATTEMPTS (5)
+        logins = [
+            asyncio.create_task(client.post("/api/v1/auth/login", json={"email": "rep_a@brokerhub.test", "password": "x"}))
+            for _ in range(4)
+        ]
+        await asyncio.sleep(0.05)  # let them all reach the hasher
+        started = time.perf_counter()
+        health = await asyncio.wait_for(client.get("/healthz"), timeout=5)
+        waited_ms = (time.perf_counter() - started) * 1000
+        assert [response.status_code for response in await asyncio.gather(*logins)] == [401] * 4
+        assert health.status_code == 200
+        assert state["peak"] > 1, "the password checks ran one at a time — they are on the event loop"
+        added_ms = waited_ms - base_ms
+        assert added_ms < 500, f"/healthz waited {waited_ms:.0f} ms (baseline {base_ms:.0f} ms) behind the password hashes"
+    finally:
+        auth.clear_failures("rep_a@brokerhub.test|local")

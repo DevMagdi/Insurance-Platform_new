@@ -5,6 +5,13 @@ import type { Messages } from "./ar";
  * so a missing or renamed key is a compile error rather than a runtime fallback (spec §11).
  */
 export const en: Messages = {
+  realtime: {
+    live: "Live",
+    polling: "Polling",
+    connecting: "Connecting",
+    offline: "Offline",
+    aria: "Live update status",
+  },
   common: {
     noMedia: "No saved clip",
     appName: "Broker Hub",
@@ -65,6 +72,7 @@ export const en: Messages = {
     slaBreaches: "{n} overdue of the open queue",
     ofOpen: "of {n} open requests",
     kpiOverdue: "Overdue requests",
+    overdueAria: "Show overdue requests: {n} overdue out of the open queue",
     byChannel: "Requests by channel — last 7 days",
     statusCard: "Request status",
     recent: "Latest requests",
@@ -80,6 +88,9 @@ export const en: Messages = {
     title: "Unified request inbox",
     subtitle: "WhatsApp, calls and email in one place",
     empty: "No requests match the filters",
+    emptyOverdue: "No overdue requests — every open request is inside its SLA",
+    showAll: "Show all open requests",
+    countAria: "Requests in this view: {n}",
     reply: "Write your reply…",
     send: "Send",
     updateStatus: "Update status",
@@ -620,6 +631,11 @@ export const en: Messages = {
     updated: "Last change {when}",
     nowLive: "Provider is now live",
     nowSim: "Back to simulation",
+    runTestNow: "Run the test now",
+    liveBlockedTitle: "Not ready to go live yet:",
+    liveBlockedTest: "No successful connection test yet — run «Test connection» first",
+    liveBlockedFields: "Required fields are missing: {fields}",
+    liveReady: "All prerequisites met — the test is green and the fields are complete",
     missingFields: "Missing: {fields}",
     goLive: "Switch to live",
     backToSim: "Switch back to simulation",

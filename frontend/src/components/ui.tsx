@@ -1,6 +1,6 @@
 /** Shared primitives. Every token here is the CSS variable from the design sheet (spec §4). */
 import { AlertTriangle, Inbox, Lock, Search, TriangleAlert } from "lucide-react";
-import type { CSSProperties, MouseEvent, ReactNode } from "react";
+import type { ButtonHTMLAttributes, CSSProperties, MouseEvent, ReactNode } from "react";
 
 import { initials as initialsOf } from "@/lib/format";
 import { t } from "@/lib/translate";
@@ -44,6 +44,7 @@ export function Button({
   full,
   size = "md",
   title,
+  ...rest
 }: {
   children?: ReactNode;
   // the handler receives the event so a button inside a clickable table row can stop the row's own
@@ -57,7 +58,7 @@ export function Button({
   full?: boolean;
   size?: "sm" | "md";
   title?: string;
-}) {
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick" | "type" | "disabled" | "title" | "children">) {
   const cls =
     variant === "primary"
       ? "btn-primary"
@@ -68,6 +69,7 @@ export function Button({
           : "btn-secondary";
   return (
     <button
+      {...rest}
       type={type}
       title={title}
       onClick={onClick}

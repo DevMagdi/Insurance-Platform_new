@@ -9,11 +9,16 @@
  *  3. «تبديل إلى الحيّ» is explained by what is missing, not refused silently.
  */
 import type { components } from "@/lib/api/schema";
+import { asText } from "@/lib/text";
 
 export type ProviderState = components["schemas"]["ProviderStateOut"];
 export type SecretField = components["schemas"]["SecretFieldOut"];
 
 export type ProviderKey = "whatsapp" | "telephony" | "email";
+export type Preflight = components["schemas"]["PreflightOut"];
+
+const PROVIDER_KEYS: readonly string[] = ["whatsapp", "telephony", "email"];
+const PRIMARY_SECRET: Record<string, string> = { whatsapp: "access_token", telephony: "webhook_secret", email: "password" };
 
 export const PROVIDERS: readonly { key: ProviderKey; nameKey: string; noteKey: string }[] = [
   { key: "whatsapp", nameKey: "settings.provider.whatsapp", noteKey: "settings.provider.whatsappNote" },
@@ -83,13 +88,55 @@ export function liveBlockers(state: ProviderState): ("test" | "fields")[] {
 }
 
 /** The fields a provider needs before it may talk to customers, as the row reports them. */
-export function missingLiveFields(state: ProviderState): string[] {
+export function missingLiveFields(state: ProviderState | undefined | null): string[] {
+  /* Every read here is guarded: this used to run `state.provider` through a lookup and then call string
+     methods on whatever came back, which is how a partially-loaded provider row became
+     `Cannot read properties of undefined (reading 'toLowerCase')` instead of a card with a hint on it. */
+  const provider = asText(state?.provider);
+  if (!PROVIDER_KEYS.includes(provider)) return [];
+  const config = (state?.config ?? {}) as Record<string, unknown>;
+  const secrets = Array.isArray(state?.secrets) ? state.secrets : [];
   const missing: string[] = [];
-  if (state.provider === "whatsapp" && !String(state.config?.phone_number_id ?? "").trim()) missing.push("phone_number_id");
-  if (state.provider === "email" && !String(state.config?.host ?? "").trim()) missing.push("host");
-  const primary = { whatsapp: "access_token", telephony: "webhook_secret", email: "password" }[state.provider as ProviderKey];
-  if (primary && !state.secrets?.some((item) => item.key === primary && item.set)) missing.push(primary);
+  if (provider === "whatsapp" && !asText(config.phone_number_id).trim()) missing.push("phone_number_id");
+  if (provider === "email" && !asText(config.host).trim()) missing.push("host");
+  if (provider === "telephony" && !asText(config.provider_url).trim()) missing.push("provider_url");
+  const primary = PRIMARY_SECRET[provider];
+  if (primary && !secrets.some((item) => asText(item?.key) === primary && item?.set === true)) missing.push(primary);
   return missing;
+}
+
+/**
+ * The blockers, preferring the server's own answer (it knows all three providers and the environment
+ * fallbacks). While the preflight is loading the local rules stand in, so the button is never enabled by
+ * accident and never disabled without a reason.
+ */
+export function liveBlockersOf(state: ProviderState, preflight?: Preflight | null): { code: string; message: string; fields: string[] }[] {
+  if (preflight && Array.isArray(preflight.blockers)) {
+    return preflight.blockers.map((blocker) => ({
+      code: asText(blocker?.code),
+      message: asText(blocker?.message),
+      fields: Array.isArray(blocker?.fields) ? blocker.fields.map(asText) : [],
+    }));
+  }
+  const blockers: { code: string; message: string; fields: string[] }[] = [];
+  if (state.last_test_status !== "ok") blockers.push({ code: "test", message: "", fields: [] });
+  const missing = missingLiveFields(state);
+  if (missing.length) blockers.push({ code: "fields", message: "", fields: missing });
+  return blockers;
+}
+
+/** What to say when the switch comes back 409 anyway (a hidden env change, a second tab, a stale screen). */
+export function liveSwitchError(error: unknown): { message: string; fields: string[] } {
+  const details = (error as { details?: unknown } | undefined)?.details as
+    | { blockers?: { message?: unknown }[]; labels?: unknown; missing?: unknown; hint?: unknown }
+    | undefined;
+  const fields = Array.isArray(details?.labels) ? details.labels.map(asText).filter(Boolean) : [];
+  const first = Array.isArray(details?.blockers) ? asText(details?.blockers[0]?.message) : "";
+  // a thrown `ApiError_` is an Error, a rejected fetch mock or a plain envelope object is not — both shapes
+  // carry the server's Arabic message, and neither is allowed to become the string "undefined"
+  const message = first || asText((error as { message?: unknown } | undefined)?.message);
+  const hint = asText(details?.hint);
+  return { message: hint && !message.includes(hint) ? `${message} — ${hint}` : message, fields };
 }
 
 /** `409 {details: {missing: [...]}}` → the labels to put next to the offending inputs. */

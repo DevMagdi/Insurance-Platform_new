@@ -97,6 +97,9 @@ test.describe("screenshots for design review", () => {
     const files = readdirSync(OUT)
       // `15b-` is the settings hub, which is not a 16th screen of §9 but the screen that now carries 15
       .filter((file) => /^\d{2}[a-z]?-.+\.png$/.test(file) && !file.includes("@"))
+      // `17-`/`18-` are R6 evidence (the overdue deep link and the gated live switch), not screens of the
+      // design sheet — they belong in the report, not in the parity sheet
+      .filter((file) => !/^1[78]-/.test(file))
       .sort();
     expect(files.length).toBeGreaterThanOrEqual(14);
 

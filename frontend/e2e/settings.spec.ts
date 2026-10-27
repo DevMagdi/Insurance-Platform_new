@@ -76,26 +76,41 @@ test.describe("settings hub · providers", () => {
     await expect(page.getByTestId(PHONE)).toHaveValue("");
   });
 
-  test("the live switch refuses an untested provider — before the click and after it", async ({ page, request }) => {
+  test("an untested provider is not offered the switch, and the card says why", async ({ page, request }) => {
     test.skip(test.info().project.name !== "desktop", "desktop-only — see the header");
-    // telephony is the row no other spec touches, so "never tested" is a fact here, not a race
+    /*
+     * R6 changed this test, not the rule behind it. The old version pressed the switch, waited for the dialog
+     * to warn, pressed confirm, and read the 409 back as a toast — i.e. it asserted that the screen offers a
+     * button the server is going to refuse. Now the screen asks `GET …/preflight` first and disables the
+     * switch, so the honest assertion is: the button is disabled, the reason is on screen, and no request is
+     * made at all. The 409 itself is still covered — by `test_the_409_carries_the_fields_and_the_next_step`
+     * in the backend suite, where it belongs, because it is the API's contract and not a screen's.
+     */
+    // telephony is the row no other spec leaves green, so "no failed test yet" is a fact here, not a race
     const auth = await apiLogin(request, MANAGER);
     const state = await request.get("/api/v1/settings/integrations/telephony", { headers: auth });
     expect(state.status(), await state.text()).toBe(200);
     expect((await state.json()).last_test_status ?? null, "this test is only meaningful while the row is untested").toBeNull();
+    const preflight = await request.get("/api/v1/settings/integrations/telephony/preflight", { headers: auth });
+    expect(preflight.status(), await preflight.text()).toBe(200);
+    expect((await preflight.json()).ready, "the API must agree that this row is not ready").toBe(false);
 
     await login(page, MANAGER);
     await page.goto("/settings");
-    const telephony = page.locator("section.card", { hasText: "السنترال (Telephony)" }).first();
-    await telephony.getByRole("button", { name: "التبديل إلى الحيّ" }).click();
+    const switchButton = page.getByTestId("live-switch-telephony");
+    await expect(switchButton).toBeDisabled({ timeout: 20_000 });
+    await expect(switchButton).toHaveText("التبديل إلى الحيّ"); // still the way in, just not yet
+    // the blocker panel names the missing test, and offers the one action that fixes it
+    const blockers = page.getByTestId("live-blockers-telephony");
+    await expect(blockers).toBeVisible();
+    await expect(blockers).toContainText("لم ينجح اختبار اتصال بعد");
+    await expect(blockers.getByRole("button", { name: "شغّل الاختبار الآن" })).toBeVisible();
 
-    const dialog = page.getByRole("dialog", { name: "تأكيد التحوّل إلى الوضع الحيّ" });
-    await expect(dialog).toBeVisible();
-    // the screen warns before the request: a green test is a precondition, not a suggestion
-    await expect(dialog.getByText("لم ينجح أي اختبار بعد")).toBeVisible();
-    await dialog.getByRole("button", { name: "تأكيد والتبديل" }).click();
-    await expect(page.getByText("لم ينجح أي اختبار اتصال لهذا المزوّد بعد")).toBeVisible({ timeout: 15_000 });
-    await expect(telephony.getByText("حيّ", { exact: true })).toHaveCount(0); // still refused, still not live
+    // a disabled button that is pressed anyway opens nothing and sends nothing
+    await switchButton.click({ force: true });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const after = await request.get("/api/v1/settings/integrations/telephony", { headers: auth });
+    expect((await after.json()).is_live, "a refused switch must not have reached the row").toBe(false);
   });
 
   test("test → live really flips the badge, and going back asks for nothing", async ({ page, request }) => {

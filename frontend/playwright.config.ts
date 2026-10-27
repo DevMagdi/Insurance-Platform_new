@@ -73,7 +73,11 @@ export default defineConfig({
     ? undefined
     : [
         {
-          command: `rm -f e2e.db && python -m alembic -c alembic.ini upgrade head && python -m app.seed && python -m uvicorn app.main:app --host 0.0.0.0 --port ${API_PORT}`,
+          // `tee` is not decoration: when the suite fails because requests *stop being answered*, the only
+        // witness is the API's own access log — and CI's job log is served from blob storage that a reviewing
+        // sandbox cannot read. `scripts/ci-e2e-digest.py` posts the tail of this file on the PR (see run
+        // 40572114764: 19 mobile failures said "login failed", and nothing else said why).
+        command: `rm -f e2e.db && python -m alembic -c alembic.ini upgrade head && python -m app.seed && python -m uvicorn app.main:app --host 0.0.0.0 --port ${API_PORT} 2>&1 | tee /tmp/e2e-api.log`,
           cwd: backendDir,
           url: `http://127.0.0.1:${API_PORT}/healthz`,
           reuseExistingServer: !process.env.CI,

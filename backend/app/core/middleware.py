@@ -50,6 +50,34 @@ class RequestContext(BaseHTTPMiddleware):
         return response
 
 
+class RealtimePublisher(BaseHTTPMiddleware):
+    """Publishes a `revision` to the change feed after a successful mutation (ADR-026).
+
+    The toast is *not* raised here for its own sake: a feed that fired on reads would make two clients
+    invalidate each other in a loop, so only methods that change state publish, and only when the response
+    says the change happened (`< 400`). Route handlers commit before they return, so by the time this runs the
+    row is visible to the reader that is about to refetch — no "event arrived before the data" race.
+
+    The event carries no row data (see `services/realtime.py`): the receiving client re-runs a query that the
+    API scopes for it.
+    """
+
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        response = await call_next(request)
+        if response.status_code < 400:
+            from app.services import realtime
+
+            topic = realtime.topic_for(request.method, request.url.path)
+            if topic is not None:
+                realtime.hub.publish(
+                    topic=topic,
+                    action=realtime.action_for(request.method),
+                    entity_id=realtime.entity_from_path(request.url.path),
+                    path=request.url.path,
+                )
+        return response
+
+
 class SecurityHeaders(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         response = await call_next(request)
@@ -67,6 +95,7 @@ def install(app: FastAPI, *, cors_origins: list[str], cookie_secure: bool) -> No
     from fastapi.middleware.cors import CORSMiddleware
 
     app.add_middleware(SecurityHeaders)
+    app.add_middleware(RealtimePublisher)
     app.add_middleware(RequestContext)
     if cors_origins:
         app.add_middleware(
