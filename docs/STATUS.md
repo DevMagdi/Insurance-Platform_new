@@ -3,7 +3,7 @@
 آخر تحديث: 2026-10-27 · فرع العمل: `arena/1ce19bf9-insurance-platform-new` من `main` عند `ef0e149`.
 هذه الجولة = **R5 (Live-Real)**: القنوات الحيّة تعمل فعلاً (لا محاكاة)، إصدار الوثيقة يُنتج ملفاً قابلاً
 للتحميل من البوابتين، فلاتر المدير على الليدز في الـAPI والواجهة، وحسابات بوابة العميل باسم مستخدم —
-التفاصيل في [`qa/live-real-2026-10-27.md`](qa/live-real-2026-10-27.md) وADRs 021–023.
+التفاصيل في [`qa/live-real-2026-10-27.md`](qa/live-real-2026-10-27.md) وADRs 021–024.
 الجولة السابقة = **R4 (Live-Ready QA)**: مسح شامل لكل مسار تشغيلي بكل دور، ثم إصلاح كل ما سقط — التفاصيل
 في [`qa/live-ready-2026-10-27.md`](qa/live-ready-2026-10-27.md). الجولة السابقة = **R3**: إصلاح جذري لـ e2e المتبقّي + إقلاع `docker compose` + هاردننغ استيراد/إعادة
 توزيع/مقاعد بحزام اختبارات أوسع. القاعدة نفسها من R0: لا يُكتب «تم» إلا مع الأمر ومخرجاته، وما لا
@@ -474,7 +474,7 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 
 **بوابات R5 (مخرجات حرفية):** `ruff check .` ⇒ `All checks passed!` · `ruff format --check .` ⇒
 `158 files already formatted` · `mypy app` ⇒ `Success: no issues found in 110 source files` ·
-`pytest -q` ⇒ **234** مجموعاً · **0 فشل** · 9 مُتخطَّاة · `coverage` ⇒ `TOTAL 84.7%` ·
+`pytest -q` ⇒ **236** مجموعاً · **0 فشل** · 9 مُتخطَّاة · `coverage` ⇒ `TOTAL 84.7%` ·
 `smoke_api.py` ⇒ `SMOKE OK — 123/125` · `live_matrix.py` ⇒ `checks: 231 · passed: 231 · P0 failed: 0` ·
 `check_openapi_fresh.py` ⇒ `openapi.json is fresh (106 paths)` · `check_migrations.py` ⇒
 `migration immutability ok (5 merged, 2 new)` · الواجهة: `lint` نظيف · `typecheck` نظيف ·
@@ -511,6 +511,7 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 | 021 إصدار الوثيقة: الملف هو التسليم | [`decisions/021-policy-issuance-documents.md`](decisions/021-policy-issuance-documents.md) |
 | 022 حساب بوابة العميل: من ملف العميل، وباسم مستخدم | [`decisions/022-portal-accounts-and-username-login.md`](decisions/022-portal-accounts-and-username-login.md) |
 | 023 القنوات الحيّة تُثبَت بعقد: توقيع، تسجيل يُنزَّل، وفحص وصول حقيقي | [`decisions/023-live-channel-contracts.md`](decisions/023-live-channel-contracts.md) |
+| 024 سعة الأعمدة النصية: PostgreSQL يرفض ما يتجاهله SQLite — 32 لـ`webhook_events.status` + قصّ دفاعي | [`decisions/024-text-column-width-postgres.md`](decisions/024-text-column-width-postgres.md) |
 
 ## قائمة ما قبل «جاهز للمراجعة»
 

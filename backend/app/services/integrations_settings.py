@@ -683,13 +683,18 @@ async def record_event(
     status: str = "ok",
     detail: str | None = None,
 ) -> None:
-    """Called from the webhook handlers. The caller commits: an event log must never decide a request's fate."""
+    """Called from the webhook handlers. The caller commits: an event log must never decide a request's fate.
+
+    `status` is clamped to the column's width on purpose. The value is not always a literal of ours — the
+    telephony handler passes the intake's own result — and an over-long string used to abort the insert on
+    PostgreSQL, turning a *logged* webhook into a 500 after the work had already been committed (ADR-024).
+    """
     session.add(
         WebhookEvent(
             provider=provider,
             event_type=event_type,
             external_id=external_id,
-            status=status,
+            status=status[:32],
             detail=(detail or "")[:900] or None,
         )
     )

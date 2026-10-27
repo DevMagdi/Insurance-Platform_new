@@ -8,9 +8,12 @@ that replaced the driver with a fake would pass on a driver nobody ever uses.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
+import re
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -20,6 +23,7 @@ from app.integrations import telephony as telephony_mod
 from app.integrations import whatsapp as whatsapp_mod
 from app.integrations.telephony import TelephonyGeneric, parse_event
 from app.integrations.whatsapp import WhatsAppMeta
+from sqlalchemy import select
 
 from tests.helpers import login
 
@@ -192,7 +196,6 @@ def test_parse_event_accepts_the_aliases_real_centrals_send() -> None:
 
 
 def test_recording_is_fetched_from_the_pbx_host_and_anywhere_else_is_refused() -> None:
-    import asyncio
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.host == "pbx.example.com"
@@ -212,7 +215,6 @@ def test_recording_is_fetched_from_the_pbx_host_and_anywhere_else_is_refused() -
 
 
 def test_probe_tells_the_operator_whether_the_pbx_is_reachable() -> None:
-    import asyncio
 
     telephony_mod.use_transport(httpx.MockTransport(lambda request: httpx.Response(200, text="ok")))
     try:
@@ -307,7 +309,6 @@ async def test_telephony_webhook_refuses_a_bad_signature(client, monkeypatch: py
 
 def test_settings_connection_test_reports_the_missing_url_instead_of_a_green_light() -> None:
     """`_test_telephony` used to answer "signature ok" for a PBX nobody could reach."""
-    import asyncio
     import inspect
 
     from app.services import integrations_settings as cfg
@@ -371,3 +372,40 @@ async def test_a_staff_reply_leaves_the_building_through_the_live_driver(client,
     assert outbound and outbound[-1]["delivery_status"] == "sent"
     assert outbound[-1]["external_id"] == "wamid.OUT_1"
     assert TOKEN not in json.dumps(thread.json()), "the token must never surface in any response"
+
+
+def test_webhook_event_status_column_fits_every_status_the_intake_writes() -> None:
+    """CI found this, the suite could not: SQLite ignores `VARCHAR(n)`, PostgreSQL does not.
+
+    A real `recording_ready` webhook answered **500** on PostgreSQL — after the call had been ingested and
+    the recording stored — because `event.status` is the intake's own result and `recording_attached` is 18
+    characters against a `VARCHAR(16)`. The literals are read out of the source, so a new one is covered the
+    day it is added rather than the day it 500s.
+    """
+    from app.models.integrations import WebhookEvent
+
+    source = (Path(__file__).resolve().parents[1] / "app" / "api" / "v1" / "endpoints" / "webhooks.py").read_text()
+    intake = (Path(__file__).resolve().parents[1] / "app" / "services" / "intake.py").read_text()
+    literals = set(re.findall(r'status="([a-z_]+)"', source)) | set(re.findall(r'"status": "([a-z_]+)"', intake))
+    literals |= {"ok", "ignored", "error", "rejected"}
+
+    width = WebhookEvent.__table__.c.status.type.length
+    assert width is not None
+    too_long = sorted(status for status in literals if len(status) > width)
+    assert not too_long, f"statuses wider than webhook_events.status ({width}): {too_long}"
+
+
+async def test_record_event_clamps_rather_than_breaking_the_webhook(session: Any) -> None:
+    """The clamp is the second line of defence: a provider-shaped string must never abort a saved call."""
+    from app.models.integrations import WebhookEvent
+    from app.services import integrations_settings
+
+    await integrations_settings.record_event(session, provider="telephony", event_type="call.ended", external_id="x", status="s" * 80)
+    await session.commit()
+    row = (
+        (await session.execute(select(WebhookEvent).where(WebhookEvent.external_id == "x").order_by(WebhookEvent.occurred_at.desc())))
+        .scalars()
+        .first()
+    )
+    assert row is not None
+    assert row.status == "s" * 32
