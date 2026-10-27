@@ -431,7 +431,7 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 - `scripts/export_openapi.py` ⇒ `98 paths, 134 schemas` · `check_openapi_fresh.py` ⇒ `is fresh (98 paths)`
 - `scripts/live_matrix.py` ⇒ `checks: 188 · passed: 188 · P0 failed: 0 · warnings: 0`
 - `scripts/check_migrations.py` ⇒ `migration immutability ok (5 merged, 0 new)`
-- الواجهة: `lint` نظيف · `typecheck` نظيف · `vitest` **82/82 في 11 ملفاً** · `build` ⇒ `✓ built`
+- الواجهة: `lint` نظيف · `typecheck` نظيف · `vitest` **85/85 في 12 ملفاً** · `build` ⇒ `✓ built`
 
 ### قائمة «Live v1» الأحد عشر — كل بند بدليله
 
@@ -478,7 +478,7 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 `smoke_api.py` ⇒ `SMOKE OK — 123/125` · `live_matrix.py` ⇒ `checks: 231 · passed: 231 · P0 failed: 0` ·
 `check_openapi_fresh.py` ⇒ `openapi.json is fresh (106 paths)` · `check_migrations.py` ⇒
 `migration immutability ok (5 merged, 2 new)` · الواجهة: `lint` نظيف · `typecheck` نظيف ·
-`vitest` **82/82** · `build` ⇒ `✓ built` · `codegen:api` ⇒ 141 مخططاً.
+`vitest` **85/85 في 12 ملفاً** · `build` ⇒ `✓ built` · `codegen:api` ⇒ 141 مخططاً.
 
 **حدود مُعلنة (لا ادّعاء):** لا حساب Meta ولا سنترال ولا رقم في هذه البيئة، فالسائق الحيّ مُثبت بعقد
 (توقيع HMAC على البايتات الخام + نقل HTTP محقون) لا بمكالمة حقيقية؛ وe2e/PostgreSQL/docker تُقاس في CI.
