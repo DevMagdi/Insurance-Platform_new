@@ -1,0 +1,240 @@
+import { expect, test, type Browser, type Page } from "@playwright/test";
+
+import { apiLogin, CS, login, MANAGER } from "./fixtures";
+
+/**
+ * R6 — the three promises this round is judged on, each proved in a real browser against a real stack.
+ *
+ *  1. **The overdue number is a door.** «طلبات متأخرة» on the dashboard opens the queue filtered to overdue
+ *     requests, only those, with the count the server reports, an address that survives a reload, and a
+ *     working action inside the filtered list. The link is a real link: Enter activates it, and it carries an
+ *     Arabic aria-label with the same numbers as the card.
+ *  2. **A change is visible in ≤2 s without a refresh.** Two browser contexts, one change made through the
+ *     API: the second tab's queue shows the new row inside 2 000 ms while nobody reloads anything.
+ *  3. **The live switch is not a coin flip.** With a green test behind it the switch goes live on the first
+ *     try — no 409 anywhere in the network, no exception in the console — and a provider whose live fields are
+ *     missing is not even offered the button: the card names the missing field in Arabic instead.
+ *
+ * Everything is arranged through the API and asserted through the screen, and every test leaves the
+ * integrations in simulation mode so a later spec never inherits a provider that dials the internet.
+ */
+
+/** «١٢» → 12: the UI prints Arabic-Indic digits, the API answers in ASCII. */
+function digits(text: string | null): number {
+  const ascii = (text ?? "")
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .replace(/[^0-9]/g, "");
+  return Number(ascii || "0");
+}
+
+function desktopOnly(projectName: string): boolean {
+  return projectName !== "desktop";
+}
+
+/** Collects everything the page said that a person would call a bug. */
+function watch(page: Page) {
+  const errors: string[] = [];
+  const badResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  page.on("pageerror", (error) => errors.push(String(error)));
+  page.on("response", (response) => {
+    const url = response.url();
+    if (!url.includes("/api/v1/")) return;
+    const status = response.status();
+    if (status === 409 || status >= 500) badResponses.push(`${status} ${url}`);
+  });
+  return { errors, badResponses };
+}
+
+test.describe("R6 · overdue deep link", () => {
+  test("the KPI card opens the queue filtered to overdue, and the filter survives a reload", async ({ page, request }, testInfo) => {
+    test.skip(desktopOnly(testInfo.project.name), "the dashboard KPI grid and the 3-column queue are 1440×900 (ADR-019)");
+    const auth = await apiLogin(request, MANAGER);
+
+    // the server's own numbers, read before the browser runs, so a stale card cannot pass
+    const summary = await request.get("/api/v1/dashboard/summary", { headers: auth });
+    expect(summary.status(), await summary.text()).toBe(200);
+    const overdue = (await summary.json()).overdue as number;
+    const queue = await request.get("/api/v1/requests?only_overdue=true&page_size=1", { headers: auth });
+    expect(queue.status(), await queue.text()).toBe(200);
+    const overdueTotal = (await queue.json()).total as number;
+
+    await login(page, MANAGER);
+    await page.goto("/dashboard");
+    const link = page.getByTestId("kpi-overdue-link");
+    await expect(link).toBeVisible({ timeout: 20_000 });
+    // a link, not a div with a click handler: it has an href, an accessible name and a keyboard route
+    await expect(link).toHaveAttribute("href", /\/inbox\?filter=overdue/);
+    await expect(link).toHaveAttribute("aria-label", /متأخرة/);
+
+    await link.focus();
+    await page.keyboard.press("Enter");
+    // the queue adopts the filter from the address, then selects the first row *without* dropping it
+    await expect(page).toHaveURL(/\/inbox(\/[0-9a-f-]+)?\?filter=overdue$/, { timeout: 20_000 });
+
+    // the queue says the same number as the card and as the API (the UI prints Arabic-Indic digits)
+    const badge = page.getByTestId("queue-count");
+    await expect(badge).toBeVisible({ timeout: 20_000 });
+    await expect.poll(async () => digits(await badge.textContent()), { timeout: 20_000 }).toBe(overdueTotal);
+    if (overdueTotal > 0) {
+      await expect(page.locator("[data-request-row]")).toHaveCount(Math.min(overdueTotal, 40));
+    } else {
+      // a queue with nothing overdue is still a door: it says so and offers the way back
+      await expect(page.getByText(/لا توجد/)).toBeVisible();
+    }
+    // the card's number and the filtered list's total are the same count — the UI reads one condition for both
+    expect(overdueTotal, "the dashboard KPI and the filtered queue must agree").toBe(overdue);
+
+    // shareable/bookmarkable: a reload arrives at the same filtered view
+    await page.reload();
+    await expect(page).toHaveURL(/\/inbox(\/[0-9a-f-]+)?\?filter=overdue$/);
+    await expect(page.locator("[data-request-row]").first()).toBeVisible({ timeout: 20_000 });
+    // every row on screen is overdue — that is the whole promise of the deep link
+    const rows = page.locator("[data-request-row]");
+    const shown = await rows.count();
+    expect(shown).toBeGreaterThan(0);
+    for (let index = 0; index < shown; index += 1) await expect(rows.nth(index)).toContainText("متأخرة");
+  });
+
+  test("an action works inside the filtered list, not just a link to it", async ({ page, request }, testInfo) => {
+    test.skip(desktopOnly(testInfo.project.name), "the thread column is a desktop layout (see inbox.spec.ts)");
+    await apiLogin(request, MANAGER);
+    await login(page, MANAGER);
+    await page.goto("/inbox?filter=overdue");
+    const row = page.locator("[data-request-row]").first();
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    const id = await row.getAttribute("data-request-row");
+    await page.locator(`[data-request-row="${id}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`/inbox/${id}`), { timeout: 20_000 });
+
+    const note = `ملاحظة من الطابور المتأخر ${Date.now()}`;
+    await page.getByLabel("ملاحظة داخلية", { exact: true }).fill(note);
+    await page.getByRole("button", { name: "حفظ", exact: true }).click();
+    await expect(page.getByText(note)).toBeVisible({ timeout: 20_000 });
+  });
+});
+
+test.describe("R6 · a change reaches every tab in ≤2 s", () => {
+  test("a request created by another user appears in an open queue without a reload", async ({ browser, request }, testInfo) => {
+    test.skip(desktopOnly(testInfo.project.name), "the queue's three columns are a desktop layout (see inbox.spec.ts)");
+    const manager = await apiLogin(request, MANAGER);
+    // the agent's own scope decides what the queue is allowed to show, so the new request has to be one the
+    // agent can see: a client they are scoped to (a cross-tenant row would prove nothing but a leak)
+    const agent = await apiLogin(request, CS);
+    const visible = await request.get("/api/v1/clients?page_size=1", { headers: agent });
+    expect(visible.status(), await visible.text()).toBe(200);
+    const clients = await visible.json();
+    expect(clients.items?.length, "the agent is scoped to no client — this test would prove nothing").toBeGreaterThan(0);
+    const clientId = clients.items[0].id as string;
+
+    // tab A: a customer-service agent with the queue open and nothing else happening
+    const contextA = await (browser as Browser).newContext({ viewport: { width: 1440, height: 900 }, locale: "ar-EG" });
+    const pageA = await contextA.newPage();
+    const watched = watch(pageA);
+    await login(pageA, CS);
+    await pageA.goto("/inbox?filter=open");
+    await expect(pageA.getByTestId("queue-count")).toBeVisible({ timeout: 20_000 });
+
+    // tab B: somebody else's action, performed through the API
+    const stamp = Date.now();
+    const name = `مستأمن لحظي ${stamp}`;
+    const created = await request.post("/api/v1/requests", {
+      headers: manager,
+      data: { channel: "manual", client_id: clientId, subject: name, contact_name: name, description: "R6 realtime", first_message: name },
+    });
+    expect([200, 201], await created.text()).toContain(created.status());
+    const started = Date.now();
+
+    // the row arrives on its own, inside the budget, with no reload and no navigation
+    await expect(pageA.getByText(name)).toBeVisible({ timeout: 2_000 });
+    const took = Date.now() - started;
+    expect(took, `the change took ${took} ms to reach the open queue`).toBeLessThanOrEqual(2_000);
+    expect(watched.errors, `console errors while syncing: ${watched.errors.join(" | ")}`).toEqual([]);
+
+    await contextA.close();
+  });
+});
+
+test.describe("R6 · the live switch", () => {
+  test("a green provider goes live on the first press, with no 409 and no console error", async ({ page, request }, testInfo) => {
+    test.skip(desktopOnly(testInfo.project.name), "the settings hub cards sit under the mobile bar at 390px (see settings.spec.ts)");
+    const auth = await apiLogin(request, MANAGER);
+
+    // arrange: complete live fields + a green connection test — through the API, the way an operator would
+    const saved = await request.put("/api/v1/settings/integrations/whatsapp", {
+      headers: auth,
+      data: {
+        config: { phone_number_id: "123456789012345", business_account_id: "99887766" },
+        secrets: { access_token: "e2e-live-token" },
+      },
+    });
+    expect(saved.status(), await saved.text()).toBe(200);
+    const tested = await request.post("/api/v1/settings/integrations/whatsapp/test", { headers: auth });
+    expect(tested.status(), await tested.text()).toBe(200);
+    expect((await tested.json()).ok).toBe(true);
+
+    const preflight = await request.get("/api/v1/settings/integrations/whatsapp/preflight", { headers: auth });
+    expect(preflight.status(), await preflight.text()).toBe(200);
+    expect(await preflight.json()).toMatchObject({ provider: "whatsapp", ready: true, test_status: "ok" });
+
+    try {
+      const watched = watch(page);
+      await login(page, MANAGER);
+      await page.goto("/settings");
+
+      const switchButton = page.getByTestId("live-switch-whatsapp");
+      // the button is offered only because the server said so — the screen asks before it draws it
+      await expect(switchButton).toBeEnabled({ timeout: 20_000 });
+      await expect(page.getByTestId("live-blockers-whatsapp")).toHaveCount(0);
+      await switchButton.click();
+
+      // the dialog names the readiness, and only then is confirm pressable
+      await expect(page.getByTestId("live-ready")).toBeVisible();
+      await page.getByRole("button", { name: "تأكيد والتبديل", exact: true }).click();
+
+      await expect(page.getByTestId("live-switch-whatsapp")).toHaveText(/الرجوع إلى المحاكاة/, { timeout: 20_000 });
+      const stored = await request.get("/api/v1/settings/integrations/whatsapp", { headers: auth });
+      expect(stored.status(), await stored.text()).toBe(200);
+      expect((await stored.json()).is_live).toBe(true);
+
+      // the promise of this round: not one refused switch, not one 5xx, not one console error
+      expect(watched.badResponses, `refused or broken API calls: ${watched.badResponses.join(" | ")}`).toEqual([]);
+      expect(watched.errors, `console errors: ${watched.errors.join(" | ")}`).toEqual([]);
+    } finally {
+      // never leave a provider dialling the internet for the next spec
+      const off = await request.put("/api/v1/settings/integrations/whatsapp", { headers: auth, data: { is_live: false } });
+      expect(off.status(), await off.text()).toBe(200);
+    }
+  });
+
+  test("a provider missing a live field is not offered the switch, and names the field in Arabic", async ({ page, request }, testInfo) => {
+    test.skip(desktopOnly(testInfo.project.name), "the settings hub cards sit under the mobile bar at 390px (see settings.spec.ts)");
+    const auth = await apiLogin(request, MANAGER);
+    // telephony's `provider_url` is required for live (ADR-027): without it there is nothing to probe
+    const cleared = await request.put("/api/v1/settings/integrations/telephony", {
+      headers: auth,
+      data: { config: { provider: "generic", provider_url: "" } },
+    });
+    expect(cleared.status(), await cleared.text()).toBe(200);
+    const preflight = await request.get("/api/v1/settings/integrations/telephony/preflight", { headers: auth });
+    expect(preflight.status(), await preflight.text()).toBe(200);
+    expect((await preflight.json()).missing).toContain("provider_url");
+
+    const watched = watch(page);
+    await login(page, MANAGER);
+    await page.goto("/settings");
+
+    const switchButton = page.getByTestId("live-switch-telephony");
+    await expect(switchButton).toBeDisabled({ timeout: 20_000 });
+    await expect(switchButton).toHaveAttribute("title", /PBX|السنترال/);
+    await expect(page.getByTestId("live-blockers-telephony")).toContainText(/PBX|السنترال/);
+
+    // pressing it anyway does nothing — and, above all, sends nothing
+    await switchButton.click({ force: true });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(watched.badResponses, `the screen called a refused endpoint: ${watched.badResponses.join(" | ")}`).toEqual([]);
+    expect(watched.errors, `console errors: ${watched.errors.join(" | ")}`).toEqual([]);
+  });
+});

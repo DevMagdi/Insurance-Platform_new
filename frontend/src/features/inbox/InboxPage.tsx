@@ -56,6 +56,13 @@ export default function InboxPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filterParam = searchParams.get("filter");
   const filter: QueueFilter = filterParam === "overdue" || filterParam === "all" ? filterParam : "open";
+  /**
+   * Opening a request keeps the queue's own query string. The auto-select below used to navigate to
+   * `/inbox/<id>` alone, which dropped `?filter=overdue` — the deep link then flipped itself back to the open
+   * queue a tick after it opened, and the "shareable filtered view" was shareable for one frame.
+   */
+  const openRequest = (id: string) =>
+    navigate({ pathname: `/inbox/${id}`, search: searchParams.toString() }, { replace: !requestId });
   const setFilter = (next: QueueFilter) => {
     const params = new URLSearchParams(searchParams);
     if (next === "open") params.delete("filter");
@@ -86,7 +93,7 @@ export default function InboxPage() {
   const selected = requestId ?? rows[0]?.id ?? null;
 
   useEffect(() => {
-    if (!requestId && selected) navigate(`/inbox/${selected}`, { replace: true });
+    if (!requestId && selected) openRequest(selected);
   }, [requestId, selected, navigate]);
 
   const detail = useQuery({
@@ -206,7 +213,7 @@ export default function InboxPage() {
                   key={row.id}
                   type="button"
                   data-request-row={row.id}
-                  onClick={() => navigate(`/inbox/${row.id}`)}
+                  onClick={() => openRequest(row.id)}
                   className={`w-full border-b border-line px-4 py-3 text-start transition ${active ? "bg-primary-soft/60" : "hover:bg-[#FAFBFF]"}`}
                   style={row.is_overdue && !active ? { background: "var(--row-warn)" } : undefined}
                 >
