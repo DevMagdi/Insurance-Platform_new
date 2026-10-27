@@ -1326,6 +1326,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/realtime/revision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Change signature per topic — the polling fallback */
+        get: operations["getApiV1RealtimeRevision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/realtime/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Server-sent change feed (topics + revision, no row data) */
+        get: operations["getApiV1RealtimeStream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports/insurer-performance": {
         parameters: {
             query?: never;
@@ -1666,6 +1700,23 @@ export interface paths {
         put?: never;
         /** Flip simulation ↔ live (live needs a green test + confirm) */
         post: operations["postApiV1SettingsIntegrationsProviderLive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/integrations/{provider}/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Can this provider go live? The blockers, before the button is offered */
+        get: operations["getApiV1SettingsIntegrationsProviderPreflight"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3234,6 +3285,11 @@ export interface components {
              * @default false
              */
             confirm: boolean;
+            /**
+             * Confirm Live
+             * @default false
+             */
+            confirm_live: boolean;
             /** Is Live */
             is_live: boolean;
         };
@@ -3837,6 +3893,55 @@ export interface components {
         PortalUsernameIn: {
             /** Username */
             username: string;
+        };
+        /** PreflightBlockerOut */
+        PreflightBlockerOut: {
+            /**
+             * Code
+             * @description confirm | test | fields
+             */
+            code: string;
+            /**
+             * Fields
+             * @default []
+             */
+            fields: string[];
+            /** Message */
+            message: string;
+        };
+        /** PreflightOut */
+        PreflightOut: {
+            /** Blockers */
+            blockers: components["schemas"]["PreflightBlockerOut"][];
+            /** Is Live */
+            is_live: boolean;
+            /**
+             * Labels
+             * @description Arabic labels for `missing`, for the message the operator reads
+             */
+            labels: string[];
+            /**
+             * Missing
+             * @description machine keys of the fields the live switch requires
+             */
+            missing: string[];
+            /** Mode */
+            mode: string;
+            /** Next */
+            next: string;
+            /** Provider */
+            provider: string;
+            /**
+             * Ready
+             * @description true when nothing stands between this provider and live mode
+             */
+            ready: boolean;
+            /** Status */
+            status: string;
+            /** Test Status */
+            test_status?: string | null;
+            /** Tested At */
+            tested_at?: string | null;
         };
         /** ProviderStateOut */
         ProviderStateOut: {
@@ -7185,6 +7290,60 @@ export interface operations {
             };
         };
     };
+    getApiV1RealtimeRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    getApiV1RealtimeStream: {
+        parameters: {
+            query?: {
+                /** @description last revision the client applied; 0 = only new changes */
+                since?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     "getApiV1ReportsInsurer-Performance": {
         parameters: {
             query?: never;
@@ -7974,6 +8133,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiV1SettingsIntegrationsProviderPreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreflightOut"];
                 };
             };
             /** @description Validation Error */

@@ -15,6 +15,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Modal } from "@/components/Modal";
+import { asText, lower } from "@/lib/text";
 import { Badge, Button, Card, SectionTitle, StateBlock } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
@@ -199,7 +200,7 @@ function CreatePortalAccountDialog({
             onClick={() =>
               onSubmit({
                 ...(name.trim() ? { full_name: name.trim() } : {}),
-                ...(username.trim() ? { username: username.trim().toLowerCase() } : {}),
+                ...(asText(username).trim() ? { username: lower(asText(username).trim()) } : {}),
                 ...(email.trim() ? { email: email.trim() } : {}),
               })
             }

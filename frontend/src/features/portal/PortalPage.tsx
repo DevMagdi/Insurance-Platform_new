@@ -242,7 +242,6 @@ export default function PortalPage() {
                               icon={<Download size={13} strokeWidth={1.8} />}
                               busy={downloading === file.download_url}
                               onClick={() => void download(String(file.download_url), String(file.filename ?? "policy.pdf"))}
-                              aria-label={t("common.download")}
                             >
                               {t("common.download")}
                             </Button>

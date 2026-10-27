@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { Badge, Button, Card, StateBlock } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import { asText, upper } from "@/lib/text";
 import type { components } from "@/lib/api/schema";
 import { useState } from "react";
 
@@ -83,7 +84,7 @@ export function UnderwritingPanel() {
             className="w-full rounded-btn border border-line bg-white px-3 py-2 text-[13px] uppercase text-ink"
             value={values.default_currency}
             maxLength={8}
-            onChange={(event) => setDraft({ ...values, default_currency: event.target.value.toUpperCase() })}
+            onChange={(event) => setDraft({ ...values, default_currency: upper(asText(event.target.value)) })}
           />
         </label>
       </div>

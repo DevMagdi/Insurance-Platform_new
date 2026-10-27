@@ -15,6 +15,7 @@ import type { RepWorkload } from "@/lib/api/views";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import { asText, includesText, lower } from "@/lib/text";
 import type { Lead, LeadBoardColumn } from "@/lib/api/views";
 import { useAuth } from "@/lib/auth";
 import { followupLabel, formatNumber } from "@/lib/format";
@@ -111,12 +112,12 @@ export default function KanbanPage() {
 
   const columns = useMemo(() => {
     const source = board.data?.columns ?? [];
-    const needle = query.trim().toLowerCase();
+    const needle = lower(asText(query)).trim();
     // the stage dropdown hides whole columns rather than emptying them: a manager asking "أين وصلنا في
     // مرحلة العرض?" wants one lane, not five lanes where four say «لا يوجد»
     return COLUMNS.filter((column) => !isManager || !stage || column.key === stage).map((column) => {
       const found = source.find((entry) => entry.status === column.key);
-      const items = (found?.items ?? []).filter((lead) => !needle || `${lead.name} ${lead.mobile ?? ""}`.toLowerCase().includes(needle));
+      const items = (found?.items ?? []).filter((lead) => !needle || includesText(`${asText(lead.name)} ${asText(lead.mobile)}`, needle));
       return { ...column, items, count: items.length };
     });
   }, [board.data, query, stage, isManager]);

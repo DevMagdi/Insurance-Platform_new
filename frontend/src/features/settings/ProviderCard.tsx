@@ -5,7 +5,7 @@
  * The form is built from the fields the API returns, not from a list copied into the frontend: a setting
  * the backend stops offering would otherwise keep rendering here as a dead input forever.
  */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, PlugZap, RefreshCw, ShieldAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,7 +16,9 @@ import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 import { relativeTime } from "@/lib/format";
 
-import { MASK, missingFromDetails, secretPatch, statusBadge, type ProviderState, type SecretDraft } from "./model";
+import { asText } from "@/lib/text";
+
+import { liveBlockersOf, liveSwitchError, MASK, secretPatch, statusBadge, type Preflight, type ProviderState, type SecretDraft } from "./model";
 
 const CHOICES: Record<string, readonly string[]> = {
   provider: ["generic", "sim"],
@@ -47,7 +49,29 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
     setLastTest(state.last_test_detail ? { ok: state.last_test_status === "ok", detail: state.last_test_detail } : null);
   }, [state]);
 
-  const badge = statusBadge(state.status);
+  /* The server is the only thing that knows every provider's live requirements (and the environment
+     fallbacks), so the card asks it instead of guessing. `enabled` is guarded: an unconfigured row has no
+     provider key, and firing `/settings/integrations/undefined/preflight` is a 422 in the console. */
+  const providerKey = asText(state?.provider);
+  const preflight = useQuery({
+    queryKey: ["settings", "preflight", providerKey],
+    queryFn: () => api.get<Preflight>(`/settings/integrations/${providerKey}/preflight`),
+    enabled: Boolean(providerKey),
+    staleTime: 5_000,
+    retry: 0,
+  });
+  const badge = statusBadge(state?.status);
+  const blockers = liveBlockersOf(state, preflight.data);
+  const ready = blockers.length === 0;
+  const blockerText = blockers
+    .map((blocker) =>
+      blocker.code === "fields"
+        ? t("settings.liveBlockedFields", { fields: blocker.fields.map((field) => t(`settings.field.${field}`, { defaultValue: t(`settings.secret.${field}`, { defaultValue: field }) })).join("، ") })
+        : blocker.code === "test"
+          ? t("settings.liveBlockedTest")
+          : blocker.message,
+    )
+    .join(" · ");
   const patch = useMemo(() => secretPatch(state.secrets ?? [], secrets), [state.secrets, secrets]);
   const dirty = useMemo(() => {
     const changed = Object.keys(config).some((key) => String(config[key] ?? "") !== String(state.config?.[key as keyof ProviderState["config"]] ?? ""));
@@ -57,6 +81,8 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: ["settings", "integrations"] });
     await queryClient.invalidateQueries({ queryKey: ["settings", "events"] });
+    // the preflight is derived from the row: a green test or a saved field changes the answer
+    await queryClient.invalidateQueries({ queryKey: ["settings", "preflight"] });
   }
 
   const save = useMutation({
@@ -92,10 +118,15 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
       toast(next.is_live ? t("settings.nowLive") : t("settings.nowSim"));
       await refresh();
     },
-    onError: (error: unknown) => {
-      const missing = missingFromDetails((error as { details?: unknown } | undefined)?.details);
-      toast(missing.length ? t("settings.missingFields", { fields: missing.join("، ") }) : (error as Error).message, "error");
+    onError: async (error: unknown) => {
+      // A 409 here means the screen's picture of the row was stale (a second tab, an env change). Say
+      // exactly what the server said — the fields, in Arabic — and re-read the row so the card is correct
+      // the moment the box closes rather than leaving a button that keeps failing.
+      const { message, fields } = liveSwitchError(error);
+      const detail = fields.length ? t("settings.missingFields", { fields: fields.join("، ") }) : asText(message) || t("common.errorBody");
+      toast(detail, "error");
       setConfirming(false);
+      await refresh();
     },
   });
 
@@ -226,6 +257,37 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
         </div>
       ) : null}
 
+      {!state.is_live && !ready ? (
+        <div
+          className="mt-3 rounded-btn px-3 py-2 text-[12px]"
+          style={{ background: "var(--a-bg)", color: "var(--a-ink)" }}
+          data-testid={`live-blockers-${providerKey}`}
+          role="status"
+        >
+          <div className="font-semibold">{t("settings.liveBlockedTitle")}</div>
+          <ul className="mt-1 list-inside list-disc space-y-0.5">
+            {blockers.map((blocker) => (
+              <li key={blocker.code}>
+                {blocker.code === "fields"
+                  ? t("settings.liveBlockedFields", {
+                      fields: blocker.fields
+                        .map((field) => t(`settings.field.${field}`, { defaultValue: t(`settings.secret.${field}`, { defaultValue: field }) }))
+                        .join("، "),
+                    })
+                  : blocker.code === "test"
+                    ? t("settings.liveBlockedTest")
+                    : blocker.message}
+              </li>
+            ))}
+          </ul>
+          {blockers.some((blocker) => blocker.code === "test") ? (
+            <button type="button" className="mt-1 font-semibold text-primary hover:underline" onClick={() => test.mutate()}>
+              {t("settings.runTestNow")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {templates?.length ? (
         <div className="mt-3 rounded-btn bg-[var(--kanban-col)] p-3">
           <div className="mb-1 text-[12px] font-semibold text-muted">{t("settings.templates")}</div>
@@ -274,7 +336,9 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
           variant={state.is_live ? "danger" : "primary"}
           icon={<ShieldAlert size={15} strokeWidth={1.9} />}
           onClick={() => (state.is_live ? live.mutate(false) : setConfirming(true))}
-          disabled={live.isPending}
+          disabled={live.isPending || (!state.is_live && !ready)}
+          title={state.is_live || ready ? undefined : blockerText}
+          data-testid={`live-switch-${providerKey}`}
         >
           {state.is_live ? t("settings.backToSim") : t("settings.goLive")}
         </Button>
@@ -289,14 +353,22 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
               <Button variant="ghost" onClick={() => setConfirming(false)}>
                 {t("common.cancel")}
               </Button>
-              <Button variant="primary" busy={live.isPending} onClick={() => live.mutate(true)}>
+              <Button variant="primary" busy={live.isPending} disabled={!ready} onClick={() => live.mutate(true)}>
                 {t("settings.confirmLive")}
               </Button>
             </>
           }
         >
-          <p className="text-[13px] text-ink">{t("settings.confirmLiveBody", { provider: t(`settings.provider.${state.provider}`) })}</p>
-          {state.last_test_status !== "ok" ? <p className="mt-2 text-[12px] text-[var(--a-ink)]">{t("settings.testFirst")}</p> : null}
+          <p className="text-[13px] text-ink">{t("settings.confirmLiveBody", { provider: t(`settings.provider.${providerKey}`) })}</p>
+          {ready ? (
+            <p className="mt-2 text-[12px] font-semibold" style={{ color: "var(--g-ink)" }} data-testid="live-ready">
+              {t("settings.liveReady")}
+            </p>
+          ) : (
+            <p className="mt-2 text-[12px] text-[var(--a-ink)]" data-testid="live-not-ready">
+              {blockerText}
+            </p>
+          )}
         </Modal>
       ) : null}
     </Card>
