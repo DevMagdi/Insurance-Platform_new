@@ -276,7 +276,7 @@ jobs:
             echo
             echo '**needed images**'
             echo '```'
-            for image in postgres:16-alpine redis:7-alpine minio/minio:latest minio/mc:latest axllent/mailpit:v1.20 broker-hub-backend:local broker-hub-frontend:local; do
+            for image in postgres:16-alpine redis:7-alpine axllent/mailpit:v1.20 broker-hub-backend:local broker-hub-frontend:local; do
               docker image inspect "$image" --format '{{.RepoTags}} present' 2>/dev/null || echo "$image NOT PRESENT LOCALLY"
             done
             echo '```'

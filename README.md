@@ -7,7 +7,7 @@ portal that never sees internal data. Arabic RTL is the primary design; English 
 ```
 backend/    FastAPI + SQLAlchemy 2 (async) + Celery + Alembic   → see backend/README.md (soon) and app/
 frontend/   React 18 + TypeScript strict + Vite + Tailwind tokens
-infra/      docker compose: postgres 16, redis, minio, api, worker, beat, nginx SPA
+infra/      docker compose: postgres 16, redis, api, worker, beat, nginx SPA (attachments on a volume)
 docs/       STATUS.md · runbook.md · decisions/ · ui-parity/ · api/openapi.json
 .github/    ci.yml (lint · typecheck · tests · e2e · docker builds)
 ```

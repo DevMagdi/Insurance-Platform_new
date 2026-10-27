@@ -72,17 +72,28 @@ because "we fixed 13" is only honest next to "the next run found 14".
 طابور CS يعرضه بعدها. الآن: `_require_rep` يطلب `leads.view_own` (422 مع `details.required`)، وواجهة
 الاختيار تقرأ الحقيقة من الخادم (`TeamMemberOut.accepts_leads`) — والاثنان مغطّيان باختبارات.
 
-### 3) docker
+### 3) docker — السبب الحقيقي ظهر أخيراً (لا تخمين)
 
-الوظيفة تفشل على `main` بنفس الخطوة («Boot the stack…»)، ومخرجها غير قابل للقراءة من هذه البيئة
-(سجلات GitHub تُخدَم من blob storage محجوب هنا) — فلا يُخمَّن السبب. ما نُفِّذ:
+التشخيص المنشور على الـPR بعد إصلاح `entrypoint` أعطى الجملة الحاسمة:
 
-* `minio` كان له `healthcheck` بـ`CMD-SHELL curl …`، وصورة `minio/minio` مبنية على `ubi-micro` **بلا
-  curl وبلا shell** ⇒ الفحص لا ينجح أبداً، و`minio-init` (`service_healthy`) لا يبدأ، والترحيل لا يعمل،
-  و`up --wait` يفشل من أول خطوة. أُزيل الفحص، و`minio-init` نفسه ينتظر مع إعادة محاولة عبر `mc`.
-* `up -d --wait --wait-timeout 420` بدل انتظار غير محدود يستهلك مهلة الوظيفة كلها.
-* **الوظيفة صارت تنشر تشخيصها على الـPR** عند الفشل (`ps -a` + آخر 200 سطر) — مثل ملخّص e2e — لأن
-  «locator timeout» وحدها لا تُشخَّص من بعيد. نتيجة الوظيفة على هذا الفرع تُذكر في وصف الـPR بعد تشغيل CI.
+```
+ Image minio/minio:latest Error pull access denied for minio/minio,
+       repository does not exist or may require 'docker login'
+… postgres/redis/mailpit/minio-mc كلها Interrupted
+**services**  (فارغ: لم تُنشأ حاوية واحدة)
+```
+
+أي أن الفشل في **سحب الصورة**، قبل إنشاء أي حاوية وقبل الترحيل. MinIO أرشفت مستودعها ثم حذفت
+`minio/minio` و`minio/mc` من Docker Hub (2026-09-11)، و`quay.io` بدأت ترفض السحب المجهول (2026-09-24) —
+فلا سجلّ مجهول يخدم الصورة، وما كان «تحويل السجل» لينجح.
+
+القرار (ADR-020): حُذفت خدمتا `minio` و`minio-init`، والمخزن الافتراضي للمكدّس صار القرص على وحدة
+`objectsdata` (`STORAGE_DIR=/srv/objects`، والمجلد يُنشأ داخل الصورة بمالكه `broker` لأن وحدة Docker
+تُهيّأ بملكية المسار الموجود في الصورة). دعم S3 باقٍ كما هو (`STORAGE_BACKEND=s3` + `S3_*`)، و`S3Storage`
+ينشئ الحاوية عند أول استخدام — ولهذا لم تكن `minio-init` لازمة من الأصل.
+
+وأُضيف للوظيفة ما يجعل الدورة القادمة لا تحتاج تخميناً: `compose up` يُكتب إلى `/tmp/compose-up.log`
+(`tee` + `pipefail`) ويُنشر مع `ps -a` وسجلّات الحاويات وقائمة الصور المطلوبة وحالتها.
 
 ### 4) أوامر التحقق في هذه الجلسة (مخرجات حقيقية)
 
