@@ -517,9 +517,7 @@ async def test_preflight_names_every_blocker_before_the_button_is_pressed(client
         assert ready["blockers"] == []
         assert ready["next"] == "جاهز للتحويل"
 
-        flipped = await client.post(
-            "/api/v1/settings/integrations/whatsapp/live", headers=h, json={"is_live": True, "confirm": True}
-        )
+        flipped = await client.post("/api/v1/settings/integrations/whatsapp/live", headers=h, json={"is_live": True, "confirm": True})
         assert flipped.status_code == 200, flipped.text
         assert flipped.json()["is_live"] is True
         assert registry.live_mode("whatsapp") is True
@@ -537,9 +535,7 @@ async def test_the_live_endpoint_accepts_confirm_live_as_an_alias(client: Any) -
             headers=h,
             json={"config": {"phone_number_id": "12345"}, "secrets": {"access_token": "TOKEN"}},
         )
-        response = await client.post(
-            "/api/v1/settings/integrations/whatsapp/live", headers=h, json={"is_live": True, "confirm_live": True}
-        )
+        response = await client.post("/api/v1/settings/integrations/whatsapp/live", headers=h, json={"is_live": True, "confirm_live": True})
         assert response.status_code == 200, response.text
         assert response.json()["is_live"] is True
 
@@ -550,9 +546,7 @@ async def test_the_409_carries_the_fields_and_the_next_step(client: Any) -> None
 
     async with login(client, ADMIN) as h:
         await client.post("/api/v1/settings/integrations/telephony/test", headers=h)
-        refused = await client.post(
-            "/api/v1/settings/integrations/telephony/live", headers=h, json={"is_live": True, "confirm": True}
-        )
+        refused = await client.post("/api/v1/settings/integrations/telephony/live", headers=h, json={"is_live": True, "confirm": True})
         assert refused.status_code == 409, refused.text
         details = refused.json()["details"]
         assert refused.json()["code"] == "incomplete_config"

@@ -1047,6 +1047,12 @@ async def main() -> int:
             if "get" not in ops:
                 continue
             url = re.sub(r"\{(\w+)\}", lambda m: str(ids.get(m.group(1), ZERO_UUID)), path)
+            # a server-sent-event body ends when the caller hangs up, so a crawler that waits for the body
+            # waits forever (this pass sat here for 15 minutes on its first run). The stream's contract is
+            # pinned over a loopback socket in tests/test_realtime.py, and scripts/smoke_api.py asserts that
+            # anonymous callers are refused.
+            if url.startswith("/api/v1/realtime/stream"):
+                continue
             if url.startswith("/api/v1"):
                 for who, headers in (("manager", mgr), ("admin", admin)):
                     response = await c.get(url, headers=headers)

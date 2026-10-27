@@ -32,6 +32,8 @@ def overdue_condition() -> sa.ColumnElement[bool]:
         ServiceRequest.is_overdue.is_(True),
         ServiceRequest.status.notin_([RequestStatus.RESOLVED, RequestStatus.CLOSED]),
     )
+
+
 _SORTABLE = {
     "last_activity_at": ServiceRequest.last_activity_at,
     "created_at": ServiceRequest.created_at,
@@ -167,11 +169,7 @@ async def kpis(session: AsyncSession, scope: Scope) -> dict[str, Any]:
         ).scalar_one()
     )
     overdue = int(
-        (
-            await session.execute(
-                with_scope(select(func.count(ServiceRequest.id)), scope, "request").where(overdue_condition())
-            )
-        ).scalar_one()
+        (await session.execute(with_scope(select(func.count(ServiceRequest.id)), scope, "request").where(overdue_condition()))).scalar_one()
     )
     open_count = int(
         (
@@ -271,11 +269,7 @@ async def status_breakdown(session: AsyncSession, scope: Scope) -> list[dict[str
         if value in counts:
             counts[value] += int(count)
     overdue = int(
-        (
-            await session.execute(
-                with_scope(select(func.count(ServiceRequest.id)).where(overdue_condition()), scope, "request")
-            )
-        ).scalar_one()
+        (await session.execute(with_scope(select(func.count(ServiceRequest.id)).where(overdue_condition()), scope, "request"))).scalar_one()
     )
     total = sum(counts.values()) + overdue
     ordered = [("new", counts["new"]), ("in_progress", counts["in_progress"]), ("replied", counts["replied"]), ("overdue", overdue)]

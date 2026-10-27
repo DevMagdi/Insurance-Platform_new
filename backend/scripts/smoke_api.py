@@ -56,6 +56,11 @@ def _prepare_db() -> None:
 EXEMPT: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/media/{key}"): "a signed one-shot URL, exercised for real in the block above",
     ("GET", "/api/v1/portal/attachments/{attachment_id}"): "the id belongs to the portal's own attachment list — tests/test_portal.py",
+    # an SSE body ends when the client leaves, and `TestClient` waits for the end — the first version of this
+    # pass sat on this route for fifteen minutes. The stream's real contract (first frame, auth refusal,
+    # replay after `?since=`) is pinned over a loopback socket in tests/test_realtime.py; the curated block
+    # below asserts the refusal and the exhaustive pass still counts the route as documented.
+    ("GET", "/api/v1/realtime/stream"): "a stream that never ends — tests/test_realtime.py drives it over a loopback socket",
 }
 
 #: who may see what, so a 403 never reads as a broken endpoint
@@ -277,6 +282,14 @@ def main() -> int:
         print(f"login failed: {login.status_code} {login.text[:200]}")
         return 1
     token = login.json()["access_token"]
+
+    # the change feed: documented, and closed to anonymous callers (see EXEMPT for why it is not read here)
+    anonymous = client.get("/api/v1/realtime/stream")
+    check("GET /api/v1/realtime/stream (anonymous)", anonymous.status_code, (401, 403))
+    print(f"ok   GET    /api/v1/realtime/stream (anonymous) -> {anonymous.status_code}")
+    revision = get("/api/v1/realtime/revision", token)
+    if revision is not None and "revision" not in revision:
+        failures.append("GET /api/v1/realtime/revision: no revision in the body")
 
     for path in [
         "/api/v1/auth/me",
