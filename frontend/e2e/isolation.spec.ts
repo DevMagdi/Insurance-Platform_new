@@ -74,8 +74,8 @@ test.describe("sales kanban + isolation (screens 3, 6, 9)", () => {
     const lanes = [
       ["new", ar.leads.colNew],
       ["contacted", ar.leads.colContacted],
-      ["meeting", ar.leads.colMeeting],
-      ["quote", ar.leads.colQuote],
+      ["meeting_scheduled", ar.leads.colMeeting],
+      ["quote_sent", ar.leads.colQuote],
       ["won", ar.leads.colWon],
     ] as const;
     for (const [key, column] of lanes) {

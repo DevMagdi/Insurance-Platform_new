@@ -77,5 +77,7 @@ export function saveFile(file: DownloadedFile): void {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  // Revoked on the next tick, not immediately: Chromium starts the download from the click but Firefox
+  // reads the blob afterwards, and an eager `revokeObjectURL` turns a working button into an empty file.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

@@ -126,6 +126,9 @@ test.describe("R5 · issuance, filters and portal accounts", () => {
 
   test("a username portal login sees its own policy file", async ({ page, request, browser }, testInfo) => {
     test.skip(desktopOnly(testInfo), "1440×900 client-file dialog (ADR-019)");
+    // Four flows in one test — issue through the API, create the login through the dialog, sign in as the
+    // owner in a second browser context, download the file. The 60 s default is sized for one screen.
+    test.setTimeout(150_000);
     await phase2On(request);
     const auth = await apiLogin(request, MANAGER);
     const ownerAuth = await apiLogin(request, OWNER);
