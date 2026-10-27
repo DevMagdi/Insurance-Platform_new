@@ -16,6 +16,14 @@ EmailAddress = Annotated[
 ]
 
 
+#: A human name that is **stripped before it is measured**. `min_length` alone counts the spaces, so
+#: `"   "` passed as a company name and was stored as an empty lead (`Lead.name = ""`), which then showed
+#: up as a blank Kanban card and an unnamed client file after conversion — found in the Live QA sweep.
+LeadName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=200)]
+ClientName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=220)]
+ContactName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=160)]
+
+
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 

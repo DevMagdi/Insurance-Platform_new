@@ -77,6 +77,11 @@ jobs:
         run: python scripts/check_core_coverage.py
       - name: Smoke every documented endpoint (seeded, in-process ASGI)
         run: python scripts/smoke_api.py
+      - name: Live QA matrix (every daily path per role, races, hostile input)
+        # 188 checks over §4.1–§4.12 of the Live-Ready plan: auth, dashboard, inbox, leads, team,
+        # redistribute, import, users, settings, simulators, portal, isolation — plus a crawl of every
+        # GET route that fails the build on any 5xx. It owns its throwaway database (`/tmp/qa_live.db`).
+        run: PYTHONPATH=. python scripts/live_matrix.py
       - name: Dependency audit
         run: pip-audit --strict -r requirements.txt
       - name: OpenAPI export must be committed (compared as data, not text)

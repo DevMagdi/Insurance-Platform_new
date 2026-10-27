@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID
 
 from app.core.db import get_sessionmaker
@@ -71,6 +72,35 @@ async def test_duplicate_email_unknown_role_and_weak_password_are_refused(client
             json={"email": "weak@brokerhub.test", "password": "12345", "full_name": "ضعيف", "role_code": "sales_rep"},
         )
         assert weak.status_code == 422  # rejected by the request model before the service runs
+
+
+async def test_two_parallel_creates_with_the_same_email_answer_409_not_500(client, ids) -> None:
+    """The double-click on «إضافة عضو» used to end in a 500 for the second request (Live QA P0).
+
+    The e-mail pre-check cannot see a row a concurrent request is committing; the unique index can, but
+    the IntegrityError reached the client as a server fault. Both surfaces (users + sales team) now
+    answer 409 with the same message the sequential path uses.
+    """
+    payload = {
+        "email": "race.rep@brokerhub.test",
+        "password": PASSWORD,
+        "full_name": "سباق بياعين",
+        "role_code": "sales_rep",
+    }
+    async with login(client, ADMIN) as h:
+        first, second = await asyncio.gather(
+            client.post("/api/v1/users", headers=h, json=payload),
+            client.post("/api/v1/users", headers=h, json=payload),
+        )
+    assert {first.status_code, second.status_code} == {201, 409}, (first.status_code, second.status_code)
+
+    team_payload = {**payload, "email": "race.team@brokerhub.test"}
+    async with login(client, "manager@brokerhub.test") as h:
+        team_first, team_second = await asyncio.gather(
+            client.post("/api/v1/sales-team/members", headers=h, json=team_payload),
+            client.post("/api/v1/sales-team/members", headers=h, json=team_payload),
+        )
+    assert {team_first.status_code, team_second.status_code} == {201, 409}, (team_first.status_code, team_second.status_code)
 
 
 async def test_deactivate_revokes_access_and_self_lockout_is_blocked(client, ids) -> None:

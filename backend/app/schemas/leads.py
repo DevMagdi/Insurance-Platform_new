@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.schemas.common import EmailAddress, ORMModel
+from app.schemas.common import ContactName, EmailAddress, LeadName, ORMModel
 
 LeadType = Literal["company", "individual"]
 LeadStatusValue = Literal[
@@ -28,8 +28,8 @@ LeadStatusValue = Literal[
 
 class LeadCreate(BaseModel):
     type: LeadType = "company"
-    name: str = Field(min_length=2, max_length=200)
-    contact_name: str | None = Field(default=None, max_length=160)
+    name: LeadName
+    contact_name: ContactName | None = None
     #: the contact's job title, e.g. "المدير المالي" — read from the Excel column «البوزيشن»
     contact_title: str | None = Field(default=None, max_length=120)
     mobile: str | None = None
@@ -47,7 +47,7 @@ class LeadCreate(BaseModel):
 
 
 class LeadUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=2, max_length=200)
+    name: LeadName | None = None
     type: LeadType | None = None
     contact_name: str | None = None
     contact_title: str | None = Field(default=None, max_length=120)

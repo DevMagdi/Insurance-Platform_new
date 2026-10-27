@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 import uuid
 from typing import Annotated, Any
 from uuid import UUID
@@ -275,9 +276,15 @@ async def media(key: str, expires: int, sig: str) -> Any:
         raise Forbidden("Link expired or signature invalid")
     try:
         payload = storage().get_object(key)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
+        # `ValueError` is the storage driver refusing a key that escapes its root. A signed URL cannot
+        # carry such a key (the signature covers the key), but a 500 on a media read is never the right
+        # answer: the object is "not here", whatever the reason.
         raise NotFound("Object not found") from exc
-    return Response(content=payload, media_type="audio/wav", headers={"cache-control": "private, max-age=60"})
+    # The recording driver writes `.wav`; attestations and brochures are PDF/PNG. Hard-coding audio/wav
+    # made a PDF download as an audio file (browsers refuse to preview it). Guess from the key instead.
+    media_type = mimetypes.guess_type(key)[0] or "application/octet-stream"
+    return Response(content=payload, media_type=media_type, headers={"cache-control": "private, max-age=60"})
 
 
 def _snippet(messages: list[Any]) -> str | None:

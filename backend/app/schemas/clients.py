@@ -13,7 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.schemas.common import EmailAddress
+from app.schemas.common import ClientName, ContactName, EmailAddress
 
 ClientTypeValue = Literal["company", "individual"]
 ClientStatusValue = Literal["active", "inactive", "archived"]
@@ -21,7 +21,7 @@ CoverageStatusValue = Literal["active", "pending", "ended"]
 
 
 class ClientCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=220)
+    name: ClientName
     type: ClientTypeValue = "company"
     status: ClientStatusValue = "active"
     account_owner_id: UUID | None = None
@@ -32,7 +32,7 @@ class ClientCreate(BaseModel):
 
 
 class ClientUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=2, max_length=220)
+    name: ClientName | None = None
     status: ClientStatusValue | None = None
     address: str | None = Field(default=None, max_length=400)
     tax_number: str | None = Field(default=None, max_length=40)
@@ -41,7 +41,7 @@ class ClientUpdate(BaseModel):
 
 
 class ContactCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=160)
+    name: ContactName
     title: str | None = Field(default=None, max_length=120)
     mobile: str | None = None
     email: EmailAddress | None = None

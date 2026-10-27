@@ -6,10 +6,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from sqlalchemy.exc import IntegrityError
 
 from app.api.v1.endpoints.health import router as health_router
 from app.api.v1.router import api_router
@@ -132,6 +133,39 @@ def create_app() -> FastAPI:
     @app.get("/", include_in_schema=False)
     async def root() -> dict[str, str]:
         return {"name": settings.APP_NAME, "docs": "/docs", "api": settings.API_V1_PREFIX}
+
+    @app.exception_handler(IntegrityError)
+    async def _integrity(_request: Any, exc: IntegrityError) -> JSONResponse:
+        # A unique/FK violation that won a race is a client error, not a server fault: the row was checked
+        # in Python, a concurrent request inserted it first, and the database — the only layer that can
+        # arbitrate — refused it. Answering 500 here made a double-click look like a crash (found in the
+        # Live QA sweep: two parallel "add member" calls with the same e-mail). 409 says "retry/refresh",
+        # which is exactly what the caller has to do. The constraint name is not echoed: it is ours, not
+        # theirs. `session` is closed by the dependency afterwards, so the failed transaction is discarded.
+        log.warning("integrity_violation", path=str(_request.url.path), error=type(exc).__name__)
+        # Two different client mistakes live behind one SQLSTATE class: a value that must be unique was
+        # taken, or a foreign key points at a row that does not exist. Answering "duplicate" to a typo in
+        # `insurance_type_id` sent the manager looking for the wrong problem (measured on the QA matrix).
+        raw = str(getattr(exc, "orig", exc)).lower()
+        if "foreign key" in raw:
+            return JSONResponse(
+                status_code=422,  # starlette deprecated the UNPROCESSABLE_ENTITY alias in 1.x
+                content=error_json(
+                    422,
+                    "validation_failed",
+                    "A referenced record does not exist",
+                    details={"reason": "unknown_reference"},
+                ),
+            )
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content=error_json(
+                status.HTTP_409_CONFLICT,
+                "conflict",
+                "This record conflicts with one that already exists",
+                details={"reason": "duplicate"},
+            ),
+        )
 
     @app.exception_handler(404)
     async def _not_found(_request: Any, exc: Any) -> JSONResponse:

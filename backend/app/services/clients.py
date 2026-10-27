@@ -42,6 +42,14 @@ _HEADERS = {
 async def create(session: AsyncSession, actor: User, scope: Scope, payload: dict[str, Any], *, ip: str | None = None) -> Client:
     if not scope.can_any("clients.manage", "clients.view_all"):
         raise Forbidden("Only managers may create clients directly")
+    owner_id = payload.get("account_owner_id")
+    if owner_id is not None and await session.get(User, UUID(str(owner_id))) is None:
+        # same reason as `leads.create`: SQLite does not police the foreign key, so a typo would be
+        # stored as a dangling owner and only PostgreSQL would notice — as a server error.
+        raise ValidationFailed(
+            "A referenced record does not exist",
+            details=[{"field": "account_owner_id", "message": "غير موجود", "type": "unknown_reference"}],
+        )
     client = Client(
         type=ClientType(payload.get("type", "company")),
         name=str(payload["name"]).strip(),
