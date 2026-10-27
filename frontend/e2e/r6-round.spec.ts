@@ -168,9 +168,11 @@ test.describe("R6 · a change reaches every tab in ≤2 s", () => {
     const timeline: string[] = [];
     let started = Date.now();
     const stamp0 = () => `${Date.now() - started} ms`;
+    const short = (url: string) => url.replace(/^https?:\/\/[^/]+/, "");
     pageA.on("request", (req) => {
-      if (req.url().includes("/realtime/")) timeline.push(`${stamp0()} → stream open (${req.url().split("?")[1] ?? ""})`);
-      else if (req.url().includes("/api/v1/requests")) timeline.push(`${stamp0()} → ${req.method()} ${req.url().replace(/^https?:\/\/[^/]+/, "")}`);
+      if (req.url().includes("/realtime/") || req.url().includes("/api/v1/requests")) {
+        timeline.push(`${stamp0()} → ${req.method()} ${short(req.url())}`);
+      }
     });
     pageA.on("response", async (res) => {
       if (!res.url().includes("/api/v1/requests?")) return;
@@ -181,8 +183,10 @@ test.describe("R6 · a change reaches every tab in ≤2 s", () => {
       } catch {
         size = " (unreadable body)";
       }
-      timeline.push(`${stamp0()} ← ${res.status()} queue${size}`);
+      timeline.push(`${stamp0()} ← ${res.status()} ${short(res.url())}${size}`);
     });
+    // the server's own revision counter, so the tab's `data-revision` can be read as "behind or caught up"
+    const revisionBefore = (await (await request.get("/api/v1/realtime/revision", { headers: manager })).json()).revision as number;
 
     // tab B: somebody else's action, performed through the API
     const stamp = Date.now();
@@ -207,8 +211,17 @@ test.describe("R6 · a change reaches every tab in ≤2 s", () => {
         headers: agent,
       });
       const rows = ((await serverSide.json().catch(() => ({}))) as { items?: { id?: string; subject?: string }[] }).items ?? [];
+      // keep watching after the budget expires: "it arrived at 2 350 ms" and "it never arrived" are
+      // different bugs, and only one of them is a matter of a few hundred milliseconds
+      const lateMs = await arrived
+        .waitFor({ state: "visible", timeout: 15_000 })
+        .then(() => Date.now() - started)
+        .catch(() => null);
+      const tabRevision = await pageA.getByTestId("realtime-status").getAttribute("data-revision");
       const detail = [
         `row visible in the queue on screen: ${await arrived.count()} (expected 1, budget 2000 ms)`,
+        `it did arrive, late: ${lateMs === null ? "never within 17 s" : `${lateMs} ms`}`,
+        `revision: server was at ${revisionBefore} before the change · the tab applied ${tabRevision ?? "nothing"}`,
         `the agent's own queue over the API: ${serverSide.status()} · ${rows.length} rows · holds this subject: ${
           rows.some((row) => row.subject === name) ? "yes" : "no"
         }`,

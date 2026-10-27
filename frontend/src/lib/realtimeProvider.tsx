@@ -16,9 +16,11 @@ interface RealtimeValue {
   status: RealtimeStatus;
   /** The revision the tab has applied — surfaced in tests and in the status tooltip. */
   connected: boolean;
+  /** The last change revision this tab applied. `0` means "nothing seen yet". */
+  revision: number;
 }
 
-const RealtimeContext = createContext<RealtimeValue>({ status: "offline", connected: false });
+const RealtimeContext = createContext<RealtimeValue>({ status: "offline", connected: false, revision: 0 });
 
 /** Everything a topic change makes stale, in one place, so two screens cannot disagree about it. */
 export function invalidateForChange(queryClient: QueryClient, event: ChangeEvent): void {
@@ -31,6 +33,13 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const { user, ready } = useAuth();
   const [status, setStatus] = useState<RealtimeStatus>("offline");
+  /*
+   * The revision is on screen (`data-revision`) for the same reason the status pill exists: "how fresh is
+   * this tab" must be answerable without a debugger. It is also the only way to tell two very different
+   * failures apart in an e2e report — a change *that never reached the tab* (revision behind the server's)
+   * from a change *the tab applied but did not refetch* (revision caught up, screen stale).
+   */
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     setTokenReader(() => getAccessToken());
@@ -40,8 +49,12 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     // nothing to sync until we know who the caller is; a logged-out tab holds no connection at all
     if (!ready || !user) return;
     const client = new RealtimeClient({
-      onEvent: (event) => invalidateForChange(queryClient, event),
-      onResync: () => {
+      onEvent: (event) => {
+        setRevision((seen) => Math.max(seen, event.revision));
+        invalidateForChange(queryClient, event);
+      },
+      onResync: (applyTo) => {
+        setRevision((seen) => Math.max(seen, applyTo));
         // a gap means "anything could have moved": refetch what is on screen rather than guessing
         void queryClient.invalidateQueries();
       },
@@ -72,7 +85,10 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     };
   }, [ready, user, queryClient]);
 
-  const value = useMemo<RealtimeValue>(() => ({ status, connected: status === "live" }), [status]);
+  const value = useMemo<RealtimeValue>(
+    () => ({ status, connected: status === "live", revision }),
+    [status, revision],
+  );
   return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>;
 }
 

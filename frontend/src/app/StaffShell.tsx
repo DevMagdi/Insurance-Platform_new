@@ -139,6 +139,7 @@ export function StaffShell({ children }: { children: ReactNode }) {
               aria-live="polite"
               data-testid="realtime-status"
               data-status={realtime.status}
+              data-revision={realtime.revision}
               title={t(`realtime.${realtime.status}`)}
               className="flex items-center gap-1.5 rounded-pill px-2 py-[3px] text-[11.5px] font-semibold"
               style={
