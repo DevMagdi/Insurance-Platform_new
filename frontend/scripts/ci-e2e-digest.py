@@ -82,6 +82,55 @@ def _walk(suite: dict[str, Any], trail: tuple[str, ...] = ()) -> list[dict[str, 
     return found
 
 
+def _api_log_excerpt(limit: int = 34) -> list[str]:
+    """The API's own tail, because "login failed" plus a 30 s wait names a symptom, not a cause.
+
+    `playwright.config.ts` runs uvicorn through `tee /tmp/e2e-api.log`. A stall shows up here as either a
+    missing line, a 5xx, or a request whose `ms=` is seconds long — three very different bugs that a
+    screenshot cannot tell apart.
+    """
+    path = Path(os.environ.get("E2E_API_LOG", "/tmp/e2e-api.log"))
+    if not path.is_file():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    # keep the interesting lines (errors, slow requests, tracebacks) over the happy-path chatter
+    interesting = [
+        line
+        for line in lines
+        if "status=5" in line or "status=429" in line or "Traceback" in line or "Error" in line or _slow(line)
+    ]
+    tail = interesting[-limit:] if interesting else lines[-limit:]
+    if not tail:
+        return []
+    for index, line in enumerate(tail):
+        tail[index] = "".join(ch for ch in line if ch == "\t" or ord(ch) >= 32)[:400]
+    return [
+        "",
+        "<details><summary>سجلّ الـAPI كما رآه الخادم (أسطر الأخطاء والطلبات البطيئة)</summary>",
+        "",
+        "```text",
+        *tail,
+        "```",
+        "</details>",
+        "",
+    ]
+
+
+def _slow(line: str) -> bool:
+    """`ms=1234.5` — a request that took over a second is a stall worth showing, not noise."""
+    marker = "ms="
+    start = line.find(marker)
+    if start < 0:
+        return False
+    value = line[start + len(marker) :].split()[0] if len(line) > start + len(marker) else ""
+    try:
+        return float(value.rstrip(".,;")) >= 1000
+    except ValueError:
+        return False
+
 def main() -> int:
     report = Path(os.environ.get("PLAYWRIGHT_JSON_OUTPUT_NAME", "/tmp/playwright-results.json"))
     if not report.is_file():
@@ -130,6 +179,8 @@ def main() -> int:
         body.append("")
     if len(failures) > MAX_FAILURES:
         body.append(f"_… و{len(failures) - MAX_FAILURES} فشلًا آخر مقطوعًا من هذا الملخص._")
+
+    body.extend(_api_log_excerpt())
 
     out = Path(os.environ.get("E2E_DIGEST_FILE", "/tmp/e2e-failures.md"))
     text = "\n".join(body)
