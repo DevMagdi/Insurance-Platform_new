@@ -3323,7 +3323,15 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** PolicyOut */
+        /**
+         * PolicyOut
+         * @description A policy as the screens read it.
+         *
+         *     `policy_no` is nullable here *and* in the model and the create body (`PolicyCreate.policy_no` defaults to
+         *     `None`): a draft booked before the insurer answers carries no number yet. Declaring it `str` made FastAPI
+         *     refuse to serialise the whole payload — the client file answered 500 for every client holding a draft
+         *     policy, which is what took the `screens`, `screenshots` and therefore three e2e tests down (R3).
+         */
         PolicyOut: {
             /** Client Id */
             client_id?: string | null;
@@ -3348,7 +3356,7 @@ export interface components {
             /** Payment Plan */
             payment_plan?: string | null;
             /** Policy No */
-            policy_no: string;
+            policy_no?: string | null;
             /** Premium Amount */
             premium_amount?: number | string | null;
             /** Start Date */

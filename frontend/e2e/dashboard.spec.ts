@@ -118,7 +118,16 @@ test.describe("dashboard (screen 1)", () => {
 
   test("a rep without requests.view gets no request surfaces in the shell", async ({ page, request }) => {
     await login(page, REPS.sara);
-    const nav = page.getByRole("navigation", { name: "التنقل الرئيسي", exact: true });
+    /*
+     * Which navigation exists depends on the width (ADR-018): the phone renders the bottom rail
+     * («التنقل السريع») and no sidebar at all. Asking a 390px screen for `التنقل الرئيسي` resolved to zero
+     * elements and was read as "the item is filtered out" — the assertion passed for the wrong reason on
+     * desktop-shaped queries and failed outright on the phone (R3, mobile). Each shape is asked for its own
+     * navigation, and the same three claims hold in both.
+     */
+    const narrow = (page.viewportSize()?.width ?? 1440) < 1024;
+    const nav = page.getByRole("navigation", { name: narrow ? "التنقل السريع" : "التنقل الرئيسي", exact: true });
+    await expect(nav, `the ${narrow ? "phone rail" : "sidebar"} is not rendered`).toBeVisible();
     await expect(nav.getByText("صندوق الطلبات", { exact: true })).toHaveCount(0);
     await expect(nav.getByText("لوحة التحكم", { exact: true })).toHaveCount(0);
     await expect(nav.getByText("العملاء المحتملون", { exact: true })).toHaveCount(1);

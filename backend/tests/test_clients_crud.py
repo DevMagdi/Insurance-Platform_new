@@ -195,3 +195,43 @@ async def test_the_overview_of_a_client_that_has_a_policy_serialises_its_insuran
         assert policy["insurance_type"]["code"]
         assert policy["insurance_type"]["name"]
         assert overview.json()["kpis"]["renewal_in_days"] is not None
+
+
+async def test_a_draft_policy_without_a_number_still_opens_the_client_file(client, ids: dict[str, dict[str, str]]) -> None:
+    """
+    A policy booked before the insurer issues a number is legal: `PolicyCreate.policy_no` defaults to null and
+    the column is nullable. `PolicyOut` declared it `str`, so FastAPI refused the *whole* overview with a
+    `ResponseValidationError` — a 500 on the screen the design review photographs, for any client holding one
+    such draft (R3: the e2e `screens` grid failed on both projects and the two client-file screenshots went
+    with it). The contract is "the number is optional, the file still opens".
+    """
+    from datetime import date
+    from decimal import Decimal
+    from uuid import UUID
+
+    from app.core.db import get_sessionmaker
+    from app.domain.enums import PaymentPlan, PolicyStatus
+    from app.models.phase2 import Policy
+
+    async with get_sessionmaker()() as session:
+        session.add(
+            Policy(
+                client_id=UUID(ids["clients"]["باء"]),
+                policy_no=None,
+                start_date=date(2026, 2, 1),
+                end_date=date(2027, 1, 31),
+                premium_amount=Decimal("90000.00"),
+                payment_plan=PaymentPlan.MONTHLY,
+                commission_rate=Decimal("5.00"),
+                status=PolicyStatus.DRAFT,
+            )
+        )
+        await session.commit()
+
+    async with login(client, MANAGER) as h:
+        overview = await client.get(f"/api/v1/clients/{ids['clients']['باء']}/overview", headers=h)
+        assert overview.status_code == 200, overview.text
+        body = overview.json()
+        assert body["policy"] is not None
+        assert body["policy"]["policy_no"] is None
+        assert body["policy"]["status"] == "draft"

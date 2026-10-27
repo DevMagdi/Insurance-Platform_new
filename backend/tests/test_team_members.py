@@ -228,3 +228,19 @@ async def test_the_roster_exposes_the_lead_owning_flag(client) -> None:
     assert rep["accepts_leads"] is True
     if cs is not None:
         assert cs["accepts_leads"] is False
+
+
+async def test_the_role_list_offers_the_rep_seat_first(client) -> None:
+    """
+    The dialog seeds its role field from `assignable_roles[0]`. The list used to be alphabetical, so the
+    default seat was `account_manager` — a manager who pressed «إضافة عضو» and typed a name created an
+    account manager, who then could not hold a lead (R3, `team-round.spec.ts` desktop: `seat.role` was
+    `account_manager`). The order is a product decision now, not a collation accident.
+    """
+    async with login(client, MANAGER) as auth:
+        roster = (await client.get("/api/v1/sales-team/members", headers=auth)).json()
+    codes = [row["code"] for row in roster["assignable_roles"]]
+    assert codes[0] == "sales_rep", codes
+    assert codes == ["sales_rep", "sales_manager", "customer_service", "account_manager"], codes
+    # every role named here is one the roster actually contains, so the dialog cannot offer a dead option
+    assert {row["role"] for row in roster["members"]} <= set(codes)

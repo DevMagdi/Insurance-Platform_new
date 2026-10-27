@@ -4302,6 +4302,7 @@
       },
       "PolicyOut": {
         "additionalProperties": true,
+        "description": "A policy as the screens read it.\n\n`policy_no` is nullable here *and* in the model and the create body (`PolicyCreate.policy_no` defaults to\n`None`): a draft booked before the insurer answers carries no number yet. Declaring it `str` made FastAPI\nrefuse to serialise the whole payload — the client file answered 500 for every client holding a draft\npolicy, which is what took the `screens`, `screenshots` and therefore three e2e tests down (R3).",
         "properties": {
           "client_id": {
             "anyOf": [
@@ -4394,8 +4395,15 @@
             "title": "Payment Plan"
           },
           "policy_no": {
-            "title": "Policy No",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy No"
           },
           "premium_amount": {
             "anyOf": [
@@ -4430,7 +4438,6 @@
         },
         "required": [
           "id",
-          "policy_no",
           "status"
         ],
         "title": "PolicyOut",

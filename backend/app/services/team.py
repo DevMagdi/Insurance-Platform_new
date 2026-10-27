@@ -36,11 +36,20 @@ OFFICE_ROLES: frozenset[str] = frozenset({"sales_rep", "sales_manager", "custome
 _TERMINAL = [LeadStatus.WON, LeadStatus.LOST]
 
 
+#: the order the "add a member" dialog offers the seats in. `sales_rep` first because it is the seat this
+#: screen exists to add, and because a client that defaults to `roles[0]` must not default to
+#: `account_manager` — which is exactly what an alphabetical list did (R3: a manager added a rep who landed
+#: as an account manager, could not receive leads, and the e2e test caught the mismatch).
+ROLE_ORDER: tuple[str, ...] = ("sales_rep", "sales_manager", "customer_service", "account_manager")
+
+
 async def roster(session: AsyncSession, scope: Scope) -> dict[str, Any]:
-    """The office seats plus the roles this screen may assign, so the dialog lists what the API accepts."""
+    """The office seats plus the roles this screen may assign, in the order the dialog should offer them."""
     members = await list_members(session, scope)
     names = (await session.execute(select(Role.code, Role.name).where(func.lower(Role.code).in_(sorted(OFFICE_ROLES))))).all()
-    assignable = [{"code": str(code), "name": str(name)} for code, name in sorted(names)]
+    rank = {code: index for index, code in enumerate(ROLE_ORDER)}
+    ordered = sorted(names, key=lambda row: (rank.get(str(row[0]).lower(), len(ROLE_ORDER)), str(row[0])))
+    assignable = [{"code": str(code), "name": str(name)} for code, name in ordered]
     return {"members": members, "assignable_roles": assignable}
 
 

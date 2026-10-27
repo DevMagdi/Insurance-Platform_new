@@ -46,7 +46,12 @@ const SHOTS: Shot[] = [
   { file: "15b-settings-hub.png", route: "/settings", who: "manager", ready: /الإعدادات/, viewport: "desktop" },
   { file: "16-login.png", route: "/login", who: "anon", ready: /أهلاً بعودتك|تسجيل الدخول/, viewport: "desktop" },
   // extras the review asked for beyond the 16: the same inbox on a phone, and the portal on a phone
-  { file: "02-inbox@390x844.png", route: "/inbox", who: "manager", ready: /صندوق الطلبات/, viewport: "mobile", fullPage: false },
+  /*
+   * The phone capture waits for the screen's own title, not for «صندوق الطلبات»: below `lg` the sidebar —
+   * the only place that label lived — is not rendered at all (ADR-018), so `.first()` resolved to the hidden
+   * span and reported a perfectly painted inbox as missing (R3, mobile).
+   */
+  { file: "02-inbox@390x844.png", route: "/inbox", who: "manager", ready: /صندوق الطلبات الموحد/, viewport: "mobile", fullPage: false },
   { file: "06-portal@390x844.png", route: "/portal", who: "owner", ready: /بوابة العميل/, viewport: "mobile", fullPage: false },
 ];
 

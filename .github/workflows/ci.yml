@@ -213,8 +213,14 @@ jobs:
         run: |
           # `--wait-timeout` is finite on purpose: without it a stuck stack burns the job's whole timeout
           # and the log says nothing but "still waiting".
-          docker compose -f infra/docker-compose.yml up -d --wait --wait-timeout 420
-          docker compose -f infra/docker-compose.yml ps
+          #
+          # `tee` + `pipefail`: compose's own stderr ("toomanyrequests", "no such image", a pull that timed
+          # out) is the only place the *reason* for a failed boot is written, and the job log is not readable
+          # from a reviewer's sandbox. The digest step below reposts this file to the PR, so the cause travels
+          # with the failure instead of being guessed at (two rounds were spent guessing before that).
+          set -o pipefail
+          docker compose -f infra/docker-compose.yml up -d --wait --wait-timeout 420 2>&1 | tee /tmp/compose-up.log
+          docker compose -f infra/docker-compose.yml ps | tee -a /tmp/compose-up.log
       - name: The stack answers over HTTP
         run: |
           curl -fsS localhost:8000/healthz
@@ -257,9 +263,22 @@ jobs:
             docker compose -f infra/docker-compose.yml ps -a || true
             echo '```'
             echo
+            echo
+            echo '**`docker compose up` output**'
+            echo '```'
+            cat /tmp/compose-up.log 2>/dev/null || echo '(the boot step wrote no log)'
+            echo '```'
+            echo
             echo '**last 200 log lines**'
             echo '```'
             docker compose -f infra/docker-compose.yml logs --tail=200 --no-color 2>&1 || true
+            echo '```'
+            echo
+            echo '**needed images**'
+            echo '```'
+            for image in postgres:16-alpine redis:7-alpine minio/minio:latest minio/mc:latest axllent/mailpit:v1.20 broker-hub-backend:local broker-hub-frontend:local; do
+              docker image inspect "$image" --format '{{.RepoTags}} present' 2>/dev/null || echo "$image NOT PRESENT LOCALLY"
+            done
             echo '```'
           } > /tmp/docker-boot.md
           gh pr comment "${{ github.event.number }}" --repo "$GITHUB_REPOSITORY" --body-file /tmp/docker-boot.md

@@ -32,6 +32,23 @@
 
 ## جولة R3 — ما كان أحمر، ولماذا، وما أُصلح
 
+Round R3 ran in two passes. Pass 1 (`83f0c4f` + `607eb0a`) fixed the 13 failures measured on `main` and the
+compose entrypoint the docker job rejected; its first CI run then measured **14** failures on the new head,
+and pass 2 (this section) fixes the five distinct causes that run exposed. Both passes are recorded below,
+because "we fixed 13" is only honest next to "the next run found 14".
+
+### 0) الجولة الثانية: ما كشفه تشغيل CI على `607eb0a` (14 فشلاً)
+
+| الفشل (من ملخّص الـPR الحقيقي) | السبب الجذري | الإصلاح |
+|---|---|---|
+| `screens` + `screenshots` (المشروعان) + `05-client-file.png` | `PolicyOut.policy_no` معرَّف `str` والعمود **nullable** و`PolicyCreate` يقبل الغياب ⇒ وثيقة مسودّة واحدة تُسقط رد `/clients/{id}/overview` كله بـ`ResponseValidationError` (500) | `policy_no: str | None` في المخطط + `—` في الواجهة + اختبار `test_a_draft_policy_without_a_number_still_opens_the_client_file` و`tests/clientFile.test.tsx` |
+| `lead import › the preview writes nothing …` (المشروعان) | `ready` المقروء 1 بدل 2: عمود «الإيميل» لم يُطابق أياً من الأسماء المستعارة، فاختفى العمود كله وبقي الصف «جاهزاً» رغم بريده الفاسد | `_norm_header` يوحّد «ال/أ/إ/ى/ة» قبل المطابقة + تقرير «أعمدة لم يتم التعرف عليها» + اختباران جديدان |
+| `lead import › broken and Arabic-heavy CSV rows` | نفس السبب أعلاه (2 جاهز بدل 1، و2 أخطاء بدل 3) | نفسه — والمخرجات صارت `rows 4 · ready 1 · errors 3` للصفوف `[3,4,5]` |
+| `members › a manager adds a rep …` (سطح مكتب) | الحوار يسكن دوره من `assignable_roles[0]`، والقائمة كانت **أبجدية** ⇒ `account_manager` هو الافتراضي، فالمقعد المُضاف لا يستطيع حمل أي Lead | `ROLE_ORDER` في `services/team.py` (بياع أولاً) + الاختبار يختار «بياع» صراحةً + `test_the_role_list_offers_the_rep_seat_first` |
+| `members` / `lead import` / `redistribute` (جوال) | مهلة 60s في نقرة: `element is outside of the viewport` ×114 — الحوار بلا سقف ارتفاع يتجاوز الشاشة، فتذييله خارج أي صندوق تمرير | إصلاح حقيقي في `components/Modal.tsx` (سقف `100dvh` + تمرير داخلي + تذييل ثابت) و`tests/modal.test.tsx`؛ ونطاق المشروعين موثَّق في ADR-019 |
+| `dashboard › a rep without requests.view …` (جوال) | الاختبار يطلب «التنقل الرئيسي» وهو غير مرسوم على 390 (ADR-018) ⇒ 0 عناصر تُقرأ خطأً | الاختبار يسأل كل شكل عن تنقّله، والتأكيدات الثلاثة كما هي |
+
+
 ### 1) e2e: الفشل الـ13 على `main` عند `78085fa` (لقطة CI الحقيقية)
 
 سُحبت القائمة من `gh api repos/DevMagdi/Insurance-Platform_new/check-runs/<id>/annotations` (لا من ذاكرة):
@@ -75,11 +92,12 @@ backend (SQLite؛ PostgreSQL يقيسه CI وحده):
 ruff check .                → All checks passed!
 ruff format --check .       → 146 files already formatted
 mypy app                    → Success: no issues found in 107 source files
-pytest -q                   → rc 0 · 198 مُجمَّعة، منها 9 `postgres_only` ⇒ 189 ناجحاً
+pytest                      → 193 passed, 9 skipped in 210.18s   (+4 اختبارات هذه الجولة)
 scripts/smoke_api.py        → SMOKE OK — 114/116 نداءً موثَّقاً، والاستثناءان بسببهما
 scripts/check_openapi_fresh → openapi.json is fresh (98 paths)
 scripts/check_migrations.py → migration immutability ok (5 merged, 0 new)
-scripts/check_core_coverage → 14/14 فوق البوابة (أدنى: leads 85.3%، clients 88.3%، lead_import 84.8%)
+scripts/check_core_coverage → 14/14 فوق البوابة (أدنى: leads 85.3%، lead_import 85.6%، portal 84.9%)
+coverage report             → TOTAL 84.2%
 ```
 
 frontend (Node 22):
@@ -87,8 +105,8 @@ frontend (Node 22):
 ```
 eslint . --max-warnings 0   → 0 مشكلة
 tsc (app + e2e)             → نظيف
-vitest run                  → 77 passed / 9 files
-npm run build               → ✓ 7.5s
+vitest run                  → 82 passed / 11 files   (منها `modal.test.tsx` 3 و`clientFile.test.tsx` 2)
+npm run build               → ✓ 7.95s
 ```
 
 ### 5) ما لم يُشغَّل محلياً في هذه الجولة

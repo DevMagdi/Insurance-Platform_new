@@ -1,4 +1,14 @@
-/** Small accessible dialog used by the confirmations (convert, lost, redistribute, import). */
+/**
+ * Small accessible dialog used by the confirmations (convert, lost, redistribute, import).
+ *
+ * Two things here are load-bearing, both found by the phone e2e project in R3:
+ *  - the panel may be taller than the viewport (the import preview is a table plus a stats row), so the
+ *    overlay scrolls and the panel is capped at the *visible* height. A `place-items-center` overlay with an
+ *    uncapped card grew past the screen and the footer's «تنفيذ الاستيراد» sat outside the viewport — the
+ *    click retried for 60 s and the test timed out with the element "visible, enabled and stable";
+ *  - the footer is `sticky` to the panel's own scroll box, so the confirming button stays reachable without
+ *    hunting for the bottom of a long report.
+ */
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
@@ -31,7 +41,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-40 grid place-items-center bg-[rgba(16,24,40,.5)] p-4"
+      className="fixed inset-0 z-40 grid place-items-center overflow-y-auto overscroll-contain bg-[rgba(16,24,40,.5)] p-4"
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -39,7 +49,10 @@ export function Modal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <Card className="w-full" style={{ maxWidth: width }}>
+      <Card
+        className="flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden"
+        style={{ maxWidth: width }}
+      >
         <header className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-card font-semibold text-ink">{title}</h2>
           <button
@@ -53,8 +66,8 @@ export function Modal({
             <X size={16} strokeWidth={2} />
           </button>
         </header>
-        {children}
-        {actions ? <footer className="mt-5 flex items-center justify-end gap-2">{actions}</footer> : null}
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        {actions ? <footer className="mt-5 flex shrink-0 items-center justify-end gap-2">{actions}</footer> : null}
       </Card>
     </div>
   );

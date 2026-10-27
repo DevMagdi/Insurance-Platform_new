@@ -329,6 +329,43 @@ async def test_a_commit_is_refused_when_the_job_is_not_a_preview(client) -> None
         assert (await client.get("/api/v1/leads?q=صف ينفذ مرة", headers=auth)).json()["total"] == 1
 
 
+async def test_the_arabic_email_header_is_read_and_a_bad_address_is_a_row_error(client) -> None:
+    """
+    «الإيميل» / «ايميل» / «الايميل» are one column: they differ by the definite article and by how the hamza
+    was typed, and a broker's export uses all three. The alias list only spelled «البريد» and «البريد
+    الإلكتروني», so an «الإيميل» column matched nothing, the whole column disappeared, and a row whose address
+    was `not-an-email` was counted **ready** and imported (R3, `team-round.spec.ts`). Headers are folded
+    through `_norm_header` now — article, hamza and ta-marbuta — so no spelling can silently drop a column.
+    """
+    async with login(client, MANAGER) as auth:
+        sheet = _csv(
+            ("الاسم", "الموبايل", "الإيميل"),
+            [("صف بعنوان صحيح", "01099887711", "ok@example.test"), ("صف بعنوان فاسد", "01099887712", "not-an-email")],
+        )
+        preview = await client.post("/api/v1/leads/import", headers=auth, files={"file": ("leads.csv", sheet, "text/csv")})
+        assert preview.status_code == 201, preview.text
+        job = preview.json()
+        assert job["stats"]["ready"] == 1, job["stats"]
+        assert job["stats"]["errors"] == 1, job["stats"]
+        errors = [entry for entry in job["error_report"] if entry["kind"] == "error"]
+        assert errors[0]["field"] == "email", errors
+        assert errors[0]["row"] == 3, errors
+
+
+async def test_a_column_nobody_recognises_is_reported_instead_of_vanishing(client) -> None:
+    """A header the mapper does not know is carried back as a warning on row 1 — silence is what hid the bug above."""
+    async with login(client, MANAGER) as auth:
+        sheet = _csv(("الاسم", "الموبايل", "الملاحظات السرية"), [("صف بعمود غريب", "01099887721", "شيء ما")])
+        preview = await client.post("/api/v1/leads/import", headers=auth, files={"file": ("leads.csv", sheet, "text/csv")})
+        assert preview.status_code == 201, preview.text
+        job = preview.json()
+        assert job["stats"]["ready"] == 1
+        warnings = [entry for entry in job["error_report"] if entry["kind"] == "warning"]
+        assert warnings and warnings[0]["field"] == "header", job["error_report"]
+        assert "الملاحظات السرية" in warnings[0]["message"]
+        assert job["stats"]["warnings"] == 1
+
+
 def _csv(header: tuple[str, ...], rows: list[tuple[Any, ...]]) -> bytes:
     """A UTF-8 CSV built in-test, matching `_workbook`'s contract (bytes + a real filename)."""
     import csv as _csv_module

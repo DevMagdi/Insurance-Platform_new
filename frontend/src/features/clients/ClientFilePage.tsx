@@ -207,7 +207,7 @@ function OverviewTab({
         </dl>
         {policy ? (
           <p className="mt-4 rounded-btn px-3 py-2 text-[12px] font-semibold" style={{ background: "var(--b-bg)", color: "var(--b-ink)" }}>
-            {t("clients.activeContract")} · {policy.policy_no}
+            {t("clients.activeContract")} · {policy.policy_no ?? "—"}
           </p>
         ) : (
           <p className="mt-4 text-[12.5px] text-muted">{t("phase2.autoInstallments")}</p>
