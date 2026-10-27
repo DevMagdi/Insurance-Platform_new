@@ -20,7 +20,7 @@ import {
   Sparkles,
   StickyNote,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
@@ -61,8 +61,11 @@ export default function InboxPage() {
    * `/inbox/<id>` alone, which dropped `?filter=overdue` — the deep link then flipped itself back to the open
    * queue a tick after it opened, and the "shareable filtered view" was shareable for one frame.
    */
-  const openRequest = (id: string) =>
-    navigate({ pathname: `/inbox/${id}`, search: searchParams.toString() }, { replace: !requestId });
+  const search = searchParams.toString();
+  const openRequest = useCallback(
+    (id: string) => navigate({ pathname: `/inbox/${id}`, search }, { replace: !requestId }),
+    [navigate, search, requestId],
+  );
   const setFilter = (next: QueueFilter) => {
     const params = new URLSearchParams(searchParams);
     if (next === "open") params.delete("filter");
@@ -94,7 +97,7 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!requestId && selected) openRequest(selected);
-  }, [requestId, selected, navigate]);
+  }, [requestId, selected, openRequest]);
 
   const detail = useQuery({
     queryKey: ["requests", "detail", selected],
