@@ -69,10 +69,26 @@ jobs:
       - name: Test database
         run: psql "postgresql://broker:broker@localhost:5432/postgres" -c "CREATE DATABASE brokerhub_test;" || true
       - name: pytest + coverage
+        # The log is captured, not discarded: the raw job log is served from blob storage a reviewer's
+        # sandbox cannot read, so "backend is red" used to be the whole story (see the digest step below).
         run: |
-          coverage run -m pytest -q
-          coverage xml -o coverage.xml
-          coverage report --skip-covered
+          set +e
+          coverage run -m pytest -q --tb=short > /tmp/pytest.log 2>&1
+          code=$?
+          tail -40 /tmp/pytest.log
+          coverage xml -o coverage.xml || true
+          coverage report --skip-covered || true
+          exit $code
+      - name: Failing tests on the PR
+        # WHY: R5 lost a round to a red backend with no readable reason — 234 tests, and the only evidence
+        # available was "exit code 1". This posts the short summary and the first tracebacks as a comment.
+        if: failure() && github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/ci-pytest-digest.py
+          gh pr comment "${{ github.event.number }}" --repo "$GITHUB_REPOSITORY" --body-file /tmp/pytest-failures.md
       - name: Core coverage gate (spec §10)
         run: python scripts/check_core_coverage.py
       - name: Smoke every documented endpoint (seeded, in-process ASGI)
