@@ -7,10 +7,12 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import Conflict, Forbidden, NotFound, ValidationFailed
+from app.core.logging import get_logger
 from app.core.scope import Scope
 from app.core.security import generate_temp_password, hash_password
 from app.domain import permissions as P
@@ -18,6 +20,8 @@ from app.domain.enums import PortalRole, ScopeType
 from app.domain.phone import normalize_mobile
 from app.models.auth import ClientPortalUser, Permission, Role, User, UserScope, role_permissions
 from app.services import audit
+
+log = get_logger("app.users")
 
 
 async def list_users(session: AsyncSession, scope: Scope) -> list[dict[str, Any]]:
@@ -111,7 +115,15 @@ async def create_user(
         is_active=bool(payload.get("is_active", True)),
     )
     session.add(user)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        # The `select` above cannot see a row another request is committing at the same moment; the unique
+        # index on `users.email` is the arbiter. Report it the same way the pre-check does, because the
+        # caller's next action is identical — and never let a double-click reach the client as a 500.
+        await session.rollback()
+        log.info("user_create_conflict", email=email)
+        raise Conflict("A user with this email already exists") from exc
 
     if payload.get("portal_client_id"):
         user.portal_link = ClientPortalUser(user_id=user.id, client_id=UUID(str(payload["portal_client_id"])), portal_role=PortalRole.OWNER)

@@ -19,8 +19,16 @@ class LocalStorage:
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, key: str) -> Path:
-        target = (self.root / key).resolve()
-        if not str(target).startswith(str(self.root.resolve())):
+        """Resolve `key` under the root, refusing anything that escapes it.
+
+        `str(target).startswith(str(root))` was the first guard and it is not one: `/srv/objects_evil`
+        starts with `/srv/objects`, so a sibling directory passed. `Path.is_relative_to` compares path
+        components, which is the property we actually need. Keys are generated server-side and signed,
+        so this was a latent hole rather than an open door — closed while it is cheap.
+        """
+        root = self.root.resolve()
+        target = (root / key).resolve()
+        if target != root and not target.is_relative_to(root):
             raise ValueError("refusing to write outside the storage root")
         return target
 

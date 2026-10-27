@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from tests.helpers import login
@@ -53,6 +55,57 @@ async def test_convert_is_idempotent(client, ids) -> None:
         assert second.status_code == 200
         assert second.json()["already_converted"] is True
         assert second.json()["client_id"] == first["client_id"], "conversion must not duplicate the client"
+
+
+async def test_an_unknown_reference_is_a_422_not_a_500(client, ids) -> None:
+    """A typo in an id is a client mistake: `insurance_type_id` pointing at nothing used to be a 500.
+
+    The foreign key is the only layer that can catch it (the id is free-form on the wire), so the
+    IntegrityError is classified rather than swallowed: a missing reference is 422, a taken unique value
+    is 409. Before the handler existed both arrived as an unhandled server error.
+    """
+    ghost = "00000000-0000-4000-8000-00000000dead"
+    async with login(client, "rep_a@brokerhub.test") as h:
+        bad_type = await client.post("/api/v1/leads", json={"name": "مرجع وهمي", "insurance_type_id": ghost}, headers=h)
+        assert bad_type.status_code == 422, bad_type.text
+        assert bad_type.json()["code"] == "validation_failed"
+    # only a manager may seed the pool with an explicit owner, so this half needs a manager's token
+    async with login(client, "manager@brokerhub.test") as h:
+        bad_owner = await client.post("/api/v1/leads", json={"name": "مسند وهمي", "assigned_to": ghost}, headers=h)
+        assert bad_owner.status_code == 422, bad_owner.text
+        assert bad_owner.json()["details"][0]["field"] == "assigned_to"
+
+
+async def test_two_parallel_converts_create_one_client(client, ids) -> None:
+    """A double-click on «تحويل إلى عميل» must not leave two client files (Live QA: it did).
+
+    The sequential path was already idempotent, which is why the unit suite never saw this: two POSTs
+    launched together both read `converted_client_id IS NULL` and both wrote a client + draft contract.
+    The fix claims the lead with one conditional UPDATE, so the loser sees the winner's client and
+    returns it — same id, `already_converted` on the second answer.
+    """
+    async with login(client, "rep_a@brokerhub.test") as h:
+        lead_id = (await _new_lead(client, h, name="سباق التحويل", mobile="0114445556"))["lead_id"]
+        first, second = await asyncio.gather(
+            client.post(f"/api/v1/leads/{lead_id}/convert", headers=h),
+            client.post(f"/api/v1/leads/{lead_id}/convert", headers=h),
+        )
+        assert first.status_code == 200, first.text
+        assert second.status_code == 200, second.text
+        assert first.json()["client_id"] == second.json()["client_id"], "one lead, one client file"
+        assert {first.json()["already_converted"], second.json()["already_converted"]} == {False, True}
+
+    async with login(client, "manager@brokerhub.test") as mgr:
+        rows = (await client.get("/api/v1/clients", headers=mgr, params={"q": "سباق التحويل", "page_size": 50})).json()
+        assert rows["total"] == 1, f"expected one client file, found {rows['total']}"
+
+
+async def test_a_blank_lead_name_is_refused(client, ids) -> None:
+    """`name="   "` used to be stored as an empty company name (whitespace passed min_length)."""
+    async with login(client, "rep_a@brokerhub.test") as h:
+        for blank in ("   ", "\t\n ", " a "):
+            response = await client.post("/api/v1/leads", json={"name": blank, "type": "company"}, headers=h)
+            assert response.status_code == 422, f"{blank!r} was accepted as a lead name: {response.text}"
 
 
 async def test_account_owner_survives_reassignment(client, ids) -> None:

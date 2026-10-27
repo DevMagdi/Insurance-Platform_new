@@ -10,6 +10,7 @@ from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, Forbidden, NotFound, ValidationFailed
@@ -27,6 +28,7 @@ from app.domain.phone import normalize_mobile
 from app.models.auth import User
 from app.models.clients import Client, ClientContact
 from app.models.leads import Lead, LeadMeeting
+from app.models.masters import InsuranceType, Insurer
 from app.models.phase2 import Policy
 from app.repositories import leads as repo
 from app.services import audit
@@ -81,6 +83,13 @@ async def create(session: AsyncSession, actor: User, scope: Scope, payload: Lead
         assigned_to = payload.assigned_to  # a manager may seed the pool with an explicit owner (or none)
     else:
         assigned_to = actor.id  # reps always own what they create
+
+    # References are checked here, not left to the foreign key: SQLite (dev, and the local test run) does
+    # not enforce FKs unless asked, so a typo used to be stored as a dangling id — and on PostgreSQL it
+    # surfaced as an IntegrityError. An explicit answer names the field, which is what the form needs.
+    await _require_ref(session, InsuranceType, payload.insurance_type_id, "insurance_type_id")
+    await _require_ref(session, Insurer, payload.current_insurer_id, "current_insurer_id")
+    await _require_ref(session, User, assigned_to, "assigned_to")
 
     lead = Lead(
         type=ClientType(payload.type),
@@ -415,6 +424,31 @@ async def convert(session: AsyncSession, actor: User, scope: Scope, lead_id: UUI
 
     owner_id = lead.assigned_to or actor.id
     now = datetime.now(UTC)
+    before = audit.snapshot(lead, _SNAPSHOT_FIELDS)
+
+    # Claim the lead *before* writing the client, with a single conditional UPDATE. The `if` above cannot
+    # see a conversion another request is committing at the same instant; the database can. Measured
+    # before this fix: two parallel POSTs for one lead produced **two** client files and two draft
+    # contracts (the QA matrix caught it — the sequential path was already idempotent). The loser blocks
+    # here until the winner commits, then reads rowcount 0 and returns the winner's client.
+    claimed = await session.execute(
+        sa.update(Lead)
+        .where(Lead.id == lead.id, Lead.converted_client_id.is_(None))
+        .values(status=LeadStatus.WON, converted_by=actor.id, converted_at=now, updated_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if claimed.rowcount == 0:  # type: ignore[attr-defined]  # CursorResult, but `execute` is typed Result
+        await session.rollback()  # discard nothing: the client has not been written yet
+        fresh = await repo.get_by_id(session, lead_id, scope)
+        existing = await session.get(Client, fresh.converted_client_id) if fresh and fresh.converted_client_id else None
+        if existing is not None:
+            return {
+                "client_id": str(existing.id),
+                "already_converted": True,
+                "account_owner_id": str(existing.account_owner_id) if existing.account_owner_id else None,
+            }
+        raise Conflict("This lead is being converted right now — reload it and try again")
+
     client = Client(
         type=ClientType(lead.type.value),
         name=lead.name,
@@ -455,7 +489,6 @@ async def convert(session: AsyncSession, actor: User, scope: Scope, lead_id: UUI
         )
     )
 
-    before = audit.snapshot(lead, _SNAPSHOT_FIELDS)
     lead.status = LeadStatus.WON
     lead.converted_client_id = client.id
     lead.converted_by = actor.id
@@ -508,6 +541,16 @@ async def add_meeting(
         actor_id=actor.id,
     )
     return meeting
+
+
+async def _require_ref(session: AsyncSession, model: type[Any], ref_id: UUID | None, field: str) -> None:
+    if ref_id is None:
+        return
+    if await session.get(model, ref_id) is None:
+        raise ValidationFailed(
+            "A referenced record does not exist",
+            details=[{"field": field, "message": "غير موجود", "type": "unknown_reference"}],
+        )
 
 
 async def _require(session: AsyncSession, lead_id: UUID, scope: Scope) -> Lead:
