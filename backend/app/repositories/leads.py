@@ -100,11 +100,25 @@ async def unassigned_ids(session: AsyncSession, scope: Scope, *, limit: int = 2_
     return list((await session.execute(stmt)).scalars())
 
 
-async def board(session: AsyncSession, scope: Scope, *, assigned_to: UUID | None = None, q: str | None = None) -> dict[str, list[Lead]]:
-    """Kanban payload (screen 3): 5 columns in one query, same predicate as the list."""
+async def board(
+    session: AsyncSession,
+    scope: Scope,
+    *,
+    assigned_to: UUID | None = None,
+    q: str | None = None,
+    unassigned: bool = False,
+) -> dict[str, list[Lead]]:
+    """Kanban payload (screen 3): 5 columns in one query, same predicate as the list.
+
+    `assigned_to` is what a manager uses to answer "where does Mohamed stand?" — the same board shape,
+    one rep's cards. It narrows; it can never widen, because `with_scope` is applied after it (a rep who
+    passes a colleague's id gets an empty board, not that colleague's book).
+    """
     conds: list[Any] = [Lead.status.in_(LeadStatus.board_columns())]
     if assigned_to is not None:
         conds.append(Lead.assigned_to == assigned_to)
+    if unassigned:
+        conds.extend(_UNASSIGNED_POOL)
     if q:
         like = f"%{q.strip().lower()}%"
         conds.append(func.lower(Lead.name).like(like))

@@ -4,6 +4,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.serializers import client_brief, contact_brief, import_job_brief, insured_brief
@@ -18,9 +19,11 @@ from app.api.v1.deps import (
 from app.core.errors import NotFound, TooLarge, ValidationFailed
 from app.core.pagination import Page
 from app.domain.enums import ClientStatus, CoverageStatus
+from app.middleware_ip import ip_of
 from app.models.clients import ImportJob
 from app.repositories import clients as repo
 from app.schemas.clients import ClientCreate, ClientUpdate, ContactCreate, InsuredCreate, InsuredUpdate
+from app.schemas.common import EmailAddress
 from app.schemas.out import (
     AttachmentOut,
     CallOut,
@@ -34,6 +37,7 @@ from app.schemas.out import (
     InsuredOut,
 )
 from app.services import clients as svc
+from app.services import portal_accounts
 
 router = APIRouter(tags=["clients"])
 
@@ -258,3 +262,71 @@ async def get_import_job(job_id: UUID, session: DbSession, scope: ScopeDep, acto
     if job is None or (await repo.get_by_id(session, job.client_id, scope)) is None:
         raise NotFound("Import job not found")
     return import_job_brief(job)
+
+
+# ---------------------------------------------------------------------------------------------
+# portal accounts (ADR-022): the client owner's own login, created from the client file
+# ---------------------------------------------------------------------------------------------
+
+
+class PortalAccountIn(BaseModel):
+    """`email` or `username` identifies the login; a blank password means "generate and show it once"."""
+
+    full_name: str | None = Field(default=None, min_length=2, max_length=160)
+    email: EmailAddress | None = None
+    username: str | None = Field(default=None, min_length=3, max_length=63)
+    password: str = Field(default="", max_length=200)
+    role_code: str = Field(default="client_owner", min_length=3, max_length=32)
+
+
+class PortalPasswordIn(BaseModel):
+    password: str = Field(default="", max_length=200)
+
+
+class PortalUsernameIn(BaseModel):
+    username: str = Field(min_length=3, max_length=63, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]{2,62}$")
+
+
+class PortalActiveIn(BaseModel):
+    is_active: bool
+
+
+@router.get("/clients/{client_id}/portal-accounts", summary="Portal logins of one client")
+async def list_portal_accounts(client_id: UUID, session: DbSession, scope: ScopeDep, actor: ClientsManage) -> list[dict[str, Any]]:
+    return await portal_accounts.list_accounts(session, scope, client_id)
+
+
+@router.post("/clients/{client_id}/portal-accounts", status_code=201, summary="Create a portal login (temp password returned once)")
+async def create_portal_account(
+    client_id: UUID, body: PortalAccountIn, session: DbSession, scope: ScopeDep, actor: ClientsManage
+) -> dict[str, Any]:
+    result = await portal_accounts.create_account(session, actor, scope, client_id, body.model_dump(), ip=ip_of())
+    await session.commit()
+    return result
+
+
+@router.post("/clients/{client_id}/portal-accounts/{user_id}/password", summary="Reset a portal password (returned once)")
+async def reset_portal_password(
+    client_id: UUID, user_id: UUID, body: PortalPasswordIn, session: DbSession, scope: ScopeDep, actor: ClientsManage
+) -> dict[str, Any]:
+    result = await portal_accounts.reset_password(session, actor, scope, client_id, user_id, body.model_dump(), ip=ip_of())
+    await session.commit()
+    return result
+
+
+@router.patch("/clients/{client_id}/portal-accounts/{user_id}", summary="Enable/disable a portal login")
+async def patch_portal_account(
+    client_id: UUID, user_id: UUID, body: PortalActiveIn, session: DbSession, scope: ScopeDep, actor: ClientsManage
+) -> dict[str, Any]:
+    result = await portal_accounts.set_active(session, actor, scope, client_id, user_id, is_active=body.is_active, ip=ip_of())
+    await session.commit()
+    return result
+
+
+@router.put("/clients/{client_id}/portal-accounts/{user_id}/username", summary="Change a portal username")
+async def put_portal_username(
+    client_id: UUID, user_id: UUID, body: PortalUsernameIn, session: DbSession, scope: ScopeDep, actor: ClientsManage
+) -> dict[str, Any]:
+    result = await portal_accounts.update_username(session, actor, scope, client_id, user_id, body.username, ip=ip_of())
+    await session.commit()
+    return result

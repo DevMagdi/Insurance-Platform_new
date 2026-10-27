@@ -172,6 +172,62 @@ async def installments(policy_id: UUID, session: DbSession, scope: ScopeDep, act
     }
 
 
+@router.post("/policies/{policy_id}/issue", summary="Issue a policy → number + PDF document (Phase 2)")
+async def issue_policy(policy_id: UUID, request: Request, session: DbSession, scope: ScopeDep, actor: PoliciesView) -> dict[str, Any]:
+    """`draft → issued` once, with the file written in the same transaction (ADR-021).
+
+    Permission before flag, exactly like `POST /policies`: a rep is not "blocked by a flag", they do not
+    issue policies at all. A second call on the same policy is a `409`, not a second document.
+    """
+    from app.core.errors import Forbidden
+
+    if P.POLICIES_MANAGE not in scope.perms:
+        raise Forbidden("Not allowed", details={"missing": [P.POLICIES_MANAGE]})
+    if not await _flag(session):
+        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
+    from app.services import policy_issue
+
+    result = await policy_issue.issue(
+        session,
+        actor,
+        scope,
+        policy_id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await session.commit()
+    return result
+
+
+@router.get("/policies/{policy_id}/document", summary="Download the issued policy PDF")
+async def policy_document(policy_id: UUID, session: DbSession, scope: ScopeDep, actor: PoliciesView) -> Any:
+    """The stored file, streamed with its own filename. Scoped: a foreign policy answers 404, not 403."""
+    from fastapi.responses import Response
+
+    from app.integrations.storage import storage
+    from app.services import policy_issue
+
+    if not await _flag(session):
+        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
+    _, document = await policy_issue.latest_document(session, scope, policy_id)
+    from app.core.errors import NotFound
+
+    try:
+        payload = storage().get_object(document.object_key)
+    except (FileNotFoundError, ValueError) as exc:
+        raise NotFound("The document file is missing from storage") from exc
+    return Response(
+        content=payload,
+        media_type=document.mime or "application/pdf",
+        headers={
+            # `inline` so the browser's own viewer opens it; the filename is quoted because Arabic
+            # filenames in a raw header are a 500 waiting to happen
+            "content-disposition": f'inline; filename="{document.filename}"',
+            "x-document-checksum": document.checksum or "",
+        },
+    )
+
+
 @router.get("/commissions", summary="Brokerage commission ledger")
 async def commissions(session: DbSession, scope: ScopeDep, actor: CurrentUser) -> Any:
     from app.domain import permissions as P

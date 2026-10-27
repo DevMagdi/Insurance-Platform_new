@@ -18,14 +18,41 @@ export type DownloadedFile = {
 };
 
 export async function downloadFile(path: string, body?: unknown): Promise<DownloadedFile> {
-  const response = await fetch(`${BASE}${path}`, {
-    method: "POST",
+  return send(path, body === undefined ? undefined : JSON.stringify(body));
+}
+
+/**
+ * A GET download — an issued policy PDF, a request attachment, a call recording.
+ *
+ * The bearer token lives in memory, not in a cookie the browser attaches on its own, so an `<a href>` to
+ * these routes always answers 401. The bytes have to be fetched with the token and handed to the browser
+ * as an object URL, which is what this does.
+ */
+export async function downloadGet(path: string, fallbackName = "document.pdf"): Promise<DownloadedFile> {
+  return send(path, undefined, fallbackName);
+}
+
+/**
+ * The API hands back ready-made `download_url`s (`/api/v1/portal/policies/<id>/document`) while screens that
+ * know their own route pass a bare one (`/policies/<id>/document`). Both mean the same thing, and blindly
+ * prefixing turned the first kind into `/api/v1/api/v1/...` — a 404 behind every portal download button,
+ * which the browser reports as "no download happened" (ADR-025).
+ */
+export function downloadUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path; // an absolute/signed URL is already complete
+  const trimmed = path.startsWith(`${BASE}/`) ? path.slice(BASE.length) : path;
+  return `${BASE}${trimmed.startsWith("/") ? "" : "/"}${trimmed}`;
+}
+
+async function send(path: string, body?: string, fallbackName = "export.xlsx"): Promise<DownloadedFile> {
+  const response = await fetch(downloadUrl(path), {
+    method: body === undefined ? "GET" : "POST",
     credentials: "include",
     headers: {
       "content-type": "application/json",
       ...(getAccessToken() ? { authorization: `Bearer ${getAccessToken()}` } : {}),
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body,
   });
 
   if (!response.ok) {
@@ -39,7 +66,7 @@ export async function downloadFile(path: string, body?: unknown): Promise<Downlo
   }
 
   const disposition = response.headers.get("content-disposition") ?? "";
-  const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? "export.xlsx";
+  const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? fallbackName;
   const rows = Number.parseInt(response.headers.get("x-export-rows") ?? "", 10);
   return {
     filename,
@@ -62,5 +89,7 @@ export function saveFile(file: DownloadedFile): void {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  // Revoked on the next tick, not immediately: Chromium starts the download from the click but Firefox
+  // reads the blob afterwards, and an eager `revokeObjectURL` turns a working button into an empty file.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

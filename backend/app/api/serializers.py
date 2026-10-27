@@ -182,6 +182,9 @@ def request_detail(
             "duration_s": m.duration_s,
             "waveform": m.waveform,
             "sender_ref": m.sender_ref,
+            # the provider's own id (wamid / SMS id): the handle a support ticket quotes when a reply
+            # "was sent" but the client says it never arrived
+            "external_id": m.external_id,
             "delivery_status": m.delivery_status.value,
             "created_at": m.created_at,
             "attachments": [],
@@ -284,6 +287,18 @@ def policy_brief(row: Policy) -> dict[str, Any]:
         "insurance_type": None
         if row.insurance_type is None
         else {"id": str(row.insurance_type.id), "code": row.insurance_type.code, "name": row.insurance_type.name},
+        # `None` while the policy is still a draft; the list then offers «إصدار» instead of «تحميل».
+        # `documents` is `lazy="selectin"`, so this costs the query the page already needed.
+        "document": None if not row.documents else _document_brief(row.documents[0], row),
+    }
+
+
+def _document_brief(document: Any, policy: Policy) -> dict[str, Any]:
+    return {
+        "filename": document.filename,
+        "size": document.size,
+        "created_at": document.created_at,
+        "download_url": f"/api/v1/policies/{policy.id}/document",
     }
 
 

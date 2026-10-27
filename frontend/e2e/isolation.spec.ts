@@ -68,8 +68,20 @@ test.describe("sales kanban + isolation (screens 3, 6, 9)", () => {
   test("a manager sees the whole office and every stage column", async ({ page, request }) => {
     await login(page, MANAGER);
     await page.goto("/leads");
-    for (const column of [ar.leads.colNew, ar.leads.colContacted, ar.leads.colMeeting, ar.leads.colQuote, ar.leads.colWon]) {
-      await expect(page.getByText(column, { exact: true }).first()).toBeVisible();
+    // Each lane is asserted *inside its own column*: `data-column` is the board's own handle, and since
+    // R5 the stage filter renders an `<option>` with the same words earlier in the DOM — a `.first()`
+    // text match now resolves to that hidden option and reports the lane as invisible.
+    const lanes = [
+      ["new", ar.leads.colNew],
+      ["contacted", ar.leads.colContacted],
+      ["meeting_scheduled", ar.leads.colMeeting],
+      ["quote_sent", ar.leads.colQuote],
+      ["won", ar.leads.colWon],
+    ] as const;
+    for (const [key, column] of lanes) {
+      const lane = page.locator(`[data-column="${key}"]`);
+      await expect(lane, `the ${key} lane must be on the board`).toBeVisible();
+      await expect(lane.getByText(column, { exact: true }).first()).toBeVisible();
     }
     await expect(page.getByText(ar.leads.isolationBanner)).toHaveCount(0);
 

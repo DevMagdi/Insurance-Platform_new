@@ -24,6 +24,11 @@ boto3>=1.42
 httpx>=0.28,<1
 # --- files ---
 openpyxl>=3.1.5
+# issued-policy PDF (ADR-021): reportlab renders, arabic-reshaper shapes the Arabic, python-bidi applies
+# the Unicode bidi algorithm. The font itself is bundled in `app/assets/fonts` (see its README).
+reportlab>=4.2,<5
+arabic-reshaper>=3.0,<4
+python-bidi>=0.6,<1
 # --- transitive security floors ---
 starlette>=0.47           # GHSA-422c-pjqp-cp3p, GHSA-p94p-q73i-4w9w
 urllib3>=2.7.0            # CVE-2025-66471

@@ -55,7 +55,10 @@ class WebhookEvent(UUIDPkMixin, Base):
     event_type: Mapped[str] = mapped_column(sa.String(64), nullable=False)
     #: the provider's own id (wamid / call id) when it sent one — the handle a support ticket quotes
     external_id: Mapped[str | None] = mapped_column(sa.String(128))
-    #: "ok" | "ignored" | "error"
-    status: Mapped[str] = mapped_column(sa.String(16), default="ok", nullable=False)
+    #: "ok" | "ignored" | "error" | "rejected" | the intake's own result
+    #: ("started" | "ended" | "recording_attached" | "duplicate" …). 32, not 16: `recording_attached` is 18
+    #: characters, and SQLite hides the overflow while PostgreSQL answers 500 *after* the call was saved
+    #: (ADR-024). `record_event` also clamps, so a future provider-shaped string can never do this again.
+    status: Mapped[str] = mapped_column(sa.String(32), default="ok", nullable=False)
     detail: Mapped[str | None] = mapped_column(sa.Text)
     occurred_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow, nullable=False)

@@ -1,6 +1,6 @@
 /** Shared primitives. Every token here is the CSS variable from the design sheet (spec §4). */
 import { AlertTriangle, Inbox, Lock, Search, TriangleAlert } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, ReactNode } from "react";
 
 import { initials as initialsOf } from "@/lib/format";
 import { t } from "@/lib/translate";
@@ -46,7 +46,9 @@ export function Button({
   title,
 }: {
   children?: ReactNode;
-  onClick?: () => void;
+  // the handler receives the event so a button inside a clickable table row can stop the row's own
+  // action (opening the detail dialog) without a wrapper div swallowing the click
+  onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   variant?: "primary" | "secondary" | "ghost" | "danger";
   type?: "button" | "submit";
   icon?: ReactNode;

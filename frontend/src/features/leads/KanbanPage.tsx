@@ -6,11 +6,12 @@
 import { useMemo, useState } from "react";
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ChevronLeft, FileSpreadsheet, GripVertical, PhoneCall, Users, X } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronLeft, FileSpreadsheet, GripVertical, PhoneCall, Users, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import { Avatar, Badge, Button, Card, Chip, PageHeader, SearchInput, StateBlock } from "@/components/ui";
+import type { RepWorkload } from "@/lib/api/views";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
@@ -21,6 +22,16 @@ import { followupLabel, formatNumber } from "@/lib/format";
 import { ImportLeadsDialog } from "./ImportLeadsDialog";
 
 type Board = { columns: LeadBoardColumn[] };
+
+/** Every stage the board can be narrowed to — the empty value is "no filter", not a stage. */
+const STAGE_FILTERS = [
+  { value: "", label: "common.all" },
+  { value: "new", label: "leads.colNew" },
+  { value: "contacted", label: "leads.colContacted" },
+  { value: "meeting_scheduled", label: "leads.colMeeting" },
+  { value: "quote_sent", label: "leads.colQuote" },
+  { value: "won", label: "leads.colWon" },
+] as const;
 
 const COLUMNS = [
   { key: "new", label: "leads.colNew" },
@@ -40,8 +51,27 @@ export default function KanbanPage() {
   const [confirming, setConfirming] = useState<Lead | null>(null);
   const [losing, setLosing] = useState<Lead | null>(null);
   const [importing, setImporting] = useState(false);
+  // Manager filters. `rep` and `pool` are server-side: a browser that filtered one page of 500 cards would
+  // report "محمد عنده 3 ليدز" while the API held 40 — the number and the cards must come from one query.
+  const [repId, setRepId] = useState<string>("");
+  const [stage, setStage] = useState<string>("");
+  const [pool, setPool] = useState(false);
 
-  const board = useQuery({ queryKey: ["leads", "board"], queryFn: () => api.get<Board>("/leads/board") });
+  const team = useQuery({
+    queryKey: ["sales", "team"],
+    queryFn: () => api.get<RepWorkload[]>("/sales/team"),
+    enabled: isManager,
+  });
+
+  const board = useQuery({
+    queryKey: ["leads", "board", { repId, pool }],
+    // a rep never sends `assigned_to`: the scope already answers "mine", and a stray id would only narrow
+    queryFn: () =>
+      api.get<Board>("/leads/board", {
+        ...(isManager && repId ? { assigned_to: repId } : {}),
+        ...(isManager && pool ? { unassigned: true } : {}),
+      }),
+  });
   const stats = useQuery({ queryKey: ["leads", "stats"], queryFn: () => api.get<Record<string, number | null>>("/leads/stats") });
 
   const setStatus = useMutation({
@@ -82,12 +112,14 @@ export default function KanbanPage() {
   const columns = useMemo(() => {
     const source = board.data?.columns ?? [];
     const needle = query.trim().toLowerCase();
-    return COLUMNS.map((column) => {
+    // the stage dropdown hides whole columns rather than emptying them: a manager asking "أين وصلنا في
+    // مرحلة العرض?" wants one lane, not five lanes where four say «لا يوجد»
+    return COLUMNS.filter((column) => !isManager || !stage || column.key === stage).map((column) => {
       const found = source.find((entry) => entry.status === column.key);
       const items = (found?.items ?? []).filter((lead) => !needle || `${lead.name} ${lead.mobile ?? ""}`.toLowerCase().includes(needle));
       return { ...column, items, count: items.length };
     });
-  }, [board.data, query]);
+  }, [board.data, query, stage, isManager]);
 
   function onDragEnd(event: DragEndEvent) {
     const leadId = String(event.active.id);
@@ -155,6 +187,59 @@ export default function KanbanPage() {
         </div>
       ) : null}
 
+      {isManager ? (
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-[12px] font-semibold text-muted">{t("leads.filterRep")}</span>
+            <span className="relative">
+              <select
+                className="field w-[190px] py-[7px] pe-8 text-[13px]"
+                value={repId}
+                onChange={(event) => setRepId(event.target.value)}
+                aria-label={t("leads.filterRep")}
+              >
+                <option value="">{t("leads.filterAllReps")}</option>
+                {(team.data ?? []).map((rep) => (
+                  <option key={rep.rep_id} value={rep.rep_id}>
+                    {rep.name} · {formatNumber(rep.open_leads)}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted" style={{ insetInlineEnd: 10 }} />
+            </span>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-[12px] font-semibold text-muted">{t("leads.filterStage")}</span>
+            <span className="relative">
+              <select
+                className="field w-[170px] py-[7px] pe-8 text-[13px]"
+                value={stage}
+                onChange={(event) => setStage(event.target.value)}
+                aria-label={t("leads.filterStage")}
+              >
+                {STAGE_FILTERS.map((entry) => (
+                  <option key={entry.value} value={entry.value}>
+                    {t(entry.label)}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted" style={{ insetInlineEnd: 10 }} />
+            </span>
+          </label>
+
+          <label className="mb-2 flex items-center gap-2 text-[12.5px] font-semibold text-ink">
+            <input
+              type="checkbox"
+              checked={pool}
+              onChange={(event) => setPool(event.target.checked)}
+              aria-label={t("leads.filterUnassigned")}
+            />
+            {t("leads.filterUnassigned")}
+          </label>
+        </div>
+      ) : null}
+
       <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((kpi) => (
           <Card key={kpi.label} className="!py-4">
@@ -177,7 +262,7 @@ export default function KanbanPage() {
         <StateBlock kind="error" action={<Button onClick={() => void board.refetch()}>{t("common.retry")}</Button>} />
       ) : (
         <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${isManager && stage ? "" : "xl:grid-cols-5"}`}>
             {columns.map((column) => (
               <Column
                 key={column.key}

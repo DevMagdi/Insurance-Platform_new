@@ -149,6 +149,7 @@ async def get_messages(request_id: UUID, session: DbSession, scope: ScopeDep, ac
             "duration_s": m.duration_s,
             "waveform": m.waveform,
             "sender_ref": m.sender_ref,
+            "external_id": m.external_id,
             "delivery_status": m.delivery_status.value,
             "created_at": m.created_at.isoformat(),
             "attachments": [],
@@ -177,6 +178,7 @@ async def reply(request_id: UUID, body: RequestMessageCreate, session: DbSession
         "direction": message.direction.value,
         "channel": message.channel.value,
         "body": message.body,
+        "external_id": message.external_id,
         "delivery_status": message.delivery_status.value,
         "created_at": message.created_at.isoformat(),
     }

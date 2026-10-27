@@ -45,7 +45,20 @@ warn_unused_ignores = false
 disallow_untyped_decorators = false
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "argon2.*", "jwt.*", "boto3.*", "botocore.*", "openpyxl.*", "structlog.stdlib.*"]
+module = [
+    "celery.*",
+    "argon2.*",
+    "jwt.*",
+    "boto3.*",
+    "botocore.*",
+    "openpyxl.*",
+    "structlog.stdlib.*",
+    # document rendering (ADR-021): reportlab ships no stubs, and the two bidi helpers are 30-line
+    # packages without a `py.typed`. The types we need are the return of one function, asserted below.
+    "reportlab.*",
+    "arabic_reshaper.*",
+    "bidi.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

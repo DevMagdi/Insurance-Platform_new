@@ -104,15 +104,17 @@ async def lose(lead_id: UUID, body: LeadLose, session: DbSession, scope: ScopeDe
     return lead_brief(lead)
 
 
-@router.get("/leads/board", summary="Kanban payload (5 columns, scoped)", response_model=LeadBoardOut)
+@router.get("/leads/board", summary="Kanban payload (5 columns, scoped; manager can filter by rep)", response_model=LeadBoardOut)
 async def board(
     session: DbSession,
     scope: ScopeDep,
     actor: LeadsView,
     assigned_to: UUID | None = None,
     q: str | None = None,
+    unassigned: bool = False,
 ) -> dict[str, Any]:
-    grouped = await repo.board(session, scope, assigned_to=assigned_to, q=q)
+    """`assigned_to` narrows to one rep, `unassigned=true` shows the pool. Neither can widen the scope."""
+    grouped = await repo.board(session, scope, assigned_to=assigned_to, q=q, unassigned=unassigned)
     return {"columns": [{"status": status, "count": len(rows), "items": [lead_brief(r) for r in rows]} for status, rows in grouped.items()]}
 
 

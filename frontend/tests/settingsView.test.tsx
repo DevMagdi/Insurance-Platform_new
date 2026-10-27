@@ -150,12 +150,15 @@ describe("drift gates against the backend", () => {
       "from_email",
       "from_name",
       "host",
+      "number",
       "phone_number_id",
       "port",
       "provider",
+      "provider_url",
       "receive_media",
       "recording_retention_days",
       "reply_to",
+      "trunk",
       "username",
     ]);
     const labels = { ar: ar.settings.field as unknown as Record<string, string>, en: en.settings.field as unknown as Record<string, string> };

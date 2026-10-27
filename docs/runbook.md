@@ -158,7 +158,7 @@ ROLLBACK;
 كل حفظ وكل اختبار وكل تبديل حيّ/محاكاة يكتب صفاً في `audit_logs` بأسماء الحقول لا بقيمها.
 
 بوابة «كل النقاط شغّالة»: `python scripts/smoke_api.py` — قاعدة مؤقتة مُزروعة ثم كل `(path, method)` في
-وثيقة OpenAPI (107 نداءً؛ 2 مستثنيان بسبب مكتوب). تُشغَّل في CI بعد بوابات التغطية.
+وثيقة OpenAPI (125 نداءً؛ 2 مستثنيان بسبب مكتوب). تُشغَّل في CI بعد بوابات التغطية.
 
 
 ## 6) الوسائط والتسجيلات
@@ -171,11 +171,96 @@ ROLLBACK;
   `aws s3api head-object --bucket brokerhub --key <object_key>`؛ ومع المخزن المحلي ابحث في وحدة
   `objectsdata` (`docker compose exec backend ls -l /srv/objects/<prefix>`).
 
+## 6.1) القنوات الحيّة: واتساب (Meta Cloud API) والسنترال
+
+الوضع الافتراضي `INTEGRATIONS_DRIVER=sim` (كل شيء يُسجَّل ولا يخرج). الانتقال إلى `live` لا يحتاج نشراً
+جديداً: الشاشة `/settings` هي المصدر (صف `integration_configs` يتغلّب على متغيّر البيئة، ADR-016)،
+وبعد أي حفظ تُشغَّل `registry.prime()` — أي أن السائق يُعاد بناؤه بلا إعادة تشغيل. إن كان لديك أكثر من
+عامل API، أعد تشغيل العمال بعد الحفظ (المذكرة في `registry.py`).
+
+### أ) واتساب — خطوات Meta بالترتيب
+
+1. **التطبيق**: من <https://developers.facebook.com/apps> أنشئ تطبيقاً من نوع *Business*، أضف منتج
+   **WhatsApp**، واربطه بـWABA (WhatsApp Business Account).
+2. **الأرقام**: من *WhatsApp → API Setup* خُذ **Phone Number ID** (رقم داخلي، ليس رقم الهاتف) و
+   **WhatsApp Business Account ID** (WABA ID). أضف رقم المرسل ووثّقه إن لم يكن تجريبياً.
+3. **التوكن**: استخدم *System User* دائم من Business Settings بصلاحية `whatsapp_business_messaging` +
+   `whatsapp_business_management`، لا التوكن التجريبي (24 ساعة).
+4. **App Secret**: *Settings → Basic → App Secret*. هذا هو مفتاح توقيع `X-Hub-Signature-256`؛ بدونه كل
+   حدث وارد يُرفض بـ403 (وهذا هو السلوك الصحيح).
+5. **Verify Token**: اختَر سلسلة عشوائية طويلة أنت نفسك، واكتب نفسها في مكانين: شاشة `/settings` وهذه
+   الخطوة في Meta (*Webhooks → Verify token*).
+6. **Callback URL**: `https://<نطاق-الوسيط>/api/v1/webhooks/whatsapp`، واشترك في حقل `messages`
+   (و`message_template_status_update` إن كنت تستخدم القوالب). Meta تُرسل `GET` أولاً:
+   - `hub.mode=subscribe`، `hub.verify_token`، `hub.challenge`؛ نردّ نص الـchallenge كما هو.
+   - أي فشل يُكتب في `webhook_events` كـ`event_type=verification, status=rejected` مع السبب.
+7. **الحقول في الشاشة**: Phone Number ID، WABA ID، Access Token (سري، يُخزَّن مشفّراً ولا يُعاد)، Verify
+   Token (سري)، App Secret (سري). الشهادة بجانب البطاقة: `حيّ` / `محاكاة` / `غير مُعدّ`.
+8. **اختبار الاتصال** يضرب `graph.facebook.com/debug_token` بالتوكن المحفوظ ويقول إن كان صالحاً ولمن.
+
+اختبار سريع للرد الخارجي (بعد حفظ الأسرار، و`INTEGRATIONS_DRIVER=live`):
+
+```bash
+curl -sS -X POST "https://graph.facebook.com/v21.0/<PHONE_NUMBER_ID>/messages" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" -H "Content-Type: application/json" \
+  -d '{"messaging_product":"whatsapp","to":"201012345678","type":"text","text":{"body":"اختبار من وسيط"}}'
+# المتوقع: {"messages":[{"id":"wamid...", ...}]} — وهذا الـwamid هو ما يظهر في خيط الطلب كـexternal_id
+```
+
+ولاختبار الاستقبال من داخل النشر (بدون Meta) — جسم موقَّع بمفتاحك، ويجب أن يعطي 200 ويفتح طلباً:
+
+```bash
+SECRET="<APP_SECRET>"; BODY='{"object":"whatsapp_business_account","entry":[{"changes":[{"value":{"contacts":[{"wa_id":"201012345678","profile":{"name":"اختبار"}}],"messages":[{"id":"wamid.runbook_1","from":"201012345678","type":"text","text":{"body":"اختبار runbook"}}]}}]}]}'
+SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')"
+curl -sS -X POST "https://<نطاق-الوسيط>/api/v1/webhooks/whatsapp" \
+  -H "Content-Type: application/json" -H "X-Hub-Signature-256: $SIG" -d "$BODY"
+# المتوقع: {"received":1,"results":[{"status":"created","request_id":"..."}]}
+# إعادة نفس الأمر تعطي {"status":"duplicate"} — لا طلب ثانٍ ولا رسالة ثانية
+```
+
+### ب) السنترال (PBX)
+
+1. في السنترال اضبط **Webhook URL** = `https://<نطاق-الوسيط>/api/v1/webhooks/telephony`، ومفتاح
+   التوقيع المشترك هو نفسه `webhook_secret` في الشاشة.
+2. الأحداث المطلوبة: `call.started`، `call.ended`، `recording_ready`. الأسماء البديلة مقبولة
+   (`CallSid`/`CallStatus`/`From`/`To`/`Duration`/`RecordingUrl`) — يُطبَّعها `parse_event`.
+3. الحقول في الشاشة: `provider_url` (جذر السنترال، ويُستخدم في فحص الوصول **وفي حصر المضيف**)، `number`،
+   `trunk`، `webhook_secret` (سري).
+4. **مضيف التسجيل**: إن كان `provider_url` مضبوطاً فلن يُنزَّل تسجيل من مضيف آخر (422 + تحذير في السجل).
+   إن كان السنترال يقدّم التسجيلات من دومين CDN منفصل، أضف ذلك الدومين كـ`provider_url` — ولا تُفرغ الحقل.
+5. **اختبار الاتصال** يتحقق من شيئين ويعرض السبب: توقيع HMAC متسق محلياً + هل `provider_url` يرد الآن
+   (رفض 5xx = غير سليم). «التوقيع سليم لكن السنترال غير قابل للوصول» رسالة مقصودة.
+
+توقيع يدوي للاختبار:
+
+```bash
+SECRET="<WEBHOOK_SECRET>"; BODY='{"call_id":"CA-runbook-1","event":"call.started","from":"+201000000001","direction":"inbound"}'
+SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')"
+curl -sS -X POST "https://<نطاق-الوسيط>/api/v1/webhooks/telephony" \
+  -H "Content-Type: application/json" -H "X-Call-Signature: $SIG" -d "$BODY"
+# المتوقع: {"status":"started","request_id":"..."} — وطلب بقناة call يظهر للمدير/خدمة العملاء
+```
+
+`recording_ready` مع `"recording_url":"https://<host-السنترال>/rec/x.wav"` يُنزّل الملف ويخزّنه بمفتاح
+`calls/CA-runbook-1.wav`؛ وإن تعذّر التنزيل يظهر `recording_fetch_failed` في
+`GET /api/v1/settings/integrations/events` ولا تُسقَط المكالمة.
+
+### ج) حسابات بوابة العملاء
+
+- تُنشأ من **ملف العميل → «دخول بوابة العميل»**: اسم مستخدم (٣ أحرف على الأقل، `a-z0-9._-`) أو بريد.
+- كلمة المرور المؤقتة تظهر **مرة واحدة**؛ إن ضاعت فاضغط «كلمة مرور جديدة» (يُبطل جلسات العميل القديمة).
+- «إيقاف» يمنع الدخول (403) ويُبقي التاريخ؛ لا تحذف حساب عميل — أوقفه.
+- سيناريو شكوى «العميل لا يستطيع الدخول»: تحقّق من `is_active`، ثم وجود `client_portal_users`، ثم أن
+  اسم المستخدم لم يُغيَّر، وأخيراً `audit_logs` حيث `action='portal.password_reset'`.
+
 ## 7) حوادث متكررة — تشخيص من نقطتين
 
 | العَرَض | أول فحص | ثاني فحص |
 | --- | --- | --- |
-| رسالة واتساب واردة لم تفتح طلبًا | `docker compose logs backend \| grep webhooks/whatsapp` (401 توقيع؟) | `INTEGRATIONS_DRIVER` (إن كان `live` فلن يعمل `/dev/sim`)، و`WHATSAPP_APP_SECRET` |
+| رسالة واتساب واردة لم تفتح طلبًا | `docker compose logs backend \| grep webhooks/whatsapp` (401 توقيع؟) | `GET /api/v1/settings/integrations/events` — صف `rejected` يحمل السبب؛ وتأكد أن App Secret نفسه في Meta وفي الشاشة |
+| الرد على واتساب «تم» والعميل يقول لم يصله | `external_id` (wamid) في خيط الطلب: فارغ = لم تُرسَل | صفحة `/settings` → شهادة واتساب + «اختبار الاتصال» (توكن منتهٍ؟) |
+| مكالمة مسجّلة بلا صوت | `webhook_events` حيث `event_type='recording_fetch_failed'` | مضيف `recording_url` ≠ `provider_url` (حصر SSRF) أو انتهت صلاحية الرابط قبل التنزيل |
+| السياسة «صدرت» بلا ملف | `select * from policy_documents where policy_id='…'` | أعد الإصدار من مسودة (409 يعني أن الملف موجود) وتحقق من `STORAGE_DIR`/`STORAGE_BACKEND` |
 | نفس الرسالة فتحت طلبين | `select external_id, count(*) from request_messages group by 1 having count(*)>1` | الفهرس الفريد على `external_id` موجود؟ (0002) |
 | التسجيل لا يعمل | الشبكة: هل `src` يبدأ بـ `/api/v1/media/`؟ | صلاحية `calls.listen` للدور، وتاريخ `expires=` |
 | المندوب يرى بيانات زميل | `Scope.mode` (يجب `owner`) | هل `account_owner_id/assigned_to` مضبوطة؟ وسياسات RLS مفعّلة (`ALTER TABLE … ENABLE ROW LEVEL SECURITY`) |
@@ -183,6 +268,15 @@ ROLLBACK;
 | استيراد Excel معلّق | `select id,status,total_rows,stats from import_jobs order by created_at desc limit 5` | `status='dry_run'` يعني لم يُضغط تأكيد؛ `failed` اقرأ `error_report` |
 | اللوحة أرقامها قديمة | TanStack Query cache: `staleTime` في `src/lib/api/client.ts` | شغّل `sla_sweep` يدويًا: `celery call broker_hub.sla_sweep` |
 | 429 عند الدخول | `LOGIN_MAX_ATTEMPTS` (5) و`LOGIN_LOCKOUT_SECONDS` (300) | الجدول في `app/services/auth.py`؛ إعادة التشغيل تصفّر العدّادات في الوضع غير الدائم |
+
+### ثلاث قواعد تعلّمناها بالدم (R5)
+
+1. **`sqlite` ليس `postgres`.** العرض `VARCHAR(n)` لا يُفرض محلياً ويُفرض في الإنتاج. أي عمود يُكتب فيه
+   ما يصل من مزوّد خارجي (حالة، نوع حدث، معرّف) يُختبر بعرضه لا بقيمته (ADR-024). المؤشر: تحقق من
+   `INSERT` في `webhook_events` بعد أي حدث سنترال.
+2. **السجل لا يمنع العملية.** `record_event` يقصّ ولا يرفع؛ أثرٌ لا يُكتب أفضل من نداء ناجح يُلغى.
+3. **قبل «تم»: الملف مفتوح.** أي PDF يُراجَع بصرياً (صفحة واحدة على الأقل) — تشكيل العربية لا يظهر في
+   الاختبارات، ظهر في معاينة `pypdfium2` فقط.
 
 ## 8) النسخ الاحتياطي والاستعادة
 

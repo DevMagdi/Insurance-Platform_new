@@ -13,8 +13,25 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
+from app.core.logging import get_logger
 from app.core.security import verify_webhook_signature
 from app.integrations.base import ProviderResult
+
+log = get_logger("integrations.whatsapp")
+
+#: `None` means the real network. A contract test sets a `httpx.MockTransport` so the *live* code path
+#: (URL, bearer token, payload shape, error mapping) is what runs — swapping the driver for the simulator
+#: would assert nothing about the code that ships.
+_transport: httpx.AsyncBaseTransport | None = None
+
+
+def use_transport(transport: httpx.AsyncBaseTransport | None) -> None:
+    global _transport
+    _transport = transport
+
+
+def _client(timeout: float = 15.0) -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=timeout, transport=_transport)
 
 
 class WhatsAppSim:
@@ -64,7 +81,7 @@ class WhatsAppMeta:
         return verify_webhook_signature(payload, signature_header, self.app_secret)
 
     async def send_text(self, *, to: str, body: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with _client() as client:
             response = await client.post(
                 f"{self.BASE}/{self.phone_number_id}/messages",
                 headers={"Authorization": f"Bearer {self.token}"},
@@ -86,7 +103,7 @@ class WhatsAppMeta:
                 "components": [{"type": "body", "parameters": [{"type": "text", "text": v} for v in variables]}] if variables else [],
             },
         }
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with _client() as client:
             response = await client.post(
                 f"{self.BASE}/{self.phone_number_id}/messages",
                 headers={"Authorization": f"Bearer {self.token}"},
@@ -97,7 +114,7 @@ class WhatsAppMeta:
         return ProviderResult(ok=bool(ok), external_id=external, detail=None if ok else response.text[:300]).as_dict()
 
     async def fetch_media(self, media_id: str) -> tuple[bytes, str]:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with _client(timeout=30) as client:
             meta = (await client.get(f"{self.BASE}/{media_id}", headers={"Authorization": f"Bearer {self.token}"})).json()
             url = meta.get("url", "")
             media = await client.get(url, headers={"Authorization": f"Bearer {self.token}"})

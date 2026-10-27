@@ -35,6 +35,7 @@ async def list_users(session: AsyncSession, scope: Scope) -> list[dict[str, Any]
             {
                 "id": str(user.id),
                 "email": user.email,
+                "username": user.username,
                 "full_name": user.full_name,
                 "mobile": user.mobile,
                 "role": user.role.code,
@@ -86,6 +87,9 @@ async def create_user(
     email = str(payload["email"]).strip().lower()
     if (await session.execute(select(User.id).where(func.lower(User.email) == email))).scalar_one_or_none():
         raise Conflict("A user with this email already exists")
+    username = str(payload.get("username") or "").strip().lower() or None
+    if username and (await session.execute(select(User.id).where(func.lower(User.username) == username))).scalar_one_or_none():
+        raise Conflict("This username is already taken", details={"username": username})
     role = (await session.execute(select(Role).where(Role.code == payload["role_code"]))).scalar_one_or_none()
     if role is None:
         raise ValidationFailed("Unknown role", details={"role_code": payload["role_code"]})
@@ -106,6 +110,7 @@ async def create_user(
         raise ValidationFailed("Password must be at least 10 characters")
     user = User(
         email=email,
+        username=username,
         password_hash=hash_password(password),
         full_name=payload["full_name"],
         mobile=normalize_mobile(payload.get("mobile")),

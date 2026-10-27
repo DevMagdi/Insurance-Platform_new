@@ -13,6 +13,7 @@ import { api } from "@/lib/api/client";
 import { formatDuration, formatMoney, formatNumber, relativeTime } from "@/lib/format";
 import type { ClientOverview, InsuredList, RequestPage } from "@/lib/api/views";
 import type { components } from "@/lib/api/schema";
+import { PortalAccountsCard } from "./PortalAccountsCard";
 
 type Tab = "overview" | "requests" | "staff" | "documents" | "calls";
 type ClientCall = components["schemas"]["CallOut"];
@@ -196,23 +197,29 @@ function OverviewTab({
         </div>
       </Card>
 
-      <Card>
-        <SectionTitle>{t("clients.file.contract")}</SectionTitle>
-        <dl className="space-y-3 text-[13px]">
-          <Row label={t("clients.file.contractStart")} value={policy?.start_date ?? contractStart ?? "—"} />
-          <Row label={t("clients.file.contractEnd")} value={policy?.end_date ?? contractEnd ?? "—"} />
-          <Row label={t("phase2.colPremium")} value={policy?.premium_amount ? formatMoney(policy.premium_amount) : "—"} />
-          <Row label={t("clients.file.paymentPlan")} value={policy?.payment_plan ?? "—"} />
-          <Row label={t("clients.colStaff")} value={`${formatNumber(policy?.headcount ?? 0)} ${t("leads.insured_count")}`} />
-        </dl>
-        {policy ? (
-          <p className="mt-4 rounded-btn px-3 py-2 text-[12px] font-semibold" style={{ background: "var(--b-bg)", color: "var(--b-ink)" }}>
-            {t("clients.activeContract")} · {policy.policy_no ?? "—"}
-          </p>
-        ) : (
-          <p className="mt-4 text-[12.5px] text-muted">{t("phase2.autoInstallments")}</p>
-        )}
-      </Card>
+      <div className="space-y-4">
+        <Card>
+          <SectionTitle>{t("clients.file.contract")}</SectionTitle>
+          <dl className="space-y-3 text-[13px]">
+            <Row label={t("clients.file.contractStart")} value={policy?.start_date ?? contractStart ?? "—"} />
+            <Row label={t("clients.file.contractEnd")} value={policy?.end_date ?? contractEnd ?? "—"} />
+            <Row label={t("phase2.colPremium")} value={policy?.premium_amount ? formatMoney(policy.premium_amount) : "—"} />
+            <Row label={t("clients.file.paymentPlan")} value={policy?.payment_plan ?? "—"} />
+            <Row label={t("clients.colStaff")} value={`${formatNumber(policy?.headcount ?? 0)} ${t("leads.insured_count")}`} />
+          </dl>
+          {policy ? (
+            <p className="mt-4 rounded-btn px-3 py-2 text-[12px] font-semibold" style={{ background: "var(--b-bg)", color: "var(--b-ink)" }}>
+              {t("clients.activeContract")} · {policy.policy_no ?? "—"}
+            </p>
+          ) : (
+            <p className="mt-4 text-[12.5px] text-muted">{t("phase2.autoInstallments")}</p>
+          )}
+        </Card>
+
+        {/* the login of the client's own owner: created where the client is, because it only means
+            something when it is pinned to this company (ADR-022) */}
+      <PortalAccountsCard clientId={clientId} />
+      </div>
     </div>
   );
 }
