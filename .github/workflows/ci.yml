@@ -222,12 +222,28 @@ jobs:
           docker compose -f infra/docker-compose.yml up -d --wait --wait-timeout 420 2>&1 | tee /tmp/compose-up.log
           docker compose -f infra/docker-compose.yml ps | tee -a /tmp/compose-up.log
       - name: The stack answers over HTTP
+        # Every check names what it measured before it fails: `curl -f` exits 22 for *any* 4xx/5xx, so the
+        # bare form this replaced told a reviewer nothing but "exit code 22" (which is exactly what the next
+        # round would have had to guess at). The OpenAPI document is served by the API at `/openapi.json`
+        # (root), not under the version prefix — asking for `/api/v1/openapi.json` was the 404.
         run: |
-          curl -fsS localhost:8000/healthz
+          set -euo pipefail
+          step() { printf '\n== %s\n' "$1"; }
+          step "API liveness (direct)"
+          curl -fsS -w '  /healthz → %{http_code}\n' -o /dev/null localhost:8000/healthz
+          step "SPA shell served by nginx"
           curl -fsS localhost:5173/ | grep -q 'id="root"'
-          # the SPA's /api proxy and the API's own route table, through the same nginx
-          curl -fsS localhost:5173/api/v1/openapi.json -o /tmp/spec.json
-          python3 -c "import json;d=json.load(open('/tmp/spec.json'));print('paths:',len(d['paths']))"
+          echo '  localhost:5173/ contains the #root mount'
+          step "OpenAPI document (direct)"
+          curl -fsS localhost:8000/openapi.json -o /tmp/spec.json
+          python3 -c "import json;d=json.load(open('/tmp/spec.json'));print('  paths:',len(d['paths']))"
+          step "the SPA's /api proxy reaches the API"
+          # an unknown credential must be answered by the API (401 unauthorized), never by nginx (404 page)
+          code=$(curl -s -o /tmp/login.json -w '%{http_code}' -X POST localhost:5173/api/v1/auth/login \
+            -H 'content-type: application/json' -d '{"email":"nobody@brokerhub.test","password":"wrong-password"}')
+          cat /tmp/login.json; echo
+          test "$code" = "401" || { echo "proxy answered $code, not the API's 401"; exit 1; }
+          echo '  the proxy answered with the API body (401)'
       - name: Seed and log in through the stack
         # `app/seed.py` is idempotent and demo-only; the password is overridden here so the CI run does not
         # exercise the repo's fallback credential
@@ -240,8 +256,10 @@ jobs:
             -H 'content-type: application/json' \
             -d "{\"email\":\"admin@brokerhub.test\",\"password\":\"$SEED_PASSWORD\"}" \
             | python3 -c "import json,sys;print(json.load(sys.stdin)['access_token'])")
-          curl -fsS "localhost:5173/api/v1/clients?limit=1" -H "authorization: Bearer $TOKEN" -o /tmp/clients.json
+          # `page_size` (1..200) is the documented page control; `limit` is not a parameter of this route.
+          curl -fsS "localhost:5173/api/v1/clients?page_size=1" -H "authorization: Bearer $TOKEN" -o /tmp/clients.json
           python3 -c "import json;d=json.load(open('/tmp/clients.json'));print('clients page total:',d.get('total'))"
+          test "$(python3 -c "import json;print(json.load(open('/tmp/clients.json')).get('total') or 0)")" -gt 0
       - name: Compose logs on failure
         if: failure()
         continue-on-error: true
