@@ -23,9 +23,14 @@ REPORT = Path(os.environ.get("PLAYWRIGHT_JSON_OUTPUT_NAME", "/tmp/playwright-res
 OUT = Path(os.environ.get("E2E_SUMMARY_FILE", "/tmp/e2e-summary.md"))
 
 
-def _specs(suite: dict[str, Any], trail: tuple[str, ...] = ()) -> list[dict[str, Any]]:
-    """Flatten suites → one row per (spec, project, status), with the `describe` trail for readability."""
+def _specs(suite: dict[str, Any], trail: tuple[str, ...] = (), file: str = "?") -> list[dict[str, Any]]:
+    """Flatten suites → one row per (spec, project, status), with the `describe` trail for readability.
+
+    Playwright puts the spec *file* on the outer suite and repeats the describe titles per level, so the file
+    is carried down instead of read from the leaf (reading it there produced `?` for every row).
+    """
     rows: list[dict[str, Any]] = []
+    file = str(suite.get("file") or file)
     title = str(suite.get("title", ""))
     inner = tuple([*trail, *(() if not title or title.endswith(".spec.ts") else (title,))])
     for spec in suite.get("specs", []):
@@ -34,7 +39,7 @@ def _specs(suite: dict[str, Any], trail: tuple[str, ...] = ()) -> list[dict[str,
             for result in test.get("results", []):
                 rows.append(
                     {
-                        "file": str(loc.get("file") or "?"),
+                        "file": str(loc.get("file") or file),
                         "line": loc.get("line", "?"),
                         "title": " › ".join([*inner, str(spec.get("title", ""))]),
                         "project": test.get("projectName") or "?",
@@ -43,7 +48,7 @@ def _specs(suite: dict[str, Any], trail: tuple[str, ...] = ()) -> list[dict[str,
                     }
                 )
     for child in suite.get("suites", []):
-        rows.extend(_specs(child, inner))
+        rows.extend(_specs(child, inner, file))
     return rows
 
 

@@ -25,7 +25,7 @@
 | M7 البورتال | ✅ منتهية | `services/portal.py` · `tests/test_portal.py` (اختبار يمنع تسرّب أي مفتاح حسّاس) |
 | M8 المرحلة الثانية (وثائق/أقساط/عمولات/إصدار/تقارير) خلف flag | 🟡 واجهات كاملة + API مقروء؛ الأعمال اليدوية فقط | `api/v1/endpoints/phase2.py` · `tests/test_dashboard_phase2.py` · الشاشات 12–14 تعمل عند تفعيل `phase2.enabled` |
 | M9 التوثيق والمحاكاة وتشغيل UI | 🟡 جزئي | هذا الملف + [`runbook.md`](runbook.md) + [`ui-parity/`](ui-parity/README.md) · لقطات الشاشة تُنتَج في CI فقط (انظر «ما لم يُشغَّل») |
-| M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | بعد R2: backend أخضر على SQLite (**176** + 9 مُتخطَّاة بعلامة `postgres_only`)، و**PostgreSQL 16 يقيسه CI** وحده في هذه البيئة · frontend أخضر (77 اختبار وحدة في 9 ملفات + `build` ✓) · e2e: typecheck ✓ و**10 ملفات / 146 اختبارًا مُكتشَفًا** (مشروعا desktop+mobile) لكنها **لم تُشغَّل** محلياً (لا متصفح — «ما لم يُشغَّل» 1، وسطر 18) · ruff (146 ملفاً)/mypy (107)/تغطية النواة (14/14)/استقرار الـOpenAPI (98 مساراً)/**تمرير كل النقاط** نظيفة |
+| M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | بعد R3: backend أخضر على SQLite (**198** + 9 مُتخطَّاة بعلامة `postgres_only`)، و**PostgreSQL 16 يقيسه CI** وحده في هذه البيئة · frontend أخضر (82 اختبار وحدة في 11 ملفاً + `build` ✓) · e2e: نوعان من الأدلة — typecheck محلي ✓، و**CI شغّلها فعلاً: 166 اختباراً · 131 ناجحاً · 0 فاشل · 35 مُتخطٍّ** (تعليق تلقائي بالأرقام على الـPR #6) · ruff (146 ملفاً)/mypy (107)/تغطية النواة (14/14)/استقرار الـOpenAPI (98 مساراً)/**تمرير كل النقاط** نظيفة |
 | R1 مركز الإعدادات: تكاملات حقيقية + إنشاء وثيقة | ✅ منتهية (محلياً) | `/settings` بثلاث بطاقات + حيّ/محاكاة بتأكيد + سجلّ `webhook_events` + `POST /policies` بجدول أقساط وعمولة · `tests/test_integrations_settings.py` (16) · `frontend/tests/settingsView.test.tsx` (14) · ADR-016 |
 | R2 مكتب المبيعات: مقاعد + استيراد Excel/CSV + إعادة توزيع الحوض | ✅ منتهية (محلياً؛ e2e تُقاس في CI) | `POST /leads/import` ⇒ `lead_import_jobs` + `POST /leads/assign-bulk` + `/sales-team/members` · `tests/test_lead_import.py` (10) `tests/test_team_members.py` (6) `tests/test_lead_redistribute.py` (11) · `frontend/tests/teamRound.test.tsx` (8) · `frontend/e2e/team-round.spec.ts` (4) · ADR-017 · جدول Proof حيّ في هذا الملف |
 | مزوّد AI (§11 M10): واجهة واحدة خلف `ai.enabled` + مراجعة بشرية | ✅ السطح كامل بسائق محاكاة · ⬜ بلا مزوّد حقيقي | `integrations/ai_sim.py` (حتمي، استخلاصي) · `endpoints/ai.py`: `GET /ai/status` · `POST /ai/calls/{id}/transcribe` · `POST /ai/requests/{id}/summarize` · `POST /ai/classify` · `tests/test_ai.py` (7) · زر «تلخيص آلي» في `InboxPage` يظهر فقط عند تشغيل الراية · ADR-013 |
@@ -114,6 +114,27 @@ from source "EnvSettingsSource"
 وأُضيف للوظيفة ما يجعل الدورة القادمة لا تحتاج تخميناً: `compose up` يُكتب إلى `/tmp/compose-up.log`
 (`tee` + `pipefail`) ويُنشر مع `ps -a` وسجلّات الحاويات وقائمة الصور المطلوبة وحالتها.
 
+### 3.5) النتيجة النهائية على هذا الفرع (أرقام من الـPR نفسه، لا من التوقّع)
+
+| الرأس | e2e | docker | المصدر |
+|---|---|---|---|
+| `main` قبل الجولة | **13 فاشلاً** · 89 ناجح · 29 مُتخطٍّ (+15 لم تُشغَّل) | فاشل | ملاحظات الـjob + لقطة سابقة |
+| `607eb0a` (الجولة 1) | **14 فاشلاً** · 107 ناجح · 45 مُتخطٍّ | فاشل (`pull access denied`) | تعليق «فشل e2e…» على الـPR |
+| `3b0d35d` | **5 فاشلة** · 126 ناجح · 35 مُتخطٍّ | فاشل (`CORS_ORIGINS`) | نفس التعليق + تشخيص docker |
+| `055803a` | **0 فاشل** | **نجح** (المكدّس صعد، `/healthz`، الترحيلات الخمسة، الدخول عبر nginx) | `gh run view 40472703167` |
+| `a7e9994` | **0 فاشل · 131 ناجح · 35 مُتخطٍّ** من 166 | **نجح** | تعليق «e2e · الأرقام من تقرير Playwright نفسه» |
+
+التشغيل الأخير كامل: **166 اختباراً · 131 ناجحاً · 0 فاشل · 35 مُتخطٍّ · 0 متذبذب** — والتخطيات كلها
+معلنة بالاسم في تعليق تلقائي على الـPR (لقطات الشاشة لكل مقاس على حِدة، وشاشات سطح مكتب لا تُقاس على 390،
+والحوارات الإدارية بموجب ADR-019). لا اختبار واحد حُذف، ولا `timeout` واحد وُسِّع.
+
+**ما الذي كسر الثلاثة عشر وواحداً؟** كل فشل رُبط بسببه من مخرجاته، ولم يبقَ منها شيء: 500 على
+`/clients/{id}/overview` (نوعان: `insurance_type.id` الناقص ثم `policy_no` غير القابل للـnull)، هيكل غير
+متجاوب، قراءة فورية بدل `expect.poll`، لافتة ونصوص متطابقة أكثر من مرة، أرقام موبايل ثابتة/متلاصقة في
+الـfixtures، ترتيب قائمة أدوار أبجدي يُنشئ مدير حساب بدل بياع، حوار أطول من الشاشة، واختبار يسأل الجوال عن
+شريط سطح المكتب. واكتشفنا معها عيبين منتجيين لم يرهما أحد: عمود «الإيميل» يُهمَل بصمت، و`CORS_ORIGINS`
+يُسقط الـAPI عند الاستيراد.
+
 ### 4) أوامر التحقق في هذه الجلسة (مخرجات حقيقية)
 
 backend (SQLite؛ PostgreSQL يقيسه CI وحده):
@@ -122,7 +143,7 @@ backend (SQLite؛ PostgreSQL يقيسه CI وحده):
 ruff check .                → All checks passed!
 ruff format --check .       → 146 files already formatted
 mypy app                    → Success: no issues found in 107 source files
-pytest                      → 193 passed, 9 skipped in 210.18s   (+4 اختبارات هذه الجولة)
+pytest                      → 198 passed, 9 skipped in 208.97s   (+9 اختبارات هذه الجولة)
 scripts/smoke_api.py        → SMOKE OK — 114/116 نداءً موثَّقاً، والاستثناءان بسببهما
 scripts/check_openapi_fresh → openapi.json is fresh (98 paths)
 scripts/check_migrations.py → migration immutability ok (5 merged, 0 new)
