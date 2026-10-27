@@ -104,8 +104,8 @@ test.describe("R5 · issuance, filters and portal accounts", () => {
 
     // filter by the rep: the value is the id, because the option label carries a formatted count
     await page.getByLabel(ar.leads.filterRep).selectOption(rep!.rep_id);
-    await expect.poll(async () => page.locator("article").count(), { timeout: 20_000 }).toBeGreaterThan(0);
-    const cards = await page.locator("article").allTextContents();
+    await expect.poll(async () => page.locator("[data-lead-card]").count(), { timeout: 20_000 }).toBeGreaterThan(0);
+    const cards = await page.locator("[data-lead-card]").allTextContents();
     const names = expected.map((lead) => lead.name);
     for (const card of cards) {
       expect(names.some((name) => card.includes(name)), `a card outside ${rep!.name}'s book: ${card.slice(0, 60)}`).toBeTruthy();
@@ -119,9 +119,9 @@ test.describe("R5 · issuance, filters and portal accounts", () => {
 
     // the pool: rep filter + unassigned is empty on purpose (an unassigned lead has no rep)
     await page.getByLabel(ar.leads.filterUnassigned).check();
-    await expect(page.locator("article")).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.locator("[data-lead-card]")).toHaveCount(0, { timeout: 20_000 });
     await page.getByLabel(ar.leads.filterUnassigned).uncheck();
-    await expect.poll(async () => page.locator("article").count(), { timeout: 20_000 }).toBeGreaterThan(0);
+    await expect.poll(async () => page.locator("[data-lead-card]").count(), { timeout: 20_000 }).toBeGreaterThan(0);
   });
 
   test("a username portal login sees its own policy file", async ({ page, request, browser }, testInfo) => {
@@ -162,7 +162,7 @@ test.describe("R5 · issuance, filters and portal accounts", () => {
     try {
       await login(ownerPage, username, temp);
       await expect(ownerPage).toHaveURL(/\/portal/, { timeout: 20_000 });
-      await expect(ownerPage.getByText(policyNo)).toBeVisible({ timeout: 20_000 });
+      await expect(ownerPage.getByText(policyNo).first()).toBeVisible({ timeout: 20_000 });
 
       const [file] = await Promise.all([ownerPage.waitForEvent("download"), ownerPage.getByLabel(ar.common.download).first().click()]);
       expect(file.suggestedFilename().toLowerCase()).toMatch(/\.pdf$/);

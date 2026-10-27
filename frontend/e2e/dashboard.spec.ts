@@ -29,7 +29,16 @@ test.describe("dashboard (screen 1)", () => {
     expect(main).not.toMatch(/TBD|lorem/i);
     // the mockup's invented target must not survive as data (ADR-014): hints come from the summary
     expect(main).not.toContain("الهدف 90%");
-    expect(main).toContain(formatNumber(summary.requests_today));
+    // The tile paints its label (and a skeleton value) before the summary resolves, and other specs create
+    // requests in parallel — so the comparison is made as a poll: the *current* API number must be painted.
+    await expect(async () => {
+      const fresh = (await (await request.get("/api/v1/dashboard/summary", { headers: auth })).json()) as {
+        requests_today: number;
+      };
+      expect(await page.locator("main").innerText(), "«طلبات اليوم» must show the API's own number").toContain(
+        formatNumber(fresh.requests_today),
+      );
+    }).toPass({ timeout: 20_000 });
     if (summary.sla_compliance_pct !== null && summary.sla_compliance_pct !== undefined) {
       /*
        * The tiles paint their labels before the summary resolves — `value` is undefined until it does, and
