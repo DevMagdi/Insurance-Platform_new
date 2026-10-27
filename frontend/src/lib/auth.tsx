@@ -22,18 +22,56 @@ interface AuthValue {
 
 const AuthContext = createContext<AuthValue | null>(null);
 
+/**
+ * «Is there probably a session in this browser?»
+ *
+ * The real credential is an `httpOnly` cookie the page cannot read, so this is only a *hint* — and it exists
+ * for one reason: without it, every visit to the login screen fired `POST /auth/refresh` while signed out,
+ * which the API answers 403 by design (a pinned contract, see `docs/STATUS.md`). The screen handled the
+ * refusal fine, but the browser logs every refused request, so a correctly-behaving login page produced a
+ * console error on every load. A hint that is wrong costs one redundant call (cookie present, hint missing)
+ * or one failed refresh the app already handles (cookie gone, hint stale) — never a wrong screen.
+ */
+const SESSION_HINT = "bh.session";
+function hintPresent(): boolean {
+  try {
+    return window.localStorage.getItem(SESSION_HINT) === "1";
+  } catch {
+    return true; // storage blocked (private mode): behave exactly as before this hint existed
+  }
+}
+function setHint(present: boolean): void {
+  try {
+    if (present) window.localStorage.setItem(SESSION_HINT, "1");
+    else window.localStorage.removeItem(SESSION_HINT);
+  } catch {
+    /* storage blocked: nothing to record, and nothing to break */
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Me | null>(null);
   const [ready, setReady] = useState(false);
   const queryClient = useQueryClient();
 
   const loadMe = useCallback(async () => {
+    if (!hintPresent()) {
+      // nothing to restore: no session existed in this browser, so asking would only produce a refusal
+      setUser(null);
+      setAccessToken(null);
+      setReady(true);
+      return;
+    }
     try {
       const refreshed = await api.post<components["schemas"]["RefreshOut"]>("/auth/refresh");
       setAccessToken(refreshed.access_token);
+      setHint(true);
       const me = await api.get<Me>("/auth/me");
       setUser(me);
-    } catch {
+    } catch (error) {
+      // a refused refresh means the cookie is gone; a network blip does not, and must not sign anyone out
+      const status = (error as { status?: number }).status;
+      if (status === 401 || status === 403) setHint(false);
       setUser(null);
       setAccessToken(null);
     } finally {
@@ -53,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .post<{ access_token: string }>("/auth/refresh")
           .then((refreshed) => setAccessToken(refreshed.access_token))
           .catch(() => {
+            setHint(false);
             setUser(null);
             setAccessToken(null);
             queryClient.clear();
@@ -65,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (payload: LoginIn) => {
       const result = await api.post<components["schemas"]["LoginOut"]>("/auth/login", payload);
       setAccessToken(result.access_token);
+      setHint(true);
       setUser(result.user);
       setReady(true);
       return result.user;
@@ -76,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.post("/auth/logout");
     } finally {
+      setHint(false);
       setAccessToken(null);
       setUser(null);
       queryClient.clear();

@@ -499,13 +499,16 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 | 4 | إصلاح كشفه التشغيل | رابط البطاقة كان يفتح الطابور المفلتر ثم **يمحوه** بعد إطار: الاختيار التلقائي لأول صف كان `navigate('/inbox/<id>')` بلا شريط استعلام | `openRequest()` يحمل `searchParams` في الاختيار التلقائي والنقر · اختبار انحدار في `overdueDeepLink.test.tsx` (لا يكتفي بصفحة فارغة) |
 | 5 | إصلاح كشفه التشغيل | `scripts/smoke_api.py` و`scripts/live_matrix.py` علقا **15 دقيقة** على `/api/v1/realtime/stream`: جسم SSE لا ينتهي إلا بمغادرة العميل، و`TestClient` ينتظر النهاية | smokee يستثني المسار بسبب موثّق ويؤكّد يدوياً رفض الزائر ووجود `revision`؛ المصفوفة تتخطّاه في الزحف · `SMOKE OK — 125/128` · `231/231` |
 | 6 | إصلاح كشفه التشغيل | `ruff format --check` كان يفشل على ملفين متأخرين (كان سيُسقط الـPR من أول بوابة) | `163 files already formatted` |
+| 7 | إصلاح كشفه **أول تشغيل CI** لـR6 (5 غير متوقع · 135 ناجح · 44 مُتخطٍّ) | كلمة الشارة في الطابور «متأخر» لا «متأخرة»؛ بيانات الاختبار كانت تقرأ `/clients` بدور لا يملك `clients.view` | الاختبار يقرأ الكلمة من القاموس، وعميل البيّاع يُقرأ من طلب يراه هو |
+| 8 | إصلاح كشفه أول تشغيل CI | `settings.spec.ts` كان يضغط زرّاً **معطّلاً** (السلوك الجديد) فينتظر 60s | الاختبار يوثّق العقد الجديد: الزر معطّل، السبب مكتوب، ولا نداء يُرسل، والصفّ لم يتغيّر |
+| 9 | إصلاح كشفه أول تشغيل CI | شاشة الدخول كانت تنادي `POST /auth/refresh` في تبويب زائر، وواجهتنا تردّ `403` بعقد مثبَّت ⇒ **خطأ console في كل زيارة** | تلميح جلسة في `localStorage` يمنع النداء بلا جلسة ([ADR-028](decisions/028-session-hint-and-quiet-console.md)) + حرس الـconsole صار يطبع مسار المورد (`message.location().url`) لا نصاً بلا عنوان |
 
 **بوابات R6 (مخرجات حرفية):** `ruff check .` ⇒ `All checks passed!` · `ruff format --check .` ⇒
 `163 files already formatted` · `mypy app` ⇒ `Success: no issues found in 112 source files` ·
 `pytest -q` ⇒ **264** مجموعة · **0 فشل** · 9 مُتخطَّاة (`postgres_only`) · `smoke_api.py` ⇒
 `SMOKE OK — 125/128` · `live_matrix.py` ⇒ `checks: 231 · passed: 231 · P0 failed: 0` ·
 `check_openapi_fresh.py` ⇒ `openapi.json is fresh (109 paths)` · الواجهة: `eslint` نظيف ·
-`tsc --noEmit` نظيف · `vitest` ⇒ **111/111 في 15 ملفاً** · `build` ⇒ `✓ built in 7.49s` ·
+`tsc --noEmit` نظيف · `vitest` ⇒ **115/115 في 16 ملفاً** · `build` ⇒ `✓ built in 7.49s` ·
 `codegen:api` ⇒ 143 مخططاً. **e2e يُقاس في CI وحده** (لا متصفح في هذه البيئة) — الأرقام تُكتب من تعليق
 الـPR بعد التشغيل، لا من التوقّع.
 

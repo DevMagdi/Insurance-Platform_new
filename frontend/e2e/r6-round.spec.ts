@@ -1,5 +1,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
+import { ar } from "../src/lib/i18n/ar";
+
 import { apiLogin, CS, login, MANAGER } from "./fixtures";
 
 /**
@@ -36,14 +38,20 @@ function watch(page: Page) {
   const errors: string[] = [];
   const badResponses: string[] = [];
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
+    if (message.type() !== "error") return;
+    // the browser's own text for a refused resource never names it; `location()` does, and without it a
+    // failure says only "something 403'd" (which cost a whole CI run to guess at)
+    const where = message.location()?.url ?? "";
+    errors.push(where ? `${message.text()} ← ${where}` : message.text());
   });
   page.on("pageerror", (error) => errors.push(String(error)));
   page.on("response", (response) => {
     const url = response.url();
     if (!url.includes("/api/v1/")) return;
+    // `/auth/refresh` answers 401 by design in a logged-out tab, and the login page is where that happens
+    if (url.includes("/api/v1/auth/")) return;
     const status = response.status();
-    if (status === 409 || status >= 500) badResponses.push(`${status} ${url}`);
+    if (status >= 400) badResponses.push(`${status} ${url}`);
   });
   return { errors, badResponses };
 }
@@ -95,7 +103,8 @@ test.describe("R6 · overdue deep link", () => {
     const rows = page.locator("[data-request-row]");
     const shown = await rows.count();
     expect(shown).toBeGreaterThan(0);
-    for (let index = 0; index < shown; index += 1) await expect(rows.nth(index)).toContainText("متأخرة");
+    // the row's badge is the dictionary's own word for the state the API returned
+    for (let index = 0; index < shown; index += 1) await expect(rows.nth(index)).toContainText(ar.status.overdue);
   });
 
   test("an action works inside the filtered list, not just a link to it", async ({ page, request }, testInfo) => {
@@ -123,11 +132,16 @@ test.describe("R6 · a change reaches every tab in ≤2 s", () => {
     // the agent's own scope decides what the queue is allowed to show, so the new request has to be one the
     // agent can see: a client they are scoped to (a cross-tenant row would prove nothing but a leak)
     const agent = await apiLogin(request, CS);
-    const visible = await request.get("/api/v1/clients?page_size=1", { headers: agent });
-    expect(visible.status(), await visible.text()).toBe(200);
-    const clients = await visible.json();
-    expect(clients.items?.length, "the agent is scoped to no client — this test would prove nothing").toBeGreaterThan(0);
-    const clientId = clients.items[0].id as string;
+    // a customer-service seat holds no `clients.view`, so the client is read through a request the agent is
+    // already allowed to see — the same scope that will decide whether the new row appears
+    const ownQueue = await request.get("/api/v1/requests?only_open=true&page_size=1", { headers: agent });
+    expect(ownQueue.status(), await ownQueue.text()).toBe(200);
+    const firstRequest = ((await ownQueue.json()).items ?? [])[0];
+    expect(firstRequest?.id, "the agent's queue is empty — this test would prove nothing").toBeTruthy();
+    const ownDetail = await request.get(`/api/v1/requests/${firstRequest.id}`, { headers: agent });
+    expect(ownDetail.status(), await ownDetail.text()).toBe(200);
+    const clientId = (await ownDetail.json()).client_id as string;
+    expect(clientId, "the request has no client, so no scoped row could be created for the agent").toBeTruthy();
 
     // tab A: a customer-service agent with the queue open and nothing else happening
     const contextA = await (browser as Browser).newContext({ viewport: { width: 1440, height: 900 }, locale: "ar-EG" });
