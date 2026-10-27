@@ -66,9 +66,16 @@ def test_a_client_replays_what_it_missed_and_is_told_when_it_cannot() -> None:
     assert resync is False
     assert [event["revision"] for event in replay] == [2, 3]
 
-    # the buffer only holds the last two changes, so revision 0 is a gap the client has to refetch through
-    _, gap = instance.backlog(0, topics=frozenset({"requests"}), id_visible=frozenset())
-    assert gap is True
+    # `since=0` is a brand-new tab, not a tab that missed something: it has no gap to be told about, because
+    # it is about to fetch everything fresh anyway. Replaying history to it was the R6 defect (ADR-026 §3).
+    replay, resync = instance.backlog(0, topics=frozenset({"requests"}), id_visible=frozenset())
+    assert (replay, resync) == ([], False)
+
+    # a client that really did miss changes older than the buffer is told to resync instead
+    for _ in range(2):
+        instance.publish(topic="requests", action="updated")  # buffer now holds 4, 5 — revision 1 is gone
+    replay, gap = instance.backlog(1, topics=frozenset({"requests"}), id_visible=frozenset())
+    assert (replay, gap) == ([], True)
 
 
 def test_a_full_queue_marks_the_subscriber_instead_of_growing_without_bound() -> None:
@@ -263,9 +270,15 @@ async def test_since_replays_the_changes_nobody_was_listening_for(ids: dict[str,
         auth = (await http.post("/api/v1/auth/login", json={"email": MANAGER, "password": PASSWORD})).json()
         headers = {"Authorization": f"Bearer {auth['access_token']}"}
 
+        # one change before the tab opens, so the tab's cursor is a real revision rather than 0 (which now
+        # means "I am new, send me nothing old")
+        before = await http.post("/api/v1/requests", json={"subject": "قبل الانقطاع", "client_id": ids["clients"]["ألف"]}, headers=headers)
+        assert before.status_code == 201
+
         async with http.stream("GET", "/api/v1/realtime/stream", headers=headers) as response:
             hello = await _next_frame(response.aiter_lines(), event="hello")
         revision = hello["revision"]
+        assert revision >= 1
 
         created = await http.post(
             "/api/v1/requests", json={"subject": "طلب أثناء انقطاع", "client_id": ids["clients"]["ألف"]}, headers=headers
@@ -276,6 +289,45 @@ async def test_since_replays_the_changes_nobody_was_listening_for(ids: dict[str,
             replay = await _next_frame(response.aiter_lines(), event="change")
         assert replay["revision"] > revision
         assert replay["topic"] == "requests"
+
+
+async def test_a_brand_new_tab_is_not_replayed_a_history_lesson(ids: dict[str, dict[str, str]]) -> None:
+    """`since=0` means "tell me what happens next", not "send me everything you remember".
+
+    This is the difference between a page that is fresh and a page that is busy being caught up. The first
+    version replayed the whole 500-entry buffer to every new tab; on a busy instance that is hundreds of
+    invalidations at once, and the change that matters (the one made after the page loaded) waits behind
+    them. Measured in CI as a row that had not appeared 2 000 ms after it was created.
+    """
+    import httpx
+
+    async with served_app() as base, httpx.AsyncClient(base_url=base, timeout=10) as http:
+        auth = (await http.post("/api/v1/auth/login", json={"email": MANAGER, "password": PASSWORD})).json()
+        headers = {"Authorization": f"Bearer {auth['access_token']}"}
+
+        # make some history first, so a replay would have something to send
+        for index in range(3):
+            made = await http.post(
+                "/api/v1/requests",
+                json={"subject": f"تاريخ {index}", "client_id": ids["clients"]["ألف"]},
+                headers=headers,
+            )
+            assert made.status_code == 201, made.text
+
+        async with http.stream("GET", "/api/v1/realtime/stream?since=0", headers=headers) as response:
+            lines = response.aiter_lines()
+            hello = await _next_frame(lines, event="hello")
+            assert hello["revision"] >= 3
+            # the very next frame must be a *new* change, never a replay of one made before the tab existed
+            created = await http.post(
+                "/api/v1/requests",
+                json={"subject": "الحدث الأول لهذا التبويب", "client_id": ids["clients"]["ألف"]},
+                headers=headers,
+            )
+            assert created.status_code == 201, created.text
+            first = await _next_frame(lines, event="change")
+        assert first["revision"] > hello["revision"]
+        assert first["topic"] == "requests"
 
 
 # ---------------------------------------------------------------------------------------------

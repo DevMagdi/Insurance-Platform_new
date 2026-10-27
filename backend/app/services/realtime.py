@@ -218,8 +218,15 @@ class RealtimeHub:
         return dict(self._topic_revision)
 
     def backlog(self, since: int, *, topics: frozenset[str], id_visible: frozenset[str]) -> tuple[list[dict[str, Any]], bool]:
-        """(events to replay, needs_resync). `since` older than the buffer means some changes are gone."""
-        if since >= self._revision:
+        """(events to replay, needs_resync). `since` older than the buffer means some changes are gone.
+
+        `since=0` means "I am new, tell me only what happens next" — the documented contract of the query
+        parameter — and *not* "replay everything you remember". The first version replayed the whole buffer to
+        a brand-new tab, so every reconnect fired hundreds of invalidations at once and the screen it was
+        supposed to keep fresh spent the next seconds refetching history (measured in R6: a change made right
+        after a page load did not appear within the 2 s budget it exists to meet).
+        """
+        if since <= 0 or since >= self._revision:
             return [], False
         oldest = self._buffer[0].revision if self._buffer else self._revision + 1
         if self._buffer and since < oldest - 1:

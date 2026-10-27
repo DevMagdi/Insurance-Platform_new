@@ -503,9 +503,11 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 | 8 | إصلاح كشفه أول تشغيل CI | `settings.spec.ts` كان يضغط زرّاً **معطّلاً** (السلوك الجديد) فينتظر 60s | الاختبار يوثّق العقد الجديد: الزر معطّل، السبب مكتوب، ولا نداء يُرسل، والصفّ لم يتغيّر |
 | 9 | إصلاح كشفه أول تشغيل CI | شاشة الدخول كانت تنادي `POST /auth/refresh` في تبويب زائر، وواجهتنا تردّ `403` بعقد مثبَّت ⇒ **خطأ console في كل زيارة** | تلميح جلسة في `localStorage` يمنع النداء بلا جلسة ([ADR-028](decisions/028-session-hint-and-quiet-console.md)) + حرس الـconsole صار يطبع مسار المورد (`message.location().url`) لا نصاً بلا عنوان |
 
+| 10 | إصلاح كشفه **ثاني تشغيل CI** (1 غير متوقع · 139 ناجح · 44 مُتخطٍّ) | التحديث اللحظي «متأخر»: التبويب الجديد كان يستلم **كل** ذاكرة التغييرات (`since=0` = إعادة لعب 500 حدث) فيغرق في إبطالات، والاختبار كان يبدأ العدّ قبل أن يفتح البثّ أصلاً | `backlog()` تُعيد لا شيء عند `since<=0` ([ADR-026](decisions/026-realtime-change-feed.md) §3) + اختبار انحدار · والاختبار ينتظر `data-status="live"` (مؤشر التبويب نفسه) ثم يقيس الانتشار داخل 2000ms |
+
 **بوابات R6 (مخرجات حرفية):** `ruff check .` ⇒ `All checks passed!` · `ruff format --check .` ⇒
 `163 files already formatted` · `mypy app` ⇒ `Success: no issues found in 112 source files` ·
-`pytest -q` ⇒ **264** مجموعة · **0 فشل** · 9 مُتخطَّاة (`postgres_only`) · `smoke_api.py` ⇒
+`pytest -q` ⇒ **265** مجموعة · **0 فشل** · 9 مُتخطَّاة (`postgres_only`) · `smoke_api.py` ⇒
 `SMOKE OK — 125/128` · `live_matrix.py` ⇒ `checks: 231 · passed: 231 · P0 failed: 0` ·
 `check_openapi_fresh.py` ⇒ `openapi.json is fresh (109 paths)` · الواجهة: `eslint` نظيف ·
 `tsc --noEmit` نظيف · `vitest` ⇒ **115/115 في 16 ملفاً** · `build` ⇒ `✓ built in 7.49s` ·

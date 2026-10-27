@@ -150,6 +150,13 @@ test.describe("R6 · a change reaches every tab in ≤2 s", () => {
     await login(pageA, CS);
     await pageA.goto("/inbox?filter=open");
     await expect(pageA.getByTestId("queue-count")).toBeVisible({ timeout: 20_000 });
+    /*
+     * Wait for the feed itself before starting the clock. The 2 000 ms budget is about *propagation* — "a
+     * change made now is visible now" — and charging connection setup to it would measure the wrong thing
+     * (and, on a cold runner, fail for the wrong reason). The tab's own status pill is the proof that the
+     * stream is open, and it is the same indicator an operator reads (`data-status` on the shell).
+     */
+    await expect(pageA.getByTestId("realtime-status")).toHaveAttribute("data-status", "live", { timeout: 30_000 });
 
     // tab B: somebody else's action, performed through the API
     const stamp = Date.now();
@@ -165,6 +172,8 @@ test.describe("R6 · a change reaches every tab in ≤2 s", () => {
     await expect(pageA.getByText(name)).toBeVisible({ timeout: 2_000 });
     const took = Date.now() - started;
     expect(took, `the change took ${took} ms to reach the open queue`).toBeLessThanOrEqual(2_000);
+    // and the tab is still connected afterwards, not merely quick once
+    await expect(pageA.getByTestId("realtime-status")).toHaveAttribute("data-status", "live");
     expect(watched.errors, `console errors while syncing: ${watched.errors.join(" | ")}`).toEqual([]);
 
     await contextA.close();
