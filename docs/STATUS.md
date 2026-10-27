@@ -1,7 +1,12 @@
 # STATUS — منصة إدارة الوساطة التأمينية (Broker Hub)
 
-آخر تحديث: 2026-10-27 · فرع العمل: `arena/1ce19bf9-insurance-platform-new` من `main` عند `ef0e149`.
-هذه الجولة = **R5 (Live-Real)**: القنوات الحيّة تعمل فعلاً (لا محاكاة)، إصدار الوثيقة يُنتج ملفاً قابلاً
+آخر تحديث: 2026-10-27 · فرع العمل: `arena/1ce19bf9-insurance-platform-new` من `main` عند `c73fcb5`.
+هذه الجولة = **R6 (Realtime · Overdue · Live switch)**: ثلاث ميزات جاهزة للإنتاج — «طلبات متأخرة» صار
+باباً يفتح طابوراً مفلتراً قابلاً للمشاركة، وكل تغيير يصل كل تبويب مصرّح **خلال ثانيتين بلا تحديث**، ومفتاح
+«التحويل إلى الوضع الحيّ» لا يعيد 409 في المسار السعيد. التفاصيل في
+[`qa/realtime-overdue-live-2026-10-27.md`](qa/realtime-overdue-live-2026-10-27.md) وADRs [026](decisions/026-realtime-change-feed.md)
+و[027](decisions/027-live-switch-preflight.md).
+الجولة السابقة = **R5 (Live-Real)**: القنوات الحيّة تعمل فعلاً (لا محاكاة)، إصدار الوثيقة يُنتج ملفاً قابلاً
 للتحميل من البوابتين، فلاتر المدير على الليدز في الـAPI والواجهة، وحسابات بوابة العميل باسم مستخدم —
 التفاصيل في [`qa/live-real-2026-10-27.md`](qa/live-real-2026-10-27.md) وADRs 021–025.
 الجولة السابقة = **R4 (Live-Ready QA)**: مسح شامل لكل مسار تشغيلي بكل دور، ثم إصلاح كل ما سقط — التفاصيل
@@ -483,6 +488,26 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 **حدود مُعلنة (لا ادّعاء):** لا حساب Meta ولا سنترال ولا رقم في هذه البيئة، فالسائق الحيّ مُثبت بعقد
 (توقيع HMAC على البايتات الخام + نقل HTTP محقون) لا بمكالمة حقيقية؛ وe2e/PostgreSQL/docker تُقاس في CI.
 التفصيل في [`qa/live-real-2026-10-27.md`](qa/live-real-2026-10-27.md) §5.
+
+## جولة R6 — «اللحظي، والمتأخرات، والمفتاح الحيّ»: ثلاث ميزات بدليلها
+
+| # | البند | ما نُفِّذ | الدليل المقيس |
+|---|---|---|---|
+| 1 | «طلبات متأخرة» بابٌ لا رقم | بطاقة اللوحة صارت `<a>` إلى `/inbox?filter=overdue` باسم وصول عربي (`aria-label` بالأرقام)، والصندوق يقرأ الفلتر من العنوان ويطلب `only_overdue=true` من الـAPI (لا تصفية في المتصفح)، شارة عدد = `total` الخادم، وحالة فراغ خاصة + «عرض كل الطلبات»، وكل إجراءات الطابور (إسناد/حالة/رد/ملاحظة داخلية) تعمل داخل القائمة المفلترة | `tests/test_realtime.py` (بند الواجهة البرمجية) · `frontend/tests/overdueDeepLink.test.tsx` (7) · `frontend/e2e/r6-round.spec.ts` (KPI ← طابور مفلتر ← إجراء، والفلتر يبقى بعد إعادة التحميل) |
+| 2 | تحديث لحظي ≤2s | قناة SSE واحدة (`/realtime/stream`) تنشر إطار تغيير من **middleware** بعد كل طلب كتابة ناجح، مع `revision` وحلقة إعادة لعب 500 تغيير و`resync` عند الفجوة/الطفح، ونبضة 15s؛ العميل `fetch`+`ReadableStream` (لا `EventSource` لئلا يوضع التوكن في الرابط)، backoff تصاعدي، احتياطي استقصاء 4s بعد 3 إخفاقات، تجديد توكن عند 401، وإعادة اتصال فورية عند عودة التبويب | `tests/test_realtime.py` (بثّ حقيقي عبر socket loopback) · `frontend/tests/realtime.test.ts` · `frontend/e2e/r6-round.spec.ts`: تغيير من مستخدم آخر يظهر في طابور مفتوح ≤2000ms بلا تحديث · [ADR-026](decisions/026-realtime-change-feed.md) |
+| 3 | المفتاح الحيّ بلا 409 | `GET /settings/integrations/{p}/preflight` + `switch_blockers()` كمصدر وحيد يُعيد **كل** الحواجز تراكمياً (تأكيد/اختبار/حقول) بالعربية؛ `confirm_live` مرادف لـ`confirm` في `POST …/live`؛ `provider_url` للسنترال `required_for_live`؛ الشاشة تعطّل المفتاح وتسمّي الحقل الناقص وتفتح الاختبار من اللوحة، و409 إن وقع ⇒ توست `labels` + إعادة قراءة الصفّ؛ `asText/lower/upper` تحرس كل عملية نصّية (سبب `toLowerCase` على `undefined`) | `tests/test_integrations_settings.py` (21، منها preflight/alias/409 قابل للتنفيذ/سباق النقرتين/الصلاحية) · `frontend/tests/providerLive.test.tsx` (7) · `frontend/e2e/r6-round.spec.ts`: صفر 409 وصفر 5xx وصفر خطأ console في المسار السعيد، ومزوّد ناقص لا يُرسل شيئاً · [ADR-027](decisions/027-live-switch-preflight.md) |
+| 4 | إصلاح كشفه التشغيل | رابط البطاقة كان يفتح الطابور المفلتر ثم **يمحوه** بعد إطار: الاختيار التلقائي لأول صف كان `navigate('/inbox/<id>')` بلا شريط استعلام | `openRequest()` يحمل `searchParams` في الاختيار التلقائي والنقر · اختبار انحدار في `overdueDeepLink.test.tsx` (لا يكتفي بصفحة فارغة) |
+| 5 | إصلاح كشفه التشغيل | `scripts/smoke_api.py` و`scripts/live_matrix.py` علقا **15 دقيقة** على `/api/v1/realtime/stream`: جسم SSE لا ينتهي إلا بمغادرة العميل، و`TestClient` ينتظر النهاية | smokee يستثني المسار بسبب موثّق ويؤكّد يدوياً رفض الزائر ووجود `revision`؛ المصفوفة تتخطّاه في الزحف · `SMOKE OK — 125/128` · `231/231` |
+| 6 | إصلاح كشفه التشغيل | `ruff format --check` كان يفشل على ملفين متأخرين (كان سيُسقط الـPR من أول بوابة) | `163 files already formatted` |
+
+**بوابات R6 (مخرجات حرفية):** `ruff check .` ⇒ `All checks passed!` · `ruff format --check .` ⇒
+`163 files already formatted` · `mypy app` ⇒ `Success: no issues found in 112 source files` ·
+`pytest -q` ⇒ **264** مجموعة · **0 فشل** · 9 مُتخطَّاة (`postgres_only`) · `smoke_api.py` ⇒
+`SMOKE OK — 125/128` · `live_matrix.py` ⇒ `checks: 231 · passed: 231 · P0 failed: 0` ·
+`check_openapi_fresh.py` ⇒ `openapi.json is fresh (109 paths)` · الواجهة: `eslint` نظيف ·
+`tsc --noEmit` نظيف · `vitest` ⇒ **111/111 في 15 ملفاً** · `build` ⇒ `✓ built in 7.49s` ·
+`codegen:api` ⇒ 143 مخططاً. **e2e يُقاس في CI وحده** (لا متصفح في هذه البيئة) — الأرقام تُكتب من تعليق
+الـPR بعد التشغيل، لا من التوقّع.
 
 ## قرارات اتُّخذت نيابة عن المالك (لأن الأسئلة غير مسموحة)
 
