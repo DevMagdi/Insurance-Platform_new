@@ -50,9 +50,18 @@ export default function InboxPage() {
   const navigate = useNavigate();
   const { requestId } = useParams<{ requestId?: string }>();
   const { can } = useAuth();
-  const [filter, setFilter] = useState<QueueFilter>("open");
-  // the top bar search lands here as ?q=…, so the queue starts filtered from the shared header field
-  const [searchParams] = useSearchParams();
+  // The queue's filter lives in the URL (`?filter=overdue`), not only in component state: the dashboard's
+  // «طلبات متأخرة» card links here, and a link someone pastes into a chat has to open the same view for the
+  // next person. Reading it here also means Back/Forward moves the queue, which is what a browser is for.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterParam = searchParams.get("filter");
+  const filter: QueueFilter = filterParam === "overdue" || filterParam === "all" ? filterParam : "open";
+  const setFilter = (next: QueueFilter) => {
+    const params = new URLSearchParams(searchParams);
+    if (next === "open") params.delete("filter");
+    else params.set("filter", next);
+    setSearchParams(params, { replace: true });
+  };
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const [draft, setDraft] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
@@ -137,7 +146,11 @@ export default function InboxPage() {
         <div className="border-b border-line px-4 py-[14px]">
           <div className="flex items-center justify-between">
             <h2 className="text-[15px] font-bold text-ink">{t("inbox.title")}</h2>
-            <span className="rounded-pill bg-primary-soft px-2 py-[2px] text-[11px] font-bold text-primary-ink tabular-nums">
+            <span
+              className="rounded-pill bg-primary-soft px-2 py-[2px] text-[11px] font-bold text-primary-ink tabular-nums"
+              data-testid="queue-count"
+              aria-label={t("inbox.countAria", { n: formatNumber(list.data?.total ?? 0) })}
+            >
               {formatNumber(list.data?.total ?? 0)}
             </span>
           </div>
@@ -173,7 +186,18 @@ export default function InboxPage() {
           ) : list.isError ? (
             <StateBlock kind="error" action={<button type="button" className="text-primary" onClick={() => void list.refetch()}>{t("common.retry")}</button>} />
           ) : rows.length === 0 ? (
-            <StateBlock kind="empty" title={t("inbox.empty")} />
+            <StateBlock
+              kind="empty"
+              title={filter === "overdue" ? t("inbox.emptyOverdue") : t("inbox.empty")}
+              action={
+                filter === "overdue" ? (
+                  // a dead end is not an empty state: the way out is one click, back to the whole queue
+                  <button type="button" className="text-[13px] font-semibold text-primary" onClick={() => setFilter("open")}>
+                    {t("inbox.showAll")}
+                  </button>
+                ) : undefined
+              }
+            />
           ) : (
             rows.map((row) => {
               const active = row.id === selected;
