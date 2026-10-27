@@ -158,6 +158,32 @@ test.describe("R6 · a change reaches every tab in ≤2 s", () => {
      */
     await expect(pageA.getByTestId("realtime-status")).toHaveAttribute("data-status", "live", { timeout: 30_000 });
 
+    /*
+     * A timeline of what the tab actually did, kept for the failure message. Run 40575596940 failed this
+     * assertion at exactly 2 000 ms with nothing else to read: "element(s) not found" is the same sentence
+     * whether the change frame never arrived, the queue refetch never happened, or the refetch came back
+     * without the row. Those are three different bugs with three different fixes, so the evidence is
+     * collected here instead of guessed at from a screenshot.
+     */
+    const timeline: string[] = [];
+    let started = Date.now();
+    const stamp0 = () => `${Date.now() - started} ms`;
+    pageA.on("request", (req) => {
+      if (req.url().includes("/realtime/")) timeline.push(`${stamp0()} → stream open (${req.url().split("?")[1] ?? ""})`);
+      else if (req.url().includes("/api/v1/requests")) timeline.push(`${stamp0()} → ${req.method()} ${req.url().replace(/^https?:\/\/[^/]+/, "")}`);
+    });
+    pageA.on("response", async (res) => {
+      if (!res.url().includes("/api/v1/requests?")) return;
+      let size = "";
+      try {
+        const body = (await res.json()) as { items?: unknown[] };
+        size = ` (${body.items?.length ?? 0} rows)`;
+      } catch {
+        size = " (unreadable body)";
+      }
+      timeline.push(`${stamp0()} ← ${res.status()} queue${size}`);
+    });
+
     // tab B: somebody else's action, performed through the API
     const stamp = Date.now();
     const name = `مستأمن لحظي ${stamp}`;
@@ -166,13 +192,30 @@ test.describe("R6 · a change reaches every tab in ≤2 s", () => {
       data: { channel: "manual", client_id: clientId, subject: name, contact_name: name, description: "R6 realtime", first_message: name },
     });
     expect([200, 201], await created.text()).toContain(created.status());
-    const started = Date.now();
+    started = Date.now();
 
     // the row arrives on its own, inside the budget, with no reload and no navigation. The text appears twice
     // inside one row — the assignee column falls back to the contact name for an unassigned request — so the
     // assertion is "a row holding this subject is on screen", not "this string occurs once"
     const arrived = pageA.locator("[data-request-row]").filter({ hasText: name }).first();
-    await expect(arrived).toBeVisible({ timeout: 2_000 });
+    try {
+      await expect(arrived).toBeVisible({ timeout: 2_000 });
+    } catch (error) {
+      // is the row even in the agent's queue? That splits "the server never showed it" (scoping/ordering)
+      // from "the browser never refreshed" (feed), and it is the question the digest could not answer.
+      const serverSide = await request.get("/api/v1/requests?only_open=true&page_size=40&sort=last_activity_at&order=desc", {
+        headers: agent,
+      });
+      const rows = ((await serverSide.json().catch(() => ({}))) as { items?: { id?: string; subject?: string }[] }).items ?? [];
+      const detail = [
+        `row visible in the queue on screen: ${await arrived.count()} (expected 1, budget 2000 ms)`,
+        `the agent's own queue over the API: ${serverSide.status()} · ${rows.length} rows · holds this subject: ${
+          rows.some((row) => row.subject === name) ? "yes" : "no"
+        }`,
+        `tab timeline: ${timeline.length ? timeline.join(" | ") : "the page made no matching request at all"}`,
+      ].join("\n");
+      throw new Error(`${(error as Error).message}\n\n${detail}`);
+    }
     const took = Date.now() - started;
     expect(took, `the change took ${took} ms to reach the open queue`).toBeLessThanOrEqual(2_000);
     // and the tab is still connected afterwards, not merely quick once
