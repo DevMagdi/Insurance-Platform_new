@@ -105,8 +105,15 @@ telephony (no provider_url, no green test) -> 409
   و`screenshots.spec.ts` (لقطتان + فيديو للتدفقين: `17-overdue-queue.png`, `17a-dashboard-overdue-card.png`,
   `18-live-switch-blocked.png`) — الأخيرة في ملف مستقل `e2e/r6-evidence.spec.ts` لأن `test.use({ video })`
 لا يجوز داخل `describe` (يفرض عاملاً جديداً)، ولأن الفيديو مطلوب لهذين التدفقين فقط لا لكل اللقطات.
-- الأرقام النهائية تُنقل من تعليق الـPR الآلي (تقرير Playwright نفسه) إلى هذا الملف عند الدمج؛ ما قبل
-  التشغيل الأخير: 184 اختباراً · 139 ناجح · 1 فاشل · 44 مُتخطٍّ (والفشل الوحيد هو #5 أعلاه، أُصلح بعدها).
+- أرقام التشغيل الأخير (من تعليق الـPR الآلي، أي من تقرير Playwright نفسه لا من العدد المتوقَّع):
+
+  **188 اختباراً · 142 ناجح · 0 فاشل · 46 مُتخطٍّ** · `stats`: expected=142 unexpected=0 skipped=46 flaky=0 ·
+  مجموع الزمن 136s · `desktop` 90 ناجح / 4 مُتخطّى / 0 فاشل · `mobile` 52 / 42 / 0.
+
+  مسار التشغيل: 5 فاشل (135 ناجح) → 1 (139) → 1 (139) → **0 (142)** — وكل خطوة منها هي أحد الأعطال الخمسة
+  في §5، لا تخمين.
+- الأثران: `screenshots` يحمل `17a-dashboard-overdue-card.png` و`17-overdue-queue.png` و
+  `18-live-switch-blocked.png`؛ و`playwright-report` يحمل فيديو التدفقين (`r6-evidence.spec.ts`).
 
 ## 7) ما لم يُشغَّل — وسببه الحرفي
 
