@@ -92,44 +92,6 @@ test.describe("screenshots for design review", () => {
     });
   }
 
-  /**
-   * R6 evidence: the two flows this round exists for, captured *and* recorded.
-   *
-   * A still cannot show "the KPI card was clicked and the queue behind it is the filtered one", and the owner
-   * asked for a short clip as well as screenshots. Video is switched on for this block only (`video: "on"`
-   * overrides the config's `off`), and both files land in the `screenshots` artifact next to the sheet.
-   */
-  test.describe("R6 evidence", () => {
-    test.use({ video: "on" });
-
-    test("17-overdue-queue.png", async ({ page }, testInfo) => {
-      test.skip(testInfo.project.name !== "desktop", "the dashboard grid and the 3-column queue are 1440×900");
-      await login(page, MANAGER);
-      await page.goto("/dashboard");
-      const card = page.getByTestId("kpi-overdue-link");
-      await expect(card).toBeVisible({ timeout: 20_000 });
-      await page.waitForTimeout(500);
-      await page.screenshot({ path: path.join(OUT, "17a-dashboard-overdue-card.png"), fullPage: false });
-      await card.click();
-      await expect(page).toHaveURL(/\/inbox(\/[0-9a-f-]+)?\?filter=overdue$/, { timeout: 20_000 });
-      await expect(page.getByTestId("queue-count")).toBeVisible({ timeout: 20_000 });
-      await page.waitForTimeout(700);
-      await page.screenshot({ path: path.join(OUT, "17-overdue-queue.png"), fullPage: true });
-    });
-
-    test("18-live-switch-blocked.png", async ({ page, request }, testInfo) => {
-      test.skip(testInfo.project.name !== "desktop", "the settings cards sit under the mobile bar at 390px");
-      // a provider with no green test is what an operator sees before they can go live
-      const auth = await apiLogin(request, MANAGER);
-      await request.put("/api/v1/settings/integrations/telephony", { headers: auth, data: { config: { provider_url: "" } } });
-      await login(page, MANAGER);
-      await page.goto("/settings");
-      await expect(page.getByTestId("live-blockers-telephony")).toBeVisible({ timeout: 20_000 });
-      await page.waitForTimeout(500);
-      await page.screenshot({ path: path.join(OUT, "18-live-switch-blocked.png"), fullPage: true });
-    });
-  });
-
   test("contact sheet", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop", "the desktop pass assembles the sheet");
     const files = readdirSync(OUT)

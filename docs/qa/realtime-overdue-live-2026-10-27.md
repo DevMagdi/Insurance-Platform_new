@@ -103,7 +103,8 @@ telephony (no provider_url, no green test) -> 409
 - الملفات: `frontend/e2e/r6-round.spec.ts` (5 اختبارات: نقر البطاقة، إجراء داخل الطابور المفلتر، لحظي ≤2s،
   المفتاح الحيّ بصفر 409/5xx/console، مزوّد ناقص لا يُرسل شيئاً) و`settings.spec.ts` (المفتاح المعطّل)
   و`screenshots.spec.ts` (لقطتان + فيديو للتدفقين: `17-overdue-queue.png`, `17a-dashboard-overdue-card.png`,
-  `18-live-switch-blocked.png`).
+  `18-live-switch-blocked.png`) — الأخيرة في ملف مستقل `e2e/r6-evidence.spec.ts` لأن `test.use({ video })`
+لا يجوز داخل `describe` (يفرض عاملاً جديداً)، ولأن الفيديو مطلوب لهذين التدفقين فقط لا لكل اللقطات.
 - الأرقام النهائية تُنقل من تعليق الـPR الآلي (تقرير Playwright نفسه) إلى هذا الملف عند الدمج؛ ما قبل
   التشغيل الأخير: 184 اختباراً · 139 ناجح · 1 فاشل · 44 مُتخطٍّ (والفشل الوحيد هو #5 أعلاه، أُصلح بعدها).
 
