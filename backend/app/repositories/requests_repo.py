@@ -18,6 +18,20 @@ from app.models.requests import Attachment, CallRecord, InternalNote, RequestMes
 from app.repositories.scope_filters import with_scope
 
 _OPEN = [RequestStatus.NEW, RequestStatus.IN_PROGRESS, RequestStatus.WAITING_INSURER]
+
+
+def overdue_condition() -> sa.ColumnElement[bool]:
+    """The single definition of «متأخر»: the SLA was missed **and** the request is still open.
+
+    The dashboard KPI, the status breakdown and the `only_overdue` list filter all read this function. They
+    used to carry three copies of the same two clauses, and the list's copy forgot the status half — so the
+    KPI said «7 متأخرة» and the screen it linked to showed 9, including two that were resolved months ago.
+    A deep link whose count disagrees with its card is worse than no deep link.
+    """
+    return sa.and_(
+        ServiceRequest.is_overdue.is_(True),
+        ServiceRequest.status.notin_([RequestStatus.RESOLVED, RequestStatus.CLOSED]),
+    )
 _SORTABLE = {
     "last_activity_at": ServiceRequest.last_activity_at,
     "created_at": ServiceRequest.created_at,
@@ -59,7 +73,7 @@ async def list_page(
     if only_open:
         conds.append(ServiceRequest.status.in_(_OPEN))
     if only_overdue:
-        conds.append(ServiceRequest.is_overdue.is_(True))
+        conds.append(overdue_condition())
     if channel:
         conds.append(ServiceRequest.channel == channel)
     if client_id:
@@ -155,9 +169,7 @@ async def kpis(session: AsyncSession, scope: Scope) -> dict[str, Any]:
     overdue = int(
         (
             await session.execute(
-                with_scope(select(func.count(ServiceRequest.id)), scope, "request").where(
-                    ServiceRequest.is_overdue.is_(True), ServiceRequest.status.notin_([RequestStatus.RESOLVED, RequestStatus.CLOSED])
-                )
+                with_scope(select(func.count(ServiceRequest.id)), scope, "request").where(overdue_condition())
             )
         ).scalar_one()
     )
@@ -261,14 +273,7 @@ async def status_breakdown(session: AsyncSession, scope: Scope) -> list[dict[str
     overdue = int(
         (
             await session.execute(
-                with_scope(
-                    select(func.count(ServiceRequest.id)).where(
-                        ServiceRequest.is_overdue.is_(True),
-                        ServiceRequest.status.notin_([RequestStatus.RESOLVED, RequestStatus.CLOSED]),
-                    ),
-                    scope,
-                    "request",
-                )
+                with_scope(select(func.count(ServiceRequest.id)).where(overdue_condition()), scope, "request")
             )
         ).scalar_one()
     )
