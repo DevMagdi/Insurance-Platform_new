@@ -168,12 +168,16 @@ test.describe("R6 · a change reaches every tab in ≤2 s", () => {
     expect([200, 201], await created.text()).toContain(created.status());
     const started = Date.now();
 
-    // the row arrives on its own, inside the budget, with no reload and no navigation
-    await expect(pageA.getByText(name)).toBeVisible({ timeout: 2_000 });
+    // the row arrives on its own, inside the budget, with no reload and no navigation. The text appears twice
+    // inside one row — the assignee column falls back to the contact name for an unassigned request — so the
+    // assertion is "a row holding this subject is on screen", not "this string occurs once"
+    const arrived = pageA.locator("[data-request-row]").filter({ hasText: name }).first();
+    await expect(arrived).toBeVisible({ timeout: 2_000 });
     const took = Date.now() - started;
     expect(took, `the change took ${took} ms to reach the open queue`).toBeLessThanOrEqual(2_000);
     // and the tab is still connected afterwards, not merely quick once
     await expect(pageA.getByTestId("realtime-status")).toHaveAttribute("data-status", "live");
+    expect(await pageA.locator("[data-request-row]").filter({ hasText: name }).count()).toBe(1);
     expect(watched.errors, `console errors while syncing: ${watched.errors.join(" | ")}`).toEqual([]);
 
     await contextA.close();
