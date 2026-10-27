@@ -10,7 +10,13 @@ from pydantic import BaseModel, Field
 from app.api.v1.deps import DbSession, ScopeDep
 from app.core.errors import Forbidden, NotFound
 from app.core.scope import Scope
-from app.schemas.out import PortalDocumentOut, PortalOverviewOut, PortalRequestOut, PortalRequestsOut
+from app.schemas.out import (
+    PortalDocumentOut,
+    PortalOverviewOut,
+    PortalPolicyOut,
+    PortalRequestOut,
+    PortalRequestsOut,
+)
 from app.services import portal
 
 router = APIRouter(tags=["client portal"])
@@ -55,6 +61,23 @@ async def open_request(body: _OpenRequest, session: DbSession, scope: ScopeDep) 
 async def documents(session: DbSession, scope: ScopeDep) -> list[dict[str, Any]]:
     _require_portal(scope)
     return await portal.documents(session, scope)
+
+
+@router.get("/portal/policies", summary="My contracts, with their real status and document", response_model=list[PortalPolicyOut])
+async def policies(session: DbSession, scope: ScopeDep) -> list[dict[str, Any]]:
+    _require_portal(scope)
+    return await portal.my_policies(session, scope)
+
+
+@router.get("/portal/policies/{policy_id}/document", summary="Download my issued policy PDF")
+async def policy_file(policy_id: UUID, session: DbSession, scope: ScopeDep) -> Response:
+    _require_portal(scope)
+    filename, mime, payload = await portal.policy_document(session, scope, policy_id)
+    return Response(
+        content=payload,
+        media_type=mime,
+        headers={"content-disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.get("/portal/attachments/{attachment_id}", summary="Download a document (portal-safe)")

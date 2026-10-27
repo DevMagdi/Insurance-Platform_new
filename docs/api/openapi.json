@@ -3711,8 +3711,9 @@
       "LoginIn": {
         "properties": {
           "email": {
+            "description": "e-mail or portal username",
             "maxLength": 255,
-            "pattern": "^[^@\\s]+@[^@\\s]+\\.[A-Za-z]{2,}$",
+            "minLength": 1,
             "title": "Email",
             "type": "string"
           },
@@ -3739,6 +3740,19 @@
               }
             ],
             "title": "Totp Code"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
           }
         },
         "required": [
@@ -4258,6 +4272,37 @@
         "title": "PolicyCreateIn",
         "type": "object"
       },
+      "PolicyDocumentRefOut": {
+        "additionalProperties": true,
+        "description": "One issued file, as a list row needs it: what to call it and where the download lives.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "download_url": {
+            "title": "Download Url",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filename",
+          "size",
+          "created_at",
+          "download_url"
+        ],
+        "title": "PolicyDocumentRefOut",
+        "type": "object"
+      },
       "PolicyKpisOut": {
         "additionalProperties": true,
         "properties": {
@@ -4335,6 +4380,16 @@
             "default": "EGP",
             "title": "Currency",
             "type": "string"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PolicyDocumentRefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "end_date": {
             "anyOf": [
@@ -4444,6 +4499,78 @@
         "title": "PolicyOut",
         "type": "object"
       },
+      "PortalAccountIn": {
+        "description": "`email` or `username` identifies the login; a blank password means \"generate and show it once\".",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "pattern": "^[^@\\s]+@[^@\\s]+\\.[A-Za-z]{2,}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "password": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Password",
+            "type": "string"
+          },
+          "role_code": {
+            "default": "client_owner",
+            "maxLength": 32,
+            "minLength": 3,
+            "title": "Role Code",
+            "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "maxLength": 63,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "title": "PortalAccountIn",
+        "type": "object"
+      },
+      "PortalActiveIn": {
+        "properties": {
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_active"
+        ],
+        "title": "PortalActiveIn",
+        "type": "object"
+      },
       "PortalClientOut": {
         "additionalProperties": true,
         "properties": {
@@ -4516,9 +4643,25 @@
             "title": "Id",
             "type": "string"
           },
+          "kind": {
+            "default": "request_attachment",
+            "title": "Kind",
+            "type": "string"
+          },
           "mime": {
             "title": "Mime",
             "type": "string"
+          },
+          "policy_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy No"
           },
           "request_number": {
             "anyOf": [
@@ -4699,6 +4842,175 @@
           "kpis"
         ],
         "title": "PortalOverviewOut",
+        "type": "object"
+      },
+      "PortalPasswordIn": {
+        "properties": {
+          "password": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "title": "PortalPasswordIn",
+        "type": "object"
+      },
+      "PortalPolicyDocumentOut": {
+        "additionalProperties": true,
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "size": {
+            "default": 0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "title": "PortalPolicyDocumentOut",
+        "type": "object"
+      },
+      "PortalPolicyOut": {
+        "additionalProperties": true,
+        "description": "One contract as the owner may see it: no commission, no internal notes, no staff names.",
+        "properties": {
+          "currency": {
+            "default": "EGP",
+            "title": "Currency",
+            "type": "string"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PortalPolicyDocumentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "headcount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headcount"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "insurance_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insurance Type"
+          },
+          "insurer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insurer"
+          },
+          "policy_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy No"
+          },
+          "premium_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Premium Amount"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "PortalPolicyOut",
         "type": "object"
       },
       "PortalPolicySummaryOut": {
@@ -4952,6 +5264,22 @@
           }
         },
         "title": "PortalRequestsOut",
+        "type": "object"
+      },
+      "PortalUsernameIn": {
+        "properties": {
+          "username": {
+            "maxLength": 63,
+            "minLength": 3,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{2,62}$",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username"
+        ],
+        "title": "PortalUsernameIn",
         "type": "object"
       },
       "ProviderStateOut": {
@@ -5681,6 +6009,17 @@
               }
             ],
             "title": "Duration S"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
           },
           "id": {
             "format": "uuid",
@@ -8210,6 +8549,302 @@
         ]
       }
     },
+    "/api/v1/clients/{client_id}/portal-accounts": {
+      "get": {
+        "operationId": "getApiV1ClientsClientIdPortal-Accounts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Getapiv1Clientsclientidportal-Accounts",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Portal logins of one client",
+        "tags": [
+          "clients"
+        ]
+      },
+      "post": {
+        "operationId": "postApiV1ClientsClientIdPortal-Accounts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalAccountIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Postapiv1Clientsclientidportal-Accounts",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create a portal login (temp password returned once)",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/portal-accounts/{user_id}": {
+      "patch": {
+        "operationId": "patchApiV1ClientsClientIdPortal-AccountsUserId",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalActiveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Patchapiv1Clientsclientidportal-Accountsuserid",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable/disable a portal login",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/portal-accounts/{user_id}/password": {
+      "post": {
+        "operationId": "postApiV1ClientsClientIdPortal-AccountsUserIdPassword",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalPasswordIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Postapiv1Clientsclientidportal-Accountsuseridpassword",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset a portal password (returned once)",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/portal-accounts/{user_id}/username": {
+      "put": {
+        "operationId": "putApiV1ClientsClientIdPortal-AccountsUserIdUsername",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalUsernameIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Putapiv1Clientsclientidportal-Accountsuseridusername",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change a portal username",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
     "/api/v1/clients/{client_id}/requests": {
       "get": {
         "operationId": "getApiV1ClientsClientIdRequests",
@@ -9307,6 +9942,7 @@
     },
     "/api/v1/leads/board": {
       "get": {
+        "description": "`assigned_to` narrows to one rep, `unassigned=true` shows the pool. Neither can widen the scope.",
         "operationId": "getApiV1LeadsBoard",
         "parameters": [
           {
@@ -9341,6 +9977,16 @@
               ],
               "title": "Q"
             }
+          },
+          {
+            "in": "query",
+            "name": "unassigned",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unassigned",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -9365,7 +10011,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Kanban payload (5 columns, scoped)",
+        "summary": "Kanban payload (5 columns, scoped; manager can filter by rep)",
         "tags": [
           "leads"
         ]
@@ -10380,6 +11026,50 @@
         ]
       }
     },
+    "/api/v1/policies/{policy_id}/document": {
+      "get": {
+        "description": "The stored file, streamed with its own filename. Scoped: a foreign policy answers 404, not 403.",
+        "operationId": "getApiV1PoliciesPolicyIdDocument",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Getapiv1Policiespolicyiddocument"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download the issued policy PDF",
+        "tags": [
+          "phase 2 (flagged)"
+        ]
+      }
+    },
     "/api/v1/policies/{policy_id}/installments": {
       "get": {
         "operationId": "getApiV1PoliciesPolicyIdInstallments",
@@ -10418,6 +11108,52 @@
           }
         },
         "summary": "Installments",
+        "tags": [
+          "phase 2 (flagged)"
+        ]
+      }
+    },
+    "/api/v1/policies/{policy_id}/issue": {
+      "post": {
+        "description": "`draft → issued` once, with the file written in the same transaction (ADR-021).\n\nPermission before flag, exactly like `POST /policies`: a rep is not \"blocked by a flag\", they do not\nissue policies at all. A second call on the same policy is a `409`, not a second document.",
+        "operationId": "postApiV1PoliciesPolicyIdIssue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Postapiv1Policiespolicyidissue",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue a policy → number + PDF document (Phase 2)",
         "tags": [
           "phase 2 (flagged)"
         ]
@@ -10505,6 +11241,72 @@
           }
         },
         "summary": "Owner header, KPIs and contract summary",
+        "tags": [
+          "client portal"
+        ]
+      }
+    },
+    "/api/v1/portal/policies": {
+      "get": {
+        "operationId": "getApiV1PortalPolicies",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PortalPolicyOut"
+                  },
+                  "title": "Response Getapiv1Portalpolicies",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "My contracts, with their real status and document",
+        "tags": [
+          "client portal"
+        ]
+      }
+    },
+    "/api/v1/portal/policies/{policy_id}/document": {
+      "get": {
+        "operationId": "getApiV1PortalPoliciesPolicyIdDocument",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download my issued policy PDF",
         "tags": [
           "client portal"
         ]

@@ -17,6 +17,8 @@ recreated on every run) so it never touches a real one; `SEED_PASSWORD` is set h
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import os
 import pathlib
@@ -568,6 +570,284 @@ async def main() -> int:
         check("portal", "GET /portal/documents", await get("/api/v1/portal/documents", owner), 200)
         check("portal", "portal on /leads → 403", await get("/api/v1/leads?page_size=1", owner), 403, p0=True)
         check("portal", "portal on /clients → 403", await get("/api/v1/clients?page_size=1", owner), 403, p0=True)
+
+        # ------------------------------------------------------------------ 5.1 R5 · issuance (ADR-021)
+        # The portal owner's company is the one client both doors can reach, so the file is issued for it
+        # and then asked for as staff (200), as the owner (200) and for another company (404).
+        owner_overview = await get("/api/v1/portal/overview", owner)
+        owner_client = owner_overview.json().get("client", {}).get("id") if owner_overview.status_code == 200 else None
+        policy_id = None
+        if owner_client:
+            draft = await c.post(
+                "/api/v1/policies",
+                headers=mgr,
+                json={
+                    "client_id": owner_client,
+                    "start_date": "2026-11-01",
+                    "end_date": "2027-10-31",
+                    "premium_amount": 210000,
+                    "headcount": 25,
+                },
+            )
+            check("issue", "POST /policies creates a draft", draft, 201, p0=True)
+            if draft.status_code == 201:
+                policy_id = draft.json()["id"]
+                record("issue", "a draft carries no document yet", draft.json().get("document") is None, "", p0=True)
+                issued = await c.post(f"/api/v1/policies/{policy_id}/issue", headers=mgr)
+                check("issue", "POST /policies/{id}/issue", issued, 200, p0=True)
+                if issued.status_code == 200:
+                    body = issued.json()
+                    record(
+                        "issue",
+                        "the answer states issued + a policy number",
+                        body.get("status") == "issued" and bool(body.get("policy_no")),
+                        str(body.get("policy_no"))[:40],
+                        p0=True,
+                    )
+                    record(
+                        "issue",
+                        "the file is more than a PDF header",
+                        body.get("document", {}).get("size", 0) > 2000,
+                        f"{body.get('document', {}).get('size')} bytes",
+                        p0=True,
+                    )
+                    staff_file = await get(f"/api/v1/policies/{policy_id}/document", mgr)
+                    record(
+                        "issue",
+                        "the staff download is a real PDF",
+                        staff_file.status_code == 200 and staff_file.content.startswith(b"%PDF-"),
+                        f"{staff_file.status_code} {len(staff_file.content)} bytes",
+                        p0=True,
+                    )
+                    record(
+                        "issue",
+                        "the file is served inline with a checksum",
+                        bool(staff_file.headers.get("x-document-checksum")),
+                        "",
+                        p0=True,
+                    )
+                    portal_file = await get(f"/api/v1/portal/policies/{policy_id}/document", owner)
+                    record(
+                        "portal",
+                        "the owner downloads the same policy file",
+                        portal_file.status_code == 200 and portal_file.content.startswith(b"%PDF-"),
+                        f"{portal_file.status_code} {len(portal_file.content)} bytes",
+                        p0=True,
+                    )
+                    again = await c.post(f"/api/v1/policies/{policy_id}/issue", headers=mgr)
+                    check("issue", "issuing twice → 409, not a second document", again, 409, p0=True)
+                    check(
+                        "issue", "a rep cannot issue → 403", await c.post(f"/api/v1/policies/{policy_id}/issue", headers=rep), 403, p0=True
+                    )
+                    listed = await get("/api/v1/policies?page_size=50", mgr)
+                    row = next((item for item in listed.json().get("items", []) if item["id"] == policy_id), None)
+                    record("issue", "the list row exposes the document for download", bool(row and row.get("document")), "", p0=True)
+                    portal_list = await get("/api/v1/portal/policies", owner)
+                    ids_seen = {item["id"] for item in portal_list.json()} if portal_list.status_code == 200 else set()
+                    record(
+                        "portal",
+                        "GET /portal/policies shows the owner's issued contract",
+                        policy_id in ids_seen,
+                        f"{portal_list.status_code}",
+                        p0=True,
+                    )
+                    portal_text = json.dumps(portal_list.json(), ensure_ascii=False).lower()
+                    record("portal", "the policy list carries no commission", "commission" not in portal_text, "", p0=True)
+
+            # another company's policy is invisible to the owner (404, never 403 — no existence oracle)
+            other_client = next(
+                (
+                    row["id"]
+                    for row in (await get("/api/v1/clients?page_size=20", admin)).json().get("items", [])
+                    if row["id"] != owner_client
+                ),
+                None,
+            )
+            if other_client and policy_id:
+                foreign = await c.post(
+                    "/api/v1/policies",
+                    headers=admin,
+                    json={"client_id": other_client, "start_date": "2026-11-01", "premium_amount": 90000},
+                )
+                if foreign.status_code == 201:
+                    await c.post(f"/api/v1/policies/{foreign.json()['id']}/issue", headers=admin)
+                    check(
+                        "portal",
+                        "another company's policy file → 404 for the owner",
+                        await get(f"/api/v1/portal/policies/{foreign.json()['id']}/document", owner),
+                        404,
+                        p0=True,
+                    )
+
+        # ------------------------------------------------------------------ 5.2 R5 · manager lead filters
+        users = (await get("/api/v1/users", admin)).json()
+        rep_seat = next((row for row in users if row["email"] == REP), None)
+        cs_seat = next((row for row in users if row["email"] == CS), None)
+        if rep_seat:
+            by_rep = await get(f"/api/v1/leads?assigned_to={rep_seat['id']}&page_size=100", mgr)
+            check("filters", "GET /leads?assigned_to=<rep> as a manager", by_rep, 200, p0=True)
+            rows = by_rep.json().get("items", [])
+            record(
+                "filters",
+                "every row belongs to that rep",
+                bool(rows) and all(row.get("assignee_id") == rep_seat["id"] for row in rows),
+                f"{len(rows)} rows",
+                p0=True,
+            )
+            board = await get(f"/api/v1/leads/board?assigned_to={rep_seat['id']}", mgr)
+            cards = (
+                [lead for column in board.json().get("columns", []) for lead in column.get("items", [])] if board.status_code == 200 else []
+            )
+            record(
+                "filters",
+                "the Kanban board filters by rep too",
+                board.status_code == 200 and bool(cards) and all(card.get("assignee_name") for card in cards),
+                f"{len(cards)} cards",
+                p0=True,
+            )
+            unassigned = await get("/api/v1/leads?unassigned=true&page_size=50", mgr)
+            check("filters", "GET /leads?unassigned=true", unassigned, 200, p0=True)
+            record(
+                "filters",
+                "the unassigned filter really means unassigned",
+                all(row.get("assignee_id") is None for row in unassigned.json().get("items", [])),
+                f"{unassigned.json().get('total')} in the pool",
+                p0=True,
+            )
+            rep_board = await get("/api/v1/leads/board?unassigned=true", rep)
+            rep_cards = (
+                [lead for column in rep_board.json().get("columns", []) for lead in column.get("items", [])]
+                if rep_board.status_code == 200
+                else []
+            )
+            record(
+                "isolation",
+                "a rep passing unassigned=true still sees only their own book",
+                rep_board.status_code == 200 and not rep_cards,
+                f"{len(rep_cards)} cards",
+                p0=True,
+            )
+            other_seat = next((row for row in users if row["email"] == OTHER_REP), None)
+            if other_seat:
+                sneaky = await get(f"/api/v1/leads?assigned_to={other_seat['id']}&page_size=100", rep)
+                found = sneaky.json().get("items", []) if sneaky.status_code == 200 else []
+                record(
+                    "isolation",
+                    "a rep asking for a colleague's book gets nothing",
+                    sneaky.status_code == 200 and all(row.get("assignee_id") == rep_seat["id"] for row in found),
+                    f"{sneaky.status_code} {len(found)} rows",
+                    p0=True,
+                )
+
+        # ------------------------------------------------------------------ 5.3 R5 · redistribution hardening
+        if cs_seat:
+            target = await c.post("/api/v1/leads/assign-bulk", headers=mgr, json={"unassigned_only": True, "to": [cs_seat["id"]]})
+            record(
+                "redistribute",
+                "a customer-service seat is refused as a lead owner",
+                target.status_code == 422,
+                f"{target.status_code} {target.text[:120]}",
+                p0=True,
+            )
+
+        # ------------------------------------------------------------------ 5.4 R5 · portal accounts (ADR-022)
+        if owner_client:
+            made = await c.post(
+                f"/api/v1/clients/{owner_client}/portal-accounts",
+                headers=mgr,
+                json={"username": "qa.portal.owner", "full_name": "مالك QA"},
+            )
+            check("portal", "POST a username-only portal account", made, 201, p0=True)
+            account = made.json() if made.status_code == 201 else {}
+            temp = account.get("temporary_password")
+            record("portal", "the temporary password is returned exactly once", bool(temp), "", p0=True)
+            again_list = await get(f"/api/v1/clients/{owner_client}/portal-accounts", mgr)
+            record("portal", "the list never replays the password", bool(temp) and temp not in again_list.text, "", p0=True)
+            if temp:
+                by_name = await c.post("/api/v1/auth/login", json={"email": "qa.portal.owner", "password": temp})
+                check("portal", "sign in with a username, not an e-mail", by_name, 200, p0=True)
+                if by_name.status_code == 200:
+                    as_owner = {"authorization": f"Bearer {by_name.json()['access_token']}"}
+                    overview = await get("/api/v1/portal/overview", as_owner)
+                    record(
+                        "portal",
+                        "the username session is pinned to its company",
+                        overview.status_code == 200 and overview.json()["client"]["id"] == owner_client,
+                        f"{overview.status_code}",
+                        p0=True,
+                    )
+                    check("portal", "the new login sees no staff screen", await get("/api/v1/leads?page_size=1", as_owner), 403, p0=True)
+                wrong = await c.post("/api/v1/auth/login", json={"email": "qa.portal.owner", "password": "not-the-password"})
+                check("portal", "a wrong password → 401", wrong, 401, p0=True)
+                if account.get("id"):
+                    reset = await c.post(f"/api/v1/clients/{owner_client}/portal-accounts/{account['id']}/password", headers=mgr, json={})
+                    check("portal", "POST a password reset", reset, 200, p0=True)
+                    new_temp = reset.json().get("temporary_password") if reset.status_code == 200 else None
+                    old = await c.post("/api/v1/auth/login", json={"email": "qa.portal.owner", "password": temp})
+                    check("portal", "the old password stops working", old, 401, p0=True)
+                    if new_temp:
+                        fresh_login = await c.post("/api/v1/auth/login", json={"email": "qa.portal.owner", "password": new_temp})
+                        check("portal", "the returned password works", fresh_login, 200, p0=True)
+                    off = await c.patch(
+                        f"/api/v1/clients/{owner_client}/portal-accounts/{account['id']}", headers=mgr, json={"is_active": False}
+                    )
+                    check("portal", "PATCH the account is_active=false", off, 200, p0=True)
+                    blocked = await c.post("/api/v1/auth/login", json={"email": "qa.portal.owner", "password": new_temp or temp})
+                    check("portal", "a disabled portal account → 403", blocked, 403, p0=True)
+                    renamed = await c.put(
+                        f"/api/v1/clients/{owner_client}/portal-accounts/{account['id']}/username",
+                        headers=mgr,
+                        json={"username": "qa.owner.renamed"},
+                    )
+                    check("portal", "PUT a new username", renamed, 200, p0=True)
+                    bad = await c.post(f"/api/v1/clients/{owner_client}/portal-accounts", headers=mgr, json={"username": "اسم عربي"})
+                    check("portal", "an invalid username → 422", bad, 422, p0=True)
+                    dup = await c.post(
+                        f"/api/v1/clients/{owner_client}/portal-accounts", headers=mgr, json={"username": "qa.owner.renamed"}
+                    )
+                    check("portal", "a duplicate username → 409", dup, 409, p0=True)
+            outer = next(
+                (
+                    row["id"]
+                    for row in (await get("/api/v1/clients?page_size=20", mgr)).json().get("items", [])
+                    if row["id"] != owner_client
+                ),
+                None,
+            )
+            if outer:
+                check(
+                    "portal",
+                    "a rep cannot create a login for a client outside their scope",
+                    await c.post(f"/api/v1/clients/{outer}/portal-accounts", headers=rep, json={"username": "qa.rep.made"}),
+                    404,
+                    p0=True,
+                )
+
+        # ------------------------------------------------------------------ 5.5 R5 · live driver contracts (offline)
+        # The drivers themselves are exercised end-to-end in `tests/test_live_channels.py` against an injected
+        # HTTP transport. Here the matrix only proves the contract every live deployment depends on: an HMAC
+        # over the raw bytes, and a normalizer that understands the aliases real providers send.
+        from app.integrations.telephony import TelephonyGeneric, parse_event
+        from app.integrations.whatsapp import WhatsAppMeta
+
+        sample = b'{"CallSid":"CA-qa","CallStatus":"call.ended"}'
+        signature = "sha256=" + hmac.new(b"qa-secret", sample, hashlib.sha256).hexdigest()
+        driver = TelephonyGeneric(webhook_secret="qa-secret")
+        record("live", "the PBX driver accepts an HMAC over the raw body", driver.verify_signature(sample, signature), "", p0=True)
+        record("live", "and refuses one byte of drift", not driver.verify_signature(sample + b" ", signature), "", p0=True)
+        normal = parse_event(sample)
+        record(
+            "live",
+            "a Twilio-shaped payload normalizes to our event names",
+            normal["provider_call_id"] == "CA-qa" and normal["event"] == "call.ended",
+            json.dumps(normal)[:80],
+            p0=True,
+        )
+        meta = WhatsAppMeta(token="qa-token", phone_number_id="qa-phone", app_secret="qa-app")
+        wa_sample = b'{"entry":[]}'
+        wa_signature = "sha256=" + hmac.new(b"qa-app", wa_sample, hashlib.sha256).hexdigest()
+        record("live", "the Meta driver accepts a valid X-Hub-Signature-256", meta.verify_signature(wa_sample, wa_signature), "", p0=True)
+        record("live", "and refuses a forged one", not meta.verify_signature(wa_sample, "sha256=forged"), "", p0=True)
 
         # ------------------------------------------------------------------ 4.12 negatives
         check("negative", "GET /leads without a token → 401", await c.get("/api/v1/leads"), 401, p0=True)

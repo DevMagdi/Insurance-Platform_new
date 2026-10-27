@@ -49,6 +49,9 @@ class User(UUIDPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     __table_args__ = (sa.Index("ix_users_role", "role_id"),)
 
     email: Mapped[str] = mapped_column(sa.String(255), unique=True, nullable=False)
+    #: login handle for portal accounts (`owner.mantiq`), because a company owner remembers a username,
+    #: not the mailbox the brokerage invented for them. Unique when set, null for every staff seat.
+    username: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(sa.String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(sa.String(160), nullable=False)
     mobile: Mapped[str | None] = mapped_column(sa.String(20))

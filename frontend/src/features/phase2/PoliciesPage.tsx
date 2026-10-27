@@ -2,8 +2,8 @@
  * Screen 12 — policies, payment plan and commissions (Phase 2). Shipped in full but gated
  * by `phase2.enabled`, so the data path is real as soon as the flag is on.
  */
-import { useQuery } from "@tanstack/react-query";
-import { Banknote, CalendarClock, FileCheck2, TriangleAlert } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Banknote, CalendarClock, Download, FileCheck2, FilePlus2, TriangleAlert } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -11,6 +11,8 @@ import { useNavigate } from "react-router-dom";
 import { Modal } from "@/components/Modal";
 import { Badge, Button, Card, DataTable, PageHeader, SectionTitle, StateBlock } from "@/components/ui";
 import { api } from "@/lib/api/client";
+import { downloadGet, saveFile } from "@/lib/api/download";
+import { useToast } from "@/components/Toast";
 import { daysUntil, formatDate, formatMoney, formatNumber } from "@/lib/format";
 import type { AnyPage, InstallmentPlan } from "@/lib/api/views";
 import type { components } from "@/lib/api/schema";
@@ -27,10 +29,42 @@ export default function PoliciesPage() {
   );
 }
 
+/** What the API answers from `POST /policies/{id}/issue` (the number that was printed + the file). */
+type IssuedPolicy = { status: string; policy_no: string; document: { filename: string; size: number; checksum: string } };
+
 function PoliciesContent() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const toast = useToast();
   const [openPlan, setOpenPlan] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const issue = useMutation({
+    mutationFn: (id: string) => api.post<IssuedPolicy>(`/policies/${id}/issue`),
+    onMutate: (id) => setBusyId(id),
+    onSuccess: async (issued) => {
+      // the row is re-read from the server instead of patched locally: the number and the file are the
+      // server's facts, and a stale "draft" badge after a successful issue is the kind of bug a manager
+      // reports as "الإصدار مش شغال"
+      await queryClient.invalidateQueries({ queryKey: ["policies"] });
+      toast(t("phase2.issued", { policy: issued.policy_no }));
+    },
+    onError: (error: Error) => toast(error.message, "error"),
+    onSettled: () => setBusyId(null),
+  });
+
+  async function download(row: PolicyRow) {
+    setDownloadingId(String(row.id));
+    try {
+      saveFile(await downloadGet(`/policies/${row.id}/document`, `${row.policy_no ?? "policy"}.pdf`));
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t("common.errorBody"), "error");
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   const list = useQuery({ queryKey: ["policies"], queryFn: () => api.get<AnyPage>("/policies", { page_size: 50 }) });
   const kpis = useQuery({ queryKey: ["policies", "kpis"], queryFn: () => api.get<PolicyKpis>("/policies/kpis") });
@@ -130,6 +164,43 @@ function PoliciesContent() {
                   width: 110,
                   align: "end",
                   render: (row) => <Badge tone={row.status === "issued" ? "g" : row.status === "cancelled" ? "r" : "a"}>{t(`phase2.${row.status}`, { defaultValue: row.status })}</Badge>,
+                },
+                {
+                  id: "document",
+                  head: t("phase2.colDocument"),
+                  width: 130,
+                  align: "end",
+                  // one cell, one action: a draft offers «إصدار», an issued policy offers «تحميل». Nothing
+                  // renders a download link for a file that does not exist yet.
+                  render: (row) =>
+                    row.document ? (
+                      <Button
+                        size="sm"
+                        icon={<Download size={14} strokeWidth={1.8} />}
+                        busy={downloadingId === String(row.id)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void download(row);
+                        }}
+                      >
+                        {t("common.download")}
+                      </Button>
+                    ) : row.status === "draft" ? (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        icon={<FilePlus2 size={14} strokeWidth={1.8} />}
+                        busy={busyId === String(row.id)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          issue.mutate(String(row.id));
+                        }}
+                      >
+                        {t("phase2.issueAction")}
+                      </Button>
+                    ) : (
+                      <span className="text-[12px] text-muted">—</span>
+                    ),
                 },
               ]}
             />

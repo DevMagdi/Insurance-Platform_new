@@ -337,6 +337,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/portal-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Portal logins of one client */
+        get: operations["getApiV1ClientsClientIdPortal-Accounts"];
+        put?: never;
+        /** Create a portal login (temp password returned once) */
+        post: operations["postApiV1ClientsClientIdPortal-Accounts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/portal-accounts/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Enable/disable a portal login */
+        patch: operations["patchApiV1ClientsClientIdPortal-AccountsUserId"];
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/portal-accounts/{user_id}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset a portal password (returned once) */
+        post: operations["postApiV1ClientsClientIdPortal-AccountsUserIdPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/portal-accounts/{user_id}/username": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change a portal username */
+        put: operations["putApiV1ClientsClientIdPortal-AccountsUserIdUsername"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/requests": {
         parameters: {
             query?: never;
@@ -745,7 +814,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Kanban payload (5 columns, scoped) */
+        /**
+         * Kanban payload (5 columns, scoped; manager can filter by rep)
+         * @description `assigned_to` narrows to one rep, `unassigned=true` shows the pool. Neither can widen the scope.
+         */
         get: operations["getApiV1LeadsBoard"];
         put?: never;
         post?: never;
@@ -1091,6 +1163,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/policies/{policy_id}/document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download the issued policy PDF
+         * @description The stored file, streamed with its own filename. Scoped: a foreign policy answers 404, not 403.
+         */
+        get: operations["getApiV1PoliciesPolicyIdDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/policies/{policy_id}/installments": {
         parameters: {
             query?: never;
@@ -1102,6 +1194,29 @@ export interface paths {
         get: operations["getApiV1PoliciesPolicyIdInstallments"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/policies/{policy_id}/issue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue a policy → number + PDF document (Phase 2)
+         * @description `draft → issued` once, with the file written in the same transaction (ADR-021).
+         *
+         *     Permission before flag, exactly like `POST /policies`: a rep is not "blocked by a flag", they do not
+         *     issue policies at all. A second call on the same policy is a `409`, not a second document.
+         */
+        post: operations["postApiV1PoliciesPolicyIdIssue"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1151,6 +1266,40 @@ export interface paths {
         };
         /** Owner header, KPIs and contract summary */
         get: operations["getApiV1PortalOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/portal/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My contracts, with their real status and document */
+        get: operations["getApiV1PortalPolicies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/portal/policies/{policy_id}/document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download my issued policy PDF */
+        get: operations["getApiV1PortalPoliciesPolicyIdDocument"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3090,7 +3239,10 @@ export interface components {
         };
         /** LoginIn */
         LoginIn: {
-            /** Email */
+            /**
+             * Email
+             * @description e-mail or portal username
+             */
             email: string;
             /** Password */
             password: string;
@@ -3101,6 +3253,8 @@ export interface components {
             remember_me: boolean;
             /** Totp Code */
             totp_code?: string | null;
+            /** Username */
+            username?: string | null;
         };
         /**
          * LoginOut
@@ -3291,6 +3445,25 @@ export interface components {
              */
             start_date: string;
         };
+        /**
+         * PolicyDocumentRefOut
+         * @description One issued file, as a list row needs it: what to call it and where the download lives.
+         */
+        PolicyDocumentRefOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Download Url */
+            download_url: string;
+            /** Filename */
+            filename: string;
+            /** Size */
+            size: number;
+        } & {
+            [key: string]: unknown;
+        };
         /** PolicyKpisOut */
         PolicyKpisOut: {
             /**
@@ -3342,6 +3515,7 @@ export interface components {
              * @default EGP
              */
             currency: string;
+            document?: components["schemas"]["PolicyDocumentRefOut"] | null;
             /** End Date */
             end_date?: string | null;
             /** Headcount */
@@ -3365,6 +3539,33 @@ export interface components {
             status: string;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * PortalAccountIn
+         * @description `email` or `username` identifies the login; a blank password means "generate and show it once".
+         */
+        PortalAccountIn: {
+            /** Email */
+            email?: string | null;
+            /** Full Name */
+            full_name?: string | null;
+            /**
+             * Password
+             * @default
+             */
+            password: string;
+            /**
+             * Role Code
+             * @default client_owner
+             */
+            role_code: string;
+            /** Username */
+            username?: string | null;
+        };
+        /** PortalActiveIn */
+        PortalActiveIn: {
+            /** Is Active */
+            is_active: boolean;
         };
         /** PortalClientOut */
         PortalClientOut: {
@@ -3395,8 +3596,15 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Kind
+             * @default request_attachment
+             */
+            kind: string;
             /** Mime */
             mime: string;
+            /** Policy No */
+            policy_no?: string | null;
             /** Request Number */
             request_number?: number | null;
             /**
@@ -3465,6 +3673,65 @@ export interface components {
             policy_summary?: components["schemas"]["PortalPolicySummaryOut"] | null;
             /** Renewal In Days */
             renewal_in_days?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** PortalPasswordIn */
+        PortalPasswordIn: {
+            /**
+             * Password
+             * @default
+             */
+            password: string;
+        };
+        /** PortalPolicyDocumentOut */
+        PortalPolicyDocumentOut: {
+            /** Created At */
+            created_at?: string | null;
+            /** Download Url */
+            download_url?: string | null;
+            /** Filename */
+            filename: string;
+            /**
+             * Size
+             * @default 0
+             */
+            size: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * PortalPolicyOut
+         * @description One contract as the owner may see it: no commission, no internal notes, no staff names.
+         */
+        PortalPolicyOut: {
+            /**
+             * Currency
+             * @default EGP
+             */
+            currency: string;
+            document?: components["schemas"]["PortalPolicyDocumentOut"] | null;
+            /** End Date */
+            end_date?: string | null;
+            /** Headcount */
+            headcount?: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Insurance Type */
+            insurance_type?: string | null;
+            /** Insurer */
+            insurer?: string | null;
+            /** Policy No */
+            policy_no?: string | null;
+            /** Premium Amount */
+            premium_amount?: number | null;
+            /** Start Date */
+            start_date?: string | null;
+            /** Status */
+            status: string;
         } & {
             [key: string]: unknown;
         };
@@ -3565,6 +3832,11 @@ export interface components {
             total: number;
         } & {
             [key: string]: unknown;
+        };
+        /** PortalUsernameIn */
+        PortalUsernameIn: {
+            /** Username */
+            username: string;
         };
         /** ProviderStateOut */
         ProviderStateOut: {
@@ -3794,6 +4066,8 @@ export interface components {
             direction: string;
             /** Duration S */
             duration_s?: number | null;
+            /** External Id */
+            external_id?: string | null;
             /**
              * Id
              * Format: uuid
@@ -5019,6 +5293,190 @@ export interface operations {
             };
         };
     };
+    "getApiV1ClientsClientIdPortal-Accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "postApiV1ClientsClientIdPortal-Accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortalAccountIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "patchApiV1ClientsClientIdPortal-AccountsUserId": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortalActiveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "postApiV1ClientsClientIdPortal-AccountsUserIdPassword": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortalPasswordIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "putApiV1ClientsClientIdPortal-AccountsUserIdUsername": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortalUsernameIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getApiV1ClientsClientIdRequests: {
         parameters: {
             query?: {
@@ -5727,6 +6185,7 @@ export interface operations {
             query?: {
                 assigned_to?: string | null;
                 q?: string | null;
+                unassigned?: boolean;
             };
             header?: never;
             path?: never;
@@ -6444,6 +6903,37 @@ export interface operations {
             };
         };
     };
+    getApiV1PoliciesPolicyIdDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getApiV1PoliciesPolicyIdInstallments: {
         parameters: {
             query?: never;
@@ -6462,6 +6952,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstallmentPlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1PoliciesPolicyIdIssue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -6542,6 +7065,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PortalOverviewOut"];
+                };
+            };
+        };
+    };
+    getApiV1PortalPolicies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalPolicyOut"][];
+                };
+            };
+        };
+    };
+    getApiV1PortalPoliciesPolicyIdDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

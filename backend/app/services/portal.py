@@ -177,7 +177,12 @@ async def thread(session: AsyncSession, request_id: Any) -> list[dict[str, Any]]
 
 
 async def documents(session: AsyncSession, scope: Scope) -> list[dict[str, Any]]:
-    """Contract documents visible to the owner: attachments hanging off their requests + policies."""
+    """Everything the owner may download: their issued policy files **and** attachments on their requests.
+
+    The policy files are the part that was missing: an owner could read a contract summary but could not
+    hold the document (ADR-021). They are merged into this one list because the screen has one documents
+    column — and because a client looking for "my policy" does not think in tables.
+    """
     client = await _client(session, scope)
     rows = (
         await session.execute(
@@ -188,18 +193,130 @@ async def documents(session: AsyncSession, scope: Scope) -> list[dict[str, Any]]
             .limit(100)
         )
     ).all()
-    return [
+    attachments = [
         {
             "id": str(att.id),
+            "kind": "request_attachment",
             "filename": att.filename,
             "mime": att.mime,
             "size": att.size,
             "created_at": att.created_at.isoformat(),
             "request_number": number,
+            "policy_no": None,
             "download_url": f"/api/v1/portal/attachments/{att.id}",
         }
         for att, number in rows
     ]
+
+    from app.models.phase2 import PolicyDocument
+
+    policy_rows = (
+        await session.execute(
+            select(PolicyDocument, Policy.policy_no, Policy.start_date, Policy.end_date)
+            .join(Policy, Policy.id == PolicyDocument.policy_id)
+            .where(Policy.client_id == client.id, Policy.status == "issued")
+            .order_by(PolicyDocument.created_at.desc())
+            .limit(100)
+        )
+    ).all()
+    policies = [
+        {
+            "id": str(document.id),
+            "kind": "policy",
+            "filename": document.filename,
+            "mime": document.mime,
+            "size": document.size,
+            "created_at": document.created_at.isoformat(),
+            "request_number": None,
+            "policy_no": number,
+            "download_url": f"/api/v1/portal/policies/{document.policy_id}/document",
+        }
+        for document, number, _start, _end in policy_rows
+    ]
+    return policies + attachments
+
+
+async def my_policies(session: AsyncSession, scope: Scope) -> list[dict[str, Any]]:
+    """The owner's contracts with their real status — the facts a client asks about on the phone.
+
+    No commission rate, no `notes` (internal), no assignee: the policy row carries all three, and this
+    projection is the one place that decides what leaves the building (spec §6).
+    """
+    client = await _client(session, scope)
+    rows = (
+        (await session.execute(select(Policy).where(Policy.client_id == client.id).order_by(Policy.start_date.desc().nullslast())))
+        .unique()
+        .scalars()
+        .all()
+    )
+    from app.models.phase2 import PolicyDocument
+
+    latest: dict[str, PolicyDocument] = {}
+    if rows:
+        documents = (
+            (
+                await session.execute(
+                    select(PolicyDocument)
+                    .where(PolicyDocument.policy_id.in_([row.id for row in rows]))
+                    .order_by(PolicyDocument.created_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for document in documents:
+            latest.setdefault(str(document.policy_id), document)
+
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        attached: PolicyDocument | None = latest.get(str(row.id))
+        out.append(
+            {
+                "id": str(row.id),
+                "policy_no": row.policy_no,
+                "status": row.status.value,
+                "insurance_type": None if row.insurance_type is None else row.insurance_type.name,
+                "insurer": None if row.insurer is None else row.insurer.name,
+                "start_date": row.start_date.isoformat() if row.start_date else None,
+                "end_date": row.end_date.isoformat() if row.end_date else None,
+                "premium_amount": float(row.premium_amount) if row.premium_amount is not None else None,
+                "currency": row.currency,
+                "headcount": row.headcount,
+                "document": None
+                if attached is None
+                else {
+                    "filename": attached.filename,
+                    "size": attached.size,
+                    "created_at": attached.created_at.isoformat(),
+                    "download_url": f"/api/v1/portal/policies/{row.id}/document",
+                },
+            }
+        )
+    return out
+
+
+async def policy_document(session: AsyncSession, scope: Scope, policy_id: Any) -> tuple[str, str, bytes]:
+    """Bytes of one issued policy file — only if the policy belongs to the caller's own company."""
+    client = await _client(session, scope)
+    policy = (await session.execute(select(Policy).where(Policy.id == policy_id, Policy.client_id == client.id))).scalar_one_or_none()
+    if policy is None:
+        raise NotFound("Document not found")  # a foreign policy is "not here", never "forbidden" (spec §6)
+    from app.models.phase2 import PolicyDocument
+
+    document = (
+        await session.execute(
+            select(PolicyDocument).where(PolicyDocument.policy_id == policy.id).order_by(PolicyDocument.created_at.desc()).limit(1)
+        )
+    ).scalar_one_or_none()
+    if document is None:
+        raise NotFound("Document not found")
+    from app.integrations.storage import storage
+
+    try:
+        payload = storage().get_object(document.object_key)
+    except (FileNotFoundError, ValueError) as exc:
+        raise NotFound("Document not found") from exc
+    return document.filename, document.mime or "application/pdf", payload
 
 
 async def create_request(session: AsyncSession, scope: Scope, *, subject: str, body: str | None) -> dict[str, Any]:

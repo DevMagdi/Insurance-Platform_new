@@ -70,8 +70,10 @@ export default function LoginPage() {
           <p className="mt-1 text-sub text-muted">{t("auth.subtitle")}</p>
 
           <label className="label mt-[22px]" htmlFor="email">
-            {t("auth.email")}
+            {t("auth.identifier")}
           </label>
+          {/* one field, two handles: staff sign in with their e-mail, a client owner with the username on
+              their onboarding note (ADR-022). The API resolves either against the same column. */}
           <input
             id="email"
             className="field"
@@ -81,7 +83,7 @@ export default function LoginPage() {
             {...form.register("email")}
           />
           {form.formState.errors.email ? (
-            <p className="mt-1 text-[12px] text-[var(--r-ink)]">{t("auth.email")} *</p>
+            <p className="mt-1 text-[12px] text-[var(--r-ink)]">{t("auth.identifier")} *</p>
           ) : null}
 
           <label className="label mt-4" htmlFor="password">

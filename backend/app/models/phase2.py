@@ -50,6 +50,33 @@ class Policy(UUIDPkMixin, TimestampMixin, Base):
 
     insurer: Mapped[Insurer | None] = relationship(lazy="joined")
     insurance_type: Mapped[InsuranceType | None] = relationship(lazy="joined")
+    documents: Mapped[list[PolicyDocument]] = relationship(
+        back_populates="policy", lazy="selectin", cascade="all, delete-orphan", order_by="PolicyDocument.created_at.desc()"
+    )
+
+
+class PolicyDocument(UUIDPkMixin, TimestampMixin, Base):
+    """The rendered file of one issued policy (ADR-021).
+
+    A separate table rather than a column on `policies`: issuing twice is a conflict, but re-rendering a
+    lost file must stay possible, and the old bytes are what a client may already hold. Keeping the row
+    also keeps `policies` readable without the storage layer — the list screen never touches a file.
+    """
+
+    __tablename__ = "policy_documents"
+    __table_args__ = (sa.Index("ix_policy_documents_policy", "policy_id"),)
+
+    policy_id: Mapped[UUID] = mapped_column(sa.Uuid(), sa.ForeignKey("policies.id", ondelete="CASCADE"), nullable=False)
+    filename: Mapped[str] = mapped_column(sa.String(255), nullable=False)
+    object_key: Mapped[str] = mapped_column(sa.String(512), nullable=False)
+    mime: Mapped[str] = mapped_column(sa.String(128), default="application/pdf", nullable=False)
+    size: Mapped[int] = mapped_column(sa.BigInteger, default=0, nullable=False)
+    checksum: Mapped[str | None] = mapped_column(sa.String(64))
+    issued_by: Mapped[UUID | None] = mapped_column(sa.Uuid(), sa.ForeignKey("users.id", ondelete="SET NULL"))
+    #: the number printed on the page; kept on the row so a re-render after a number change is explainable
+    policy_no: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+
+    policy: Mapped[Policy] = relationship(back_populates="documents", lazy="joined")
 
 
 class Installment(UUIDPkMixin, TimestampMixin, Base):

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,11 +11,12 @@ from pydantic import BaseModel, Field
 
 from app.api.v1.deps import DbSession
 from app.core.config import get_settings
-from app.core.errors import Forbidden
+from app.core.errors import Forbidden, ValidationFailed
 from app.integrations import registry
 from app.integrations.base import StorageProvider, WhatsAppProvider
 from app.integrations.registry import telephony_provider, whatsapp_provider
 from app.integrations.storage import storage
+from app.integrations.telephony import parse_event as parse_call_event
 from app.services import intake, integrations_settings
 
 router = APIRouter(tags=["webhooks & simulator"])
@@ -272,29 +272,55 @@ async def telephony_webhook(
         await _log_rejected(session, "telephony", raw)
         raise Forbidden("Invalid webhook signature")
     try:
-        body = json.loads(raw or b"{}")
-    except json.JSONDecodeError as exc:
+        body = parse_call_event(raw)
+    except ValidationFailed as exc:
         await _log_rejected(session, "telephony", raw, detail="body must be JSON")
-        raise Forbidden("Body must be JSON") from exc
+        raise Forbidden(str(exc.message)) from exc
+
+    # A real central sends a `recording_url` that expires in minutes, not an object key. We pull it while
+    # it is alive and keep our own copy, so playback never depends on the PBX's retention (ADR-023 §2).
+    recording_key = body.get("recording_key")
+    recording_url = body.get("recording_url")
+    if recording_url and not recording_key:
+        try:
+            payload = await telephony_provider().fetch_recording(str(recording_url))
+        except Exception as exc:  # a PBX/storage failure must never 500 the webhook and lose the call
+            await integrations_settings.record_event(
+                session,
+                provider="telephony",
+                event_type="recording_fetch_failed",
+                external_id=str(body.get("provider_call_id") or "") or None,
+                status="error",
+                detail=f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
+            await session.commit()
+            payload = None
+        if payload:
+            safe_id = re.sub(r"[^A-Za-z0-9_.-]", "_", str(body.get("provider_call_id") or "call"))[:80]
+            recording_key = f"calls/{safe_id}.wav"
+            storage().put_object(recording_key, payload, "audio/wav")
+            body["recording_size"] = len(payload)
+
     result = await intake.ingest_call_event(
         session,
-        provider_call_id=str(body.get("call_id") or body.get("provider_call_id") or ""),
-        event=str(body.get("event", "call.started")),
-        direction=str(body.get("direction", "inbound")),
-        from_number=body.get("from"),
-        to_number=body.get("to"),
+        provider_call_id=str(body.get("provider_call_id") or ""),
+        event=str(body.get("event") or "call.started"),
+        direction=str(body.get("direction") or "inbound"),
+        from_number=body.get("from_number"),
+        to_number=body.get("to_number"),
         caller_name=body.get("caller_name"),
         started_at=_ts(body.get("started_at")),
         ended_at=_ts(body.get("ended_at")),
         duration_s=body.get("duration_s"),
-        recording_object_key=body.get("recording_key"),
+        recording_object_key=recording_key,
         recording_consent=bool(body.get("recording_consent", False)),
+        recording_size=body.get("recording_size"),
     )
     await integrations_settings.record_event(
         session,
         provider="telephony",
-        event_type=str(body.get("event", "call.started")),
-        external_id=str(body.get("call_id") or body.get("provider_call_id") or "") or None,
+        event_type=str(body.get("event") or "call.started"),
+        external_id=str(body.get("provider_call_id") or "") or None,
         status=str(result.get("status") or "ok"),
         detail=None if result.get("status") != "ignored" else "duplicate/unknown — no state change",
     )

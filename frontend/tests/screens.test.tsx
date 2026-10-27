@@ -83,6 +83,25 @@ const ROUTES: Record<string, unknown> = {
     page: 1,
     page_size: 10,
   },
+  "/portal/policies": [
+    {
+      id: "p1",
+      policy_no: "GRP-2026-43240",
+      status: "issued",
+      insurance_type: "تأمين طبي",
+      insurer: "أكسا",
+      start_date: "2026-04-01",
+      end_date: "2027-03-31",
+      premium_amount: 480000,
+      currency: "EGP",
+      document: {
+        filename: "GRP-2026-43240.pdf",
+        size: 40960,
+        created_at: "2026-04-02T09:00:00Z",
+        download_url: "/api/v1/portal/policies/p1/document",
+      },
+    },
+  ],
   "/portal/documents": [
     {
       id: "d1",
@@ -172,6 +191,10 @@ describe("screen 7 · client portal", () => {
     for (const label of [ar.inbox.assignee, ar.inbox.employee, ar.inbox.voiceNote]) {
       expect(screen.queryByText(label, { exact: true })).not.toBeInTheDocument();
     }
+    // the issued policy and its file are visible to the owner — and the download is a real button, not a
+    // bare <a href> that would arrive at the API without a bearer token
+    expect(text).toContain("GRP-2026-43240");
+    expect(screen.getByLabelText(ar.common.download)).toBeInTheDocument();
     // the request thread and the covered head count are the owner's own business
     expect(text).toContain("إضافة مولود جديد");
     expect(text).toContain("128");

@@ -110,7 +110,10 @@ def telephony_provider() -> Any:
         state = resolved("telephony")
         # the provider dropdown is the operator's explicit choice; `sim` there beats a live row
         if state.is_live and state.config.get("provider") != "sim":
-            _telephony = TelephonyGeneric(webhook_secret=state.secret("webhook_secret"))
+            _telephony = TelephonyGeneric(
+                webhook_secret=state.secret("webhook_secret"),
+                provider_url=str(state.value("provider_url") or ""),
+            )
         else:
             _telephony = TelephonySim()
     return _telephony

@@ -167,6 +167,17 @@ def exhaustive_pass(
         "/api/v1/sales-team/members/{user_id}": ("user_id", "team_member_id"),
     }
     overrides: dict[str, dict[str, str]] = {path: {name: known[key]} for path, (name, key) in per_path.items() if known.get(key)}
+    # the portal-account routes need *both* an id that is a portal login and the client it is pinned to —
+    # a staff `user_id` from `/users` is a real uuid that belongs to no portal account, so it answers 404
+    for suffix in ("password", ""):
+        path = f"/api/v1/clients/{{client_id}}/portal-accounts/{{user_id}}{'/' + suffix if suffix else ''}"
+        if known.get("portal_user_id") and known.get("portal_client_id"):
+            overrides[path] = {"user_id": known["portal_user_id"], "client_id": known["portal_client_id"]}
+    if known.get("portal_user_id") and known.get("portal_client_id"):
+        overrides["/api/v1/clients/{client_id}/portal-accounts/{user_id}/username"] = {
+            "user_id": known["portal_user_id"],
+            "client_id": known["portal_client_id"],
+        }
     failures: list[str] = []
     exercised = 0
     for path, operations in sorted(document["paths"].items()):
@@ -479,6 +490,102 @@ def main() -> int:
             failures.append(f"PATCH /api/v1/feature-flags/{flag} -> the exhaustive pass cannot open the gate")
     if "sim" not in os.environ.get("INTEGRATIONS_DRIVER", "sim"):  # pragma: no cover - the file pins sim above
         failures.append("the smoke run must not talk to a real provider")
+    # — issuance (ADR-021): the file is the deliverable, so the smoke run downloads it through both doors —
+    # The seeded policies carry no document (they were booked before issuance existed), and a GET document
+    # for a policy with no file is honestly a 404. So one draft is created for the portal owner's company and
+    # issued here; the exhaustive pass then asks for *its* document, for the staff route and the portal route.
+    if portal_login.status_code == 200:
+        owner_headers = {"authorization": f"Bearer {portal_token}"}
+        overview = client.get("/api/v1/portal/overview", headers=owner_headers)
+        owner_client = overview.json()["client"]["id"] if overview.status_code == 200 else ""
+        if owner_client:
+            draft = client.post(
+                "/api/v1/policies",
+                headers=admin,
+                json={
+                    "client_id": owner_client,
+                    "start_date": "2026-11-01",
+                    "end_date": "2027-10-31",
+                    "premium_amount": 240000,
+                    "headcount": 30,
+                },
+            )
+            if draft.status_code == 201:
+                policy_id = str(draft.json()["id"])
+                issued = client.post(f"/api/v1/policies/{policy_id}/issue", headers=admin)
+                if issued.status_code == 200 and issued.json().get("document", {}).get("size", 0) > 1000:
+                    print(
+                        f"ok   POST /api/v1/policies/{{id}}/issue -> {issued.json()['policy_no']} ({issued.json()['document']['size']} bytes)"
+                    )
+                    file = client.get(f"/api/v1/policies/{policy_id}/document", headers=admin)
+                    if file.status_code == 200 and file.content.startswith(b"%PDF-"):
+                        print(f"ok   GET /api/v1/policies/{{id}}/document -> a real PDF ({len(file.content)} bytes)")
+                        SMOKE_IDS["policy_id"] = policy_id
+                    else:
+                        failures.append(f"policy document -> {file.status_code} {file.content[:40]!r}")
+                    portal_file = client.get(f"/api/v1/portal/policies/{policy_id}/document", headers=owner_headers)
+                    if portal_file.status_code == 200 and portal_file.content.startswith(b"%PDF-"):
+                        print("ok   GET /api/v1/portal/policies/{id}/document -> the same file, one company only")
+                    else:
+                        failures.append(f"portal policy document -> {portal_file.status_code}")
+                    reissued = client.post(f"/api/v1/policies/{policy_id}/issue", headers=admin)
+                    if reissued.status_code == 409:
+                        print("ok   POST /api/v1/policies/{id}/issue twice -> 409, not a second document")
+                    else:
+                        failures.append(f"re-issue -> {reissued.status_code} (409 expected)")
+                    portal_list = client.get("/api/v1/portal/policies", headers=owner_headers)
+                    if portal_list.status_code == 200 and any(row["id"] == policy_id for row in portal_list.json()):
+                        print("ok   GET /api/v1/portal/policies -> the owner sees the issued contract")
+                    else:
+                        failures.append(f"portal policies -> {portal_list.status_code}")
+                else:
+                    failures.append(f"issue -> {issued.status_code} {issued.text[:160]}")
+            else:
+                failures.append(f"draft policy -> {draft.status_code} {draft.text[:160]}")
+
+            # — portal accounts (ADR-022): a username login, created from the client file —
+            made = client.post(
+                f"/api/v1/clients/{owner_client}/portal-accounts",
+                headers=admin,
+                json={"username": "smoke.owner", "full_name": "مالك للاختبار"},
+            )
+            if made.status_code == 201 and made.json().get("temporary_password"):
+                temp = made.json()["temporary_password"]
+                signin = client.post("/api/v1/auth/login", json={"email": "smoke.owner", "password": temp})
+                if signin.status_code == 200:
+                    print("ok   POST /auth/login with a username (not an e-mail) -> 200")
+                    again = client.get("/api/v1/portal/overview", headers={"authorization": f"Bearer {signin.json()['access_token']}"})
+                    if again.status_code == 200 and again.json()["client"]["id"] == owner_client:
+                        print("ok   the username session is pinned to the same company")
+                    else:
+                        failures.append(f"username session overview -> {again.status_code}")
+                else:
+                    failures.append(f"username login -> {signin.status_code} {signin.text[:160]}")
+                leaked = client.get(f"/api/v1/clients/{owner_client}/portal-accounts", headers=admin)
+                if "temporary_password" in leaked.text or temp in leaked.text:
+                    failures.append("the portal-account list replayed the temporary password")
+                else:
+                    print("ok   GET /clients/{id}/portal-accounts never replays the password")
+                SMOKE_IDS["portal_user_id"] = str(made.json()["id"])
+                SMOKE_IDS["portal_client_id"] = str(owner_client)
+            else:
+                failures.append(f"create portal account -> {made.status_code} {made.text[:160]}")
+
+            # a rep-facing check that the new lead filters narrow instead of widening (§6)
+            rep_token_smoke = client.post("/api/v1/auth/login", json={"email": "sara.elsayed@brokerhub.test", "password": "Br0kerHub!2026"})
+            if rep_token_smoke.status_code == 200:
+                rep_headers = {"authorization": f"Bearer {rep_token_smoke.json()['access_token']}"}
+                filtered = client.get("/api/v1/leads/board?unassigned=true", headers=rep_headers)
+                rows = (
+                    sum(len(column.get("items", [])) for column in filtered.json().get("columns", []))
+                    if filtered.status_code == 200
+                    else -1
+                )
+                if filtered.status_code == 200 and rows == 0:
+                    print("ok   GET /leads/board?unassigned=true as a rep -> an empty board, not the pool")
+                else:
+                    failures.append(f"rep unassigned board -> {filtered.status_code} rows={rows}")
+
     portal = {"authorization": f"Bearer {portal_token}"} if portal_login.status_code == 200 else admin
     smoke_failures, exercised_summary = exhaustive_pass(client, admin, admin, portal)
     failures += smoke_failures

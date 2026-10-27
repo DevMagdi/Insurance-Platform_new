@@ -4,7 +4,7 @@
  * The API never returns internal notes, rep names or commissions to this role (spec §6).
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, FileText, LogOut, MessageSquare } from "lucide-react";
+import { Download, FileText, LogOut, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -12,6 +12,7 @@ import { Modal } from "@/components/Modal";
 import { Badge, Button, Card, SectionTitle, StateBlock } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import { downloadGet, saveFile } from "@/lib/api/download";
 import { useAuth } from "@/lib/auth";
 import { formatDate, formatNumber, relativeTime, responseRating } from "@/lib/format";
 import type { PortalOverview, PortalRequestItem } from "@/lib/api/views";
@@ -26,6 +27,7 @@ const RATING_KEY: Record<NonNullable<ReturnType<typeof responseRating>>, "portal
 
 type PortalRequests = components["schemas"]["PortalRequestsOut"];
 type PortalDocument = components["schemas"]["PortalDocumentOut"];
+type PortalPolicy = components["schemas"]["PortalPolicyOut"];
 
 export default function PortalPage() {
   const { t } = useTranslation();
@@ -37,6 +39,23 @@ export default function PortalPage() {
   const overview = useQuery({ queryKey: ["portal", "overview"], queryFn: () => api.get<PortalOverview>("/portal/overview") });
   const requests = useQuery({ queryKey: ["portal", "requests"], queryFn: () => api.get<PortalRequests>("/portal/requests", { page_size: 10 }) });
   const documents = useQuery({ queryKey: ["portal", "documents"], queryFn: () => api.get<PortalDocument[]>("/portal/documents") });
+  const policies = useQuery({ queryKey: ["portal", "policies"], queryFn: () => api.get<PortalPolicy[]>("/portal/policies") });
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  /**
+   * A portal download has to carry the bearer token, so an `<a href>` to the API route would answer 401 in
+   * the owner's browser. Every file on this screen goes through here.
+   */
+  async function download(path: string, name: string) {
+    setDownloading(path);
+    try {
+      saveFile(await downloadGet(path, name));
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t("common.errorBody"), "error");
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   const create = useMutation({
     mutationFn: (payload: { subject: string; body: string }) => api.post<{ request_id: string; number: number }>("/portal/requests", payload),
@@ -191,6 +210,56 @@ export default function PortalPage() {
 
             <Card padded={false}>
               <div className="px-[20px] pt-[18px]">
+                <SectionTitle>{t("portal.policies")}</SectionTitle>
+              </div>
+              <div className="px-[20px] pb-[18px]">
+                {policies.isPending ? (
+                  <StateBlock kind="loading" />
+                ) : (policies.data ?? []).length === 0 ? (
+                  <p className="text-[12.5px] text-muted">{t("common.emptyTitle")}</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {(policies.data ?? []).map((policy) => {
+                      const file = policy.document;
+                      return (
+                      <li key={String(policy.id)} className="border-t border-line pt-2 first:border-t-0 first:pt-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-[12.5px] font-bold text-ink" dir="ltr">
+                              {policy.policy_no ?? "—"}
+                            </p>
+                            <p className="truncate text-[11px] text-muted">
+                              {policy.insurance_type ?? "—"} · {policy.insurer ?? "—"}
+                            </p>
+                            <p className="text-[11px] text-muted">
+                              {formatDate(policy.start_date)} → {formatDate(policy.end_date)}
+                            </p>
+                          </div>
+                          {file?.download_url ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              icon={<Download size={13} strokeWidth={1.8} />}
+                              busy={downloading === file.download_url}
+                              onClick={() => void download(String(file.download_url), String(file.filename ?? "policy.pdf"))}
+                              aria-label={t("common.download")}
+                            >
+                              {t("common.download")}
+                            </Button>
+                          ) : (
+                            <Badge tone="a">{t(`phase2.${policy.status}`)}</Badge>
+                          )}
+                        </div>
+                      </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </Card>
+
+            <Card padded={false}>
+              <div className="px-[20px] pt-[18px]">
                 <SectionTitle>{t("portal.documents")}</SectionTitle>
               </div>
               <div className="px-[20px] pb-[18px]" style={{ minWidth: 0 }}>
@@ -213,9 +282,14 @@ export default function PortalPage() {
                           </p>
                         </div>
                         {doc.download_url ? (
-                          <a href={doc.download_url} className="text-[12px] font-semibold text-primary" target="_blank" rel="noreferrer" aria-label={t("common.download")}>
-                            <ExternalLink size={14} strokeWidth={1.8} />
-                          </a>
+                          <button
+                            type="button"
+                            className="text-[12px] font-semibold text-primary"
+                            aria-label={t("common.download")}
+                            onClick={() => void download(String(doc.download_url), String(doc.filename ?? "document.pdf"))}
+                          >
+                            <Download size={14} strokeWidth={1.8} />
+                          </button>
                         ) : null}
                       </li>
                     ))}

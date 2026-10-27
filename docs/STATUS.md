@@ -1,7 +1,10 @@
 # STATUS — منصة إدارة الوساطة التأمينية (Broker Hub)
 
-آخر تحديث: 2026-10-27 · فرع العمل: `arena/c49804b6-insurance-platform-new` من `main` عند `9ed1a11`.
-هذه الجولة = **R4 (Live-Ready QA)**: مسح شامل لكل مسار تشغيلي بكل دور، ثم إصلاح كل ما سقط — التفاصيل
+آخر تحديث: 2026-10-27 · فرع العمل: `arena/1ce19bf9-insurance-platform-new` من `main` عند `ef0e149`.
+هذه الجولة = **R5 (Live-Real)**: القنوات الحيّة تعمل فعلاً (لا محاكاة)، إصدار الوثيقة يُنتج ملفاً قابلاً
+للتحميل من البوابتين، فلاتر المدير على الليدز في الـAPI والواجهة، وحسابات بوابة العميل باسم مستخدم —
+التفاصيل في [`qa/live-real-2026-10-27.md`](qa/live-real-2026-10-27.md) وADRs 021–023.
+الجولة السابقة = **R4 (Live-Ready QA)**: مسح شامل لكل مسار تشغيلي بكل دور، ثم إصلاح كل ما سقط — التفاصيل
 في [`qa/live-ready-2026-10-27.md`](qa/live-ready-2026-10-27.md). الجولة السابقة = **R3**: إصلاح جذري لـ e2e المتبقّي + إقلاع `docker compose` + هاردننغ استيراد/إعادة
 توزيع/مقاعد بحزام اختبارات أوسع. القاعدة نفسها من R0: لا يُكتب «تم» إلا مع الأمر ومخرجاته، وما لا
 يُشغَّل يُكتب «لم يُشغَّل» مع سببه الحرفي.
@@ -24,7 +27,7 @@
 | M5 المبيعات: Leads/Kanban/تحويل ذرّي | ✅ منتهية | `services/leads.py` (`convert` في معاملة واحدة + idempotent) · `tests/test_leads_flow.py` |
 | M6 العملاء وملف العميل والمؤمَّن عليهم + Excel | ✅ منتهية | `services/clients.py` · `tests/test_import_insured.py` `test_clients_crud.py` · معاينة→تأكيد→تقرير |
 | M7 البورتال | ✅ منتهية | `services/portal.py` · `tests/test_portal.py` (اختبار يمنع تسرّب أي مفتاح حسّاس) |
-| M8 المرحلة الثانية (وثائق/أقساط/عمولات/إصدار/تقارير) خلف flag | 🟡 واجهات كاملة + API مقروء؛ الأعمال اليدوية فقط | `api/v1/endpoints/phase2.py` · `tests/test_dashboard_phase2.py` · الشاشات 12–14 تعمل عند تفعيل `phase2.enabled` |
+| M8 المرحلة الثانية (وثائق/أقساط/عمولات/إصدار/تقارير) خلف flag | ✅ الإصدار يُنتج ملفاً (R5) | `services/policy_issue.py` + `services/documents.py` + `policy_documents` (0006) · `tests/test_policy_issue.py` · الشاشات 12–14 عند تفعيل `phase2.enabled` |
 | M9 التوثيق والمحاكاة وتشغيل UI | 🟡 جزئي | هذا الملف + [`runbook.md`](runbook.md) + [`ui-parity/`](ui-parity/README.md) · لقطات الشاشة تُنتَج في CI فقط (انظر «ما لم يُشغَّل») |
 | M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | بعد R3: backend أخضر على SQLite (**198** + 9 مُتخطَّاة بعلامة `postgres_only`)، و**PostgreSQL 16 يقيسه CI** وحده في هذه البيئة · frontend أخضر (82 اختبار وحدة في 11 ملفاً + `build` ✓) · e2e: نوعان من الأدلة — typecheck محلي ✓، و**CI شغّلها فعلاً: 166 اختباراً · 131 ناجحاً · 0 فاشل · 35 مُتخطٍّ** (تعليق تلقائي بالأرقام على الـPR #6) · ruff (146 ملفاً)/mypy (107)/تغطية النواة (14/14)/استقرار الـOpenAPI (98 مساراً)/**تمرير كل النقاط** نظيفة |
 | R1 مركز الإعدادات: تكاملات حقيقية + إنشاء وثيقة | ✅ منتهية (محلياً) | `/settings` بثلاث بطاقات + حيّ/محاكاة بتأكيد + سجلّ `webhook_events` + `POST /policies` بجدول أقساط وعمولة · `tests/test_integrations_settings.py` (16) · `frontend/tests/settingsView.test.tsx` (14) · ADR-016 |
@@ -455,6 +458,32 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 - **مصفوفة Live على PostgreSQL** — تعمل في CI على SQLite عن قصد (سريعة وحتمية)؛ مجموعة `pytest`
   الكاملة هي التي تعمل على PostgreSQL 16 في CI.
 
+## جولة R5 — «Live-Real»: القنوات الحيّة، وملف الإصدار، وفلاتر المدير، وحسابات البوابة
+
+الطلب كان واحداً: **«ممنوع شغّال في المحاكاة فقط»**. لذلك كل بند في هذه الجولة ينتهي عند نتيجة ملموسة
+(رسالة تخرج، تسجيل يُنزَّل، ملف يُفتَح، رقم يتغيّر في القاعدة)، ومعه دليل يمكن إعادة تشغيله.
+
+| # | البند | ما نُفِّذ | الدليل المقيس |
+|---|---|---|---|
+| 1 | واتساب حيّ | `use_transport()` داخل `WhatsAppMeta` نفسه (URL/توكن/JSON/تحويل الأخطاء)، الرد الخارجي مُثبت على `graph.facebook.com`، `external_id` (wamid) صار مرئياً في خيط الطلب، وخطوات Meta + `curl` في الـrunbook | `tests/test_live_channels.py` (11 حالة) · `live_matrix` بنود `live` |
+| 2 | سنترال حيّ | `parse_event` يقبل أسماء السناتر الفعلية، `recording_url` يُنزَّل ويُخزَّن في مخزننا، حصر مضيف ضد SSRF، `probe()` حقيقي في «اختبار الاتصال»، و`provider_url`/`number`/`trunk` تُقرأ فعلاً | `live_matrix`: 6 بنود تشمل تواقيع صحيحة/مزوّرة وتطبيع الحمولة · `test_live_call_webhook_stores_the_recording_and_is_idempotent` |
+| 3 | إصدار الوثيقة | `POST /policies/{id}/issue` ⇒ PDF عربي RTL (DejaVu مضمَّن) + رقم + `policy_documents` (حجم/checksum)، تحميل للموظف وللبوابة، 409 للإصدار الثاني، 503 عند إطفاء الراية | `tests/test_policy_issue.py` (5) · `live_matrix`: 9 بنود إصدار/تحميل (51,478 بايت `%PDF-`) · زر «إصدار»/«تحميل» في الشاشة |
+| 4 | فلاتر المدير | `assigned_to` + `unassigned` على `/leads` و`/leads/board`، السياسة: الفلتر يُضيّق ولا يوسّع، وواجهة Kanban بقوائم البيّاع/المرحلة/غير مسند | `live_matrix`: 8 بنود فلاتر وعزل · `frontend/e2e/live-round.spec.ts` |
+| 5 | إعادة التوزيع | تشديد الهدف (مقعد خدمة عملاء ⇒ 422)، مندوب ⇒ 403، الحوض يُفرَّغ على الخادم، وسجل `assignment` | `tests/test_lead_redistribute.py` + بندان في `live_matrix` |
+| 6 | حسابات البوابة | `User.username` + `0007`، دخول بالاسم أو البريد، إنشاء/تصفير/إيقاف/تغيير اسم من ملف العميل، كلمة مؤقتة مرة واحدة، إبطال الجلسات | `tests/test_portal_accounts.py` (4) · `live_matrix`: 15 بنداً · `PortalAccountsCard` |
+
+**بوابات R5 (مخرجات حرفية):** `ruff check .` ⇒ `All checks passed!` · `ruff format --check .` ⇒
+`158 files already formatted` · `mypy app` ⇒ `Success: no issues found in 110 source files` ·
+`pytest -q` ⇒ **234** مجموعاً · **0 فشل** · 9 مُتخطَّاة · `coverage` ⇒ `TOTAL 84.7%` ·
+`smoke_api.py` ⇒ `SMOKE OK — 123/125` · `live_matrix.py` ⇒ `checks: 231 · passed: 231 · P0 failed: 0` ·
+`check_openapi_fresh.py` ⇒ `openapi.json is fresh (106 paths)` · `check_migrations.py` ⇒
+`migration immutability ok (5 merged, 2 new)` · الواجهة: `lint` نظيف · `typecheck` نظيف ·
+`vitest` **82/82** · `build` ⇒ `✓ built` · `codegen:api` ⇒ 141 مخططاً.
+
+**حدود مُعلنة (لا ادّعاء):** لا حساب Meta ولا سنترال ولا رقم في هذه البيئة، فالسائق الحيّ مُثبت بعقد
+(توقيع HMAC على البايتات الخام + نقل HTTP محقون) لا بمكالمة حقيقية؛ وe2e/PostgreSQL/docker تُقاس في CI.
+التفصيل في [`qa/live-real-2026-10-27.md`](qa/live-real-2026-10-27.md) §5.
+
 ## قرارات اتُّخذت نيابة عن المالك (لأن الأسئلة غير مسموحة)
 
 | قرار | ملف |
@@ -476,6 +505,12 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 | 015 تصحيح مقدّمات e2e، والهبوط بالصلاحية، والشارة بالعدد الحقيقي | [`decisions/015-e2e-premises-corrected-and-permission-landing.md`](decisions/015-e2e-premises-corrected-and-permission-landing.md) |
 | 016 إعدادات التكاملات في القاعدة: تخزين، أسرار مشفّرة، شارة حيّ/محاكاة، وسجلّ webhook | [`decisions/016-integrations-settings.md`](decisions/016-integrations-settings.md) |
 | 017 مقاعد المكتب، استيراد Leads من ملف، وإعادة توزيع حقيقية: ثلاثة أسئلة «مَن يستطيع» و«أين تُحفظ الصفوف» | [`decisions/017-team-seats-lead-import-and-redistribution.md`](decisions/017-team-seats-lead-import-and-redistribution.md) |
+| 018 قشرة الجوال | [`decisions/018-mobile-shell.md`](decisions/018-mobile-shell.md) |
+| 019 نطاق مشروع الجوال في e2e (الحوارات على سطح المكتب) | [`decisions/019-e2e-dialog-scope.md`](decisions/019-e2e-dialog-scope.md) |
+| 020 الوسائط بلا MinIO | [`decisions/020-object-storage-without-minio.md`](decisions/020-object-storage-without-minio.md) |
+| 021 إصدار الوثيقة: الملف هو التسليم | [`decisions/021-policy-issuance-documents.md`](decisions/021-policy-issuance-documents.md) |
+| 022 حساب بوابة العميل: من ملف العميل، وباسم مستخدم | [`decisions/022-portal-accounts-and-username-login.md`](decisions/022-portal-accounts-and-username-login.md) |
+| 023 القنوات الحيّة تُثبَت بعقد: توقيع، تسجيل يُنزَّل، وفحص وصول حقيقي | [`decisions/023-live-channel-contracts.md`](decisions/023-live-channel-contracts.md) |
 
 ## قائمة ما قبل «جاهز للمراجعة»
 

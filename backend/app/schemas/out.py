@@ -307,6 +307,7 @@ class RequestMessageOut(Open):
     duration_s: int | None = None
     waveform: list[float] | None = None
     sender_ref: str | None = None
+    external_id: str | None = None
     delivery_status: str
     created_at: datetime
     attachments: list[AttachmentOut] = Field(default_factory=list)
@@ -455,6 +456,15 @@ class InsuranceTypeRefOut(Open):
     name: str
 
 
+class PolicyDocumentRefOut(Open):
+    """One issued file, as a list row needs it: what to call it and where the download lives."""
+
+    filename: str
+    size: int
+    created_at: datetime
+    download_url: str
+
+
 class PolicyOut(Open):
     """
     A policy as the screens read it.
@@ -478,6 +488,7 @@ class PolicyOut(Open):
     headcount: int | None = None
     insurer: InsurerRefOut | None = None
     insurance_type: InsuranceTypeRefOut | None = None
+    document: PolicyDocumentRefOut | None = None
 
 
 class InstallmentOut(Open):
@@ -635,12 +646,38 @@ class PortalRequestsOut(Open):
 
 class PortalDocumentOut(Open):
     id: UUID
+    #: `policy` for an issued-policy file, `request_attachment` for a file on one of the owner's requests
+    kind: str = "request_attachment"
     filename: str
     mime: str
     size: int = 0
     created_at: datetime | None = None
     request_number: int | None = None
+    policy_no: str | None = None
     download_url: str | None = None
+
+
+class PortalPolicyDocumentOut(Open):
+    filename: str
+    size: int = 0
+    created_at: datetime | None = None
+    download_url: str | None = None
+
+
+class PortalPolicyOut(Open):
+    """One contract as the owner may see it: no commission, no internal notes, no staff names."""
+
+    id: UUID
+    policy_no: str | None = None
+    status: str
+    insurance_type: str | None = None
+    insurer: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    premium_amount: float | None = None
+    currency: str = "EGP"
+    headcount: int | None = None
+    document: PortalPolicyDocumentOut | None = None
 
 
 class PortalRequestOut(Open):

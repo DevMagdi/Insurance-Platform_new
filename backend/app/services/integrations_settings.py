@@ -80,6 +80,13 @@ PROVIDER_FIELDS: dict[str, tuple[FieldSpec, ...]] = {
     ),
     "telephony": (
         FieldSpec("provider", "choice", "generic", choices=("generic", "sim")),
+        #: the PBX base URL. Read twice: the connection test probes it, and `fetch_recording` refuses a
+        #: recording URL on any other host (ADR-023 §4). A setting with no consumer is not offered here.
+        FieldSpec("provider_url"),
+        #: the number the central dials in on; printed on the settings card so the operator can compare it
+        #: with what the PBX says, and stored so a support call starts from the same value
+        FieldSpec("number"),
+        FieldSpec("trunk"),
         FieldSpec("recording_retention_days", "int", 180, minimum=1, maximum=3650),
     ),
     "email": (
@@ -112,6 +119,7 @@ ENV_FALLBACK: dict[str, dict[str, str]] = {
         "business_account_id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
     },
     "telephony": {
+        "provider_url": "TELEPHONY_WEBHOOK_URL",
         "webhook_secret": "TELEPHONY_WEBHOOK_SECRET",
         "api_key": "TELEPHONY_API_KEY",
         "provider": "TELEPHONY_PROVIDER",
@@ -568,7 +576,7 @@ async def run_connection_test(
     elif provider == "whatsapp":
         outcome = await _test_whatsapp(resolved)
     elif provider == "telephony":
-        outcome = _test_telephony(resolved)
+        outcome = await _test_telephony(resolved)
     else:
         outcome = await _test_email(resolved, to=to or actor.email, probe_only=to is None)
     took_ms = int((time.monotonic() - started) * 1000)
@@ -731,18 +739,27 @@ async def _test_whatsapp(resolved: ResolvedIntegration) -> TestOutcome:
     return TestOutcome(True, f"الاتصال سليم — Number ID {phone_id}" + (f"، التطبيق {label}" if label else ""))
 
 
-def _test_telephony(resolved: ResolvedIntegration) -> TestOutcome:
-    """Self-test of the signature contract: a PBX is only as good as the HMAC both sides agree on."""
+async def _test_telephony(resolved: ResolvedIntegration) -> TestOutcome:
+    """Two halves, both real: the HMAC contract we sign with, and a reachability probe of the PBX itself.
+
+    The signature self-test alone answered "green" for a PBX URL that nobody could reach — which is the
+    failure an operator most needs to see before switching to live (ADR-023 §3).
+    """
     from app.core.security import verify_webhook_signature
+    from app.integrations.telephony import TelephonyGeneric
 
     secret = resolved.secret("webhook_secret")
     if not secret:
         return TestOutcome(False, "ناقص: webhook_secret غير مضبوط، فكل حدث وارد سيُرفض بالتوقيع")
-    sample = b'{"event":"call_started","from":"+201000000000"}'
+    sample = b'{"event":"call.started","from":"+201000000000"}'
     signature = "sha256=" + hmac.new(secret.encode(), sample, hashlib.sha256).hexdigest()
     if not verify_webhook_signature(sample, signature, secret):
         return TestOutcome(False, "تحقّق التوقيع فشل محليًا — تهيئة الخادم غير متسقة")
-    return TestOutcome(True, "التوقيع يعمل (sha256). ضع عنوان الاستدعاء المعروض أسفل البطاقة في السنترال.")
+    driver = TelephonyGeneric(webhook_secret=secret, provider_url=str(resolved.value("provider_url") or ""))
+    ok, detail = await driver.probe()
+    if not ok:
+        return TestOutcome(False, f"التوقيع سليم، لكن السنترال غير قابل للوصول: {detail}")
+    return TestOutcome(True, f"التوقيع يعمل (sha256) و{detail}. ضع عنوان الاستدعاء أسفل البطاقة في السنترال.")
 
 
 async def _test_email(resolved: ResolvedIntegration, *, to: str, probe_only: bool) -> TestOutcome:

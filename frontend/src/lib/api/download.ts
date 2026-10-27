@@ -18,14 +18,29 @@ export type DownloadedFile = {
 };
 
 export async function downloadFile(path: string, body?: unknown): Promise<DownloadedFile> {
+  return send(path, body === undefined ? undefined : JSON.stringify(body));
+}
+
+/**
+ * A GET download — an issued policy PDF, a request attachment, a call recording.
+ *
+ * The bearer token lives in memory, not in a cookie the browser attaches on its own, so an `<a href>` to
+ * these routes always answers 401. The bytes have to be fetched with the token and handed to the browser
+ * as an object URL, which is what this does.
+ */
+export async function downloadGet(path: string, fallbackName = "document.pdf"): Promise<DownloadedFile> {
+  return send(path, undefined, fallbackName);
+}
+
+async function send(path: string, body?: string, fallbackName = "export.xlsx"): Promise<DownloadedFile> {
   const response = await fetch(`${BASE}${path}`, {
-    method: "POST",
+    method: body === undefined ? "GET" : "POST",
     credentials: "include",
     headers: {
       "content-type": "application/json",
       ...(getAccessToken() ? { authorization: `Bearer ${getAccessToken()}` } : {}),
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body,
   });
 
   if (!response.ok) {
@@ -39,7 +54,7 @@ export async function downloadFile(path: string, body?: unknown): Promise<Downlo
   }
 
   const disposition = response.headers.get("content-disposition") ?? "";
-  const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? "export.xlsx";
+  const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? fallbackName;
   const rows = Number.parseInt(response.headers.get("x-export-rows") ?? "", 10);
   return {
     filename,

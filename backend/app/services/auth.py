@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -65,12 +65,19 @@ def reset_rate_limits() -> None:
     _ATTEMPTS.clear()
 
 
-async def login(session: AsyncSession, email: str, password: str, *, ip: str | None = None) -> tuple[User, Tokens]:
+async def login(session: AsyncSession, identifier: str, password: str, *, ip: str | None = None) -> tuple[User, Tokens]:
     settings = get_settings()
-    key = _rate_key(email, ip)
+    key = _rate_key(identifier, ip)
     _check_lockout(key)
 
-    user = (await session.execute(select(User).where(func.lower(User.email) == email.strip().lower()))).scalar_one_or_none()
+    # One identifier, two columns: staff sign in with the e-mail the manager typed, portal owners may
+    # sign in with the username printed on their onboarding note. Both land on the same user row.
+    handle = identifier.strip().lower()
+    user = (
+        await session.execute(
+            select(User).where(or_(func.lower(User.email) == handle, func.lower(func.coalesce(User.username, "")) == handle))
+        )
+    ).scalar_one_or_none()
     if user is None or not verify_password(password, user.password_hash):
         _register_failure(key)
         raise Unauthorized("Email or password is incorrect")

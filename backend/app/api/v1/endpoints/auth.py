@@ -9,7 +9,6 @@ from app.core.config import get_settings
 from app.core.deps import REFRESH_COOKIE, CurrentUser, DbSession
 from app.core.errors import Forbidden
 from app.schemas.auth import LoginOut, MeOut, RefreshOut
-from app.schemas.common import EmailAddress
 from app.services import auth
 
 router = APIRouter(tags=["auth"])
@@ -21,7 +20,10 @@ def _samesite(value: str) -> Literal["lax", "strict", "none"]:
 
 
 class LoginIn(BaseModel):
-    email: EmailAddress
+    #: an e-mail address, or a portal username — resolved against both columns in `services.auth.login`.
+    #: The field keeps the name `email` because every client, test and spec already sends it.
+    email: str = Field(min_length=1, max_length=255, description="e-mail or portal username")
+    username: str | None = Field(default=None, min_length=1, max_length=255)
     password: str = Field(min_length=1, max_length=200)
     totp_code: str | None = Field(default=None, min_length=6, max_length=6)
     remember_me: bool = False
@@ -45,7 +47,7 @@ async def login(body: LoginIn, request: Request, response: Response, session: Db
     from app.core.middleware import client_ip
 
     settings = get_settings()
-    user, tokens = await auth.login(session, body.email, body.password, ip=client_ip(request, settings.TRUST_HOPS))
+    user, tokens = await auth.login(session, body.username or body.email, body.password, ip=client_ip(request, settings.TRUST_HOPS))
     if user.mfa_enabled and not auth.verify_mfa_sync(user, body.totp_code or ""):
         raise Forbidden("Two-factor code required", details={"mfa_required": True})
     await session.commit()
