@@ -72,6 +72,25 @@ because "we fixed 13" is only honest next to "the next run found 14".
 طابور CS يعرضه بعدها. الآن: `_require_rep` يطلب `leads.view_own` (422 مع `details.required`)، وواجهة
 الاختيار تقرأ الحقيقة من الخادم (`TeamMemberOut.accepts_leads`) — والاثنان مغطّيان باختبارات.
 
+### 2.5) العيب الأخير الذي كشفه المكدّس بعد إصلاح الصورة: `CORS_ORIGINS` يُسقط الـAPI عند الاستيراد
+
+بعد إزالة MinIO صعدت الحاويات فعلاً: `postgres` و`redis` و`mailpit` و`migrate` (5 ترحيلات، exit 0)، ثم
+**`backend` خرج بـ(1)**. سجلّه المنشور على الـPR يقول السبب بالحرف:
+
+```
+pydantic_settings.exceptions.SettingsError: error parsing value for field "CORS_ORIGINS"
+from source "EnvSettingsSource"
+  … json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+```
+
+`infra/.env.example` و`infra/docker-compose.yml` يمرّران `CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173`،
+و`pydantic-settings` يفكّ أي `list[...]` بـ`json.loads` **قبل** أي validator — فينفجر الاستيراد نفسه،
+ولا يصل الـAPI إلى `/healthz` أبداً. أي أن `docker compose up` لم يكن يعمل من أول يوم، وكان فشل الصورة
+يخفي هذا العيب خلفه.
+
+الإصلاح: `Annotated[list[str], NoDecode]` على `CORS_ORIGINS` و`WEEKEND_DAYS` مع validator يقبل الشكلين
+(فاصلة أو JSON)، و`tests/test_config.py` (5 حالات) يثبّت السلوك، برسالة خطأ مفهومة للـJSON المشوّه.
+
 ### 3) docker — السبب الحقيقي ظهر أخيراً (لا تخمين)
 
 التشخيص المنشور على الـPR بعد إصلاح `entrypoint` أعطى الجملة الحاسمة:
