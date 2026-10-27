@@ -53,3 +53,43 @@ async def test_health_and_readiness(client) -> None:
 
 
 from tests.conftest import PASSWORD  # noqa: E402
+
+
+async def test_password_hashing_does_not_block_the_event_loop(client, monkeypatch) -> None:
+    """A burst of sign-ins must not freeze every other request in the process.
+
+    Argon2 costs ~110 ms per check, so running it inline means a handful of simultaneous logins is a
+    self-inflicted outage: measured before the fix, 16 concurrent wrong passwords held `/healthz` for
+    **1.24 s**, and a CI e2e run lost 21 mobile tests to 20 s timeouts in exactly that window
+    (`settings.spec.ts` reported `login failed for manager@brokerhub.test`).
+
+    The hasher is replaced with a *blocking* sleep, so this asserts **where** it runs, not how fast the
+    machine is: on the event loop `/healthz` waits for the whole burst, in a worker thread it does not.
+    """
+    import asyncio
+    import time
+
+    from app.core import security
+    from app.services import auth
+
+    def slow_verify(password: str, hashed: str) -> bool:  # same signature as the real one
+        time.sleep(0.4)
+        return False
+
+    monkeypatch.setattr(security, "verify_password", slow_verify)
+    auth.clear_failures("rep_a@brokerhub.test|local")
+    try:
+        # 4 concurrent failures stay under LOGIN_MAX_ATTEMPTS (5) — 1.6 s of hashing if it ran inline
+        logins = [
+            asyncio.create_task(client.post("/api/v1/auth/login", json={"email": "rep_a@brokerhub.test", "password": "x"}))
+            for _ in range(4)
+        ]
+        await asyncio.sleep(0.05)  # let them all reach the hasher
+        started = time.perf_counter()
+        health = await asyncio.wait_for(client.get("/healthz"), timeout=5)
+        waited_ms = (time.perf_counter() - started) * 1000
+        assert [response.status_code for response in await asyncio.gather(*logins)] == [401] * 4
+        assert health.status_code == 200
+        assert waited_ms < 400, f"/healthz waited {waited_ms:.0f} ms behind the password hashes"
+    finally:
+        auth.clear_failures("rep_a@brokerhub.test|local")
