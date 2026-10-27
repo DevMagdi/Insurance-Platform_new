@@ -42,19 +42,42 @@ function desktopOnly(testInfo: { project: { name: string } }): boolean {
   return testInfo.project.name !== "desktop";
 }
 
+/**
+ * Every fixture value is drawn from one counter, seeded per worker process.
+ *
+ * The first version of this file used a constant mobile (`+201000777777`) and the second one derived the
+ * number from `Date.now().toString(36)` with the letters stripped — which leaves a handful of decimal digits,
+ * so two calls in the *same* test, or the same test on the other Playwright project, produced the *same*
+ * number. The importer correctly treated those rows as duplicates ("يوجد lead نشط بنفس الرقم"), and three
+ * assertions failed on a database that was doing exactly what it promised (R3: ready 2 → 0, assigned 1 → 0,
+ * an Arabic row skipped). The fix is in the fixture, not in the assertion: a counter cannot collide, and the
+ * seed makes two concurrent workers draw from different ranges.
+ */
+//: Each worker draws one "lane" of 999 numbers out of 900 lanes (`+2010 99` + six digits). The seeded demo
+//: data and the other specs use different prefixes, so nothing here can collide with them or — in 899 of 900
+//: cases — with the other Playwright project running against the same database at the same time.
+const LANE = Math.floor(Math.random() * 900);
+let counter = 0;
+
+/** `+20 10` + eight digits — a number the real normaliser accepts, and one nothing else in the run uses. */
+function nextMobile(): string {
+  counter += 1;
+  return `+201099${String((LANE * 1_000 + counter) % 1_000_000).padStart(6, "0")}`;
+}
+
 function unique(prefix: string) {
-  const stamp = Date.now().toString(36).slice(-6);
+  counter += 1;
+  const tag = `${LANE}${counter}`;
   return {
-    name: `${prefix}-${stamp}`,
-    email: `${prefix}-${stamp}@import.test`,
-    mobile: `+201099${stamp.replace(/\D/g, "").padEnd(6, "0").slice(0, 6)}`,
+    name: `${prefix}-${tag}`,
+    email: `${prefix}-${tag}@import.test`,
+    mobile: nextMobile(),
   };
 }
 
-/** A mobile that is unique for this run — a constant one collided between the two Playwright projects. */
-function mobileFor(tag: string): string {
-  const digits = `${Date.now()}${Math.floor(Math.random() * 1000)}`.slice(-9);
-  return `+2010${tag.length % 10}${digits}`;
+/** Same rule for a number that is not part of a `unique()` bundle. */
+function mobileFor(_tag: string): string {
+  return nextMobile();
 }
 
 function csvFile(rows: string[], name = "leads.csv") {
