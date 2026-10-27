@@ -180,6 +180,17 @@ jobs:
           name: screenshots
           path: docs/screenshots
           retention-days: 30
+      - name: Numbers on the PR, even when the suite is green
+        # `Failure digest` only fires on red, so a passing round used to leave no record of how many tests
+        # actually ran — "it is green now" is not a measurement. This posts the report's own counts (and the
+        # skip list with its reasons) on every pull_request run.
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/ci-e2e-summary.py
+          gh pr comment "${{ github.event.number }}" --repo "$GITHUB_REPOSITORY" --body-file /tmp/e2e-summary.md
       - name: Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
