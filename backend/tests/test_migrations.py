@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -105,6 +106,96 @@ def test_chain_runs_both_directions_on_sqlite(tmp_path: Path) -> None:
     _upgrade(url)
     _downgrade(url)
     _upgrade(url)
+
+
+def test_0010_takes_the_issue_date_from_the_audit_trail(tmp_path: Path) -> None:
+    """R10.1 point 5: the backfill is the *issue* event, not `created_at`, and an unknown date stays unknown.
+
+    The chain is stopped at 0009 (which backfilled `issued_at = created_at`), rows are inserted in the state
+    a real deployment has — one policy issued through the screen and therefore audited, one issued without a
+    record, one still a draft — and then the chain is brought to head. This is the only place the data
+    migration is observable; `Base.metadata.create_all` never runs it.
+    """
+    from datetime import UTC, datetime
+
+    from app.models.phase2 import Policy
+    from app.models.requests import AuditLog
+
+    db = tmp_path / "issue_date.db"
+    _with_url(f"sqlite+aiosqlite:///{db}", command.upgrade, "0009_finance_ledger")
+
+    issued_by_screen = uuid.uuid4()
+    issued_without_trail = uuid.uuid4()
+    still_a_draft = uuid.uuid4()
+    created = datetime(2026, 9, 28, 10, 0, tzinfo=UTC)
+    really_issued = datetime(2026, 10, 2, 9, 30, tzinfo=UTC)
+
+    engine = sa.create_engine(f"sqlite:///{db}")
+    try:
+        with engine.begin() as conn:
+            for policy_id, status in (
+                (issued_by_screen, "issued"),
+                (issued_without_trail, "issued"),
+                (still_a_draft, "draft"),
+            ):
+                conn.execute(
+                    sa.insert(Policy.__table__).values(
+                        id=policy_id,
+                        client_id=uuid.uuid4(),
+                        policy_no=f"T-{policy_id.hex[:8]}",
+                        payment_plan="quarterly",
+                        currency="EGP",
+                        status=status,
+                        created_at=created,
+                        updated_at=created,
+                        issued_at=None,
+                    )
+                )
+            conn.execute(
+                sa.insert(AuditLog.__table__).values(
+                    id=uuid.uuid4(),
+                    action="policy.issued",
+                    entity_type="policy",
+                    entity_id=issued_by_screen,
+                    occurred_at=really_issued,
+                )
+            )
+    finally:
+        engine.dispose()
+
+    _with_url(f"sqlite+aiosqlite:///{db}", command.upgrade, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db}")
+    try:
+        with engine.connect() as conn:
+            rows = dict(conn.execute(sa.text("SELECT id, issued_at FROM policies")).all())
+    finally:
+        engine.dispose()
+
+    def as_datetime(value: object) -> datetime | None:
+        if value is None:
+            return None
+        parsed = datetime.fromisoformat(str(value))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+    keys = {key.hex if isinstance(key, bytes) else str(key).replace("-", ""): value for key, value in rows.items()}
+    # 1. the audit trail wins over `created_at` — September's draft was issued in October
+    assert as_datetime(keys[issued_by_screen.hex]) == really_issued
+    # 2. no audit row ⇒ no known date, and *not* `created_at`
+    assert as_datetime(keys[issued_without_trail.hex]) is None
+    # 3. a draft is not touched at all
+    assert as_datetime(keys[still_a_draft.hex]) is None
+
+    _with_url(f"sqlite+aiosqlite:///{db}", command.downgrade, "0009_finance_ledger")
+    engine = sa.create_engine(f"sqlite:///{db}")
+    try:
+        with engine.connect() as conn:
+            restored = dict(conn.execute(sa.text("SELECT id, issued_at FROM policies")).all())
+    finally:
+        engine.dispose()
+    restored_keys = {key.hex if isinstance(key, bytes) else str(key).replace("-", ""): value for key, value in restored.items()}
+    # the downgrade puts 0009's own behaviour back, including for the row whose date was unknown
+    assert as_datetime(restored_keys[issued_without_trail.hex]) == created
 
 
 def test_migrated_schema_matches_the_models(tmp_path: Path) -> None:

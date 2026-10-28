@@ -29,6 +29,12 @@ CORE = [
     # phone branch quietly loses coverage is exactly what the next person will not notice
     "app/services/lead_import.py",
     "app/services/team.py",
+    # R10's money layer, gated from the round that added it (R10.1): the ledger, the executive dashboard and
+    # the installment receipt are the three places where a wrong number is a *financial* statement, not a
+    # cosmetic one. Measured on the full suite: see docs/qa/r10-basic-erp-2026-10-28.md §9.
+    "app/services/finance.py",
+    "app/services/executive.py",
+    "app/services/installments.py",
 ]
 FLOOR = 80.0
 

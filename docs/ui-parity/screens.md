@@ -189,7 +189,7 @@
 | دفتر الحركات | `/finance/ledger` | `frontend/src/features/finance/LedgerPage.tsx` | `finance.view` (+`finance.post` للنموذج، +`finance.void` للإلغاء) | `GET/POST /finance/ledger`، `POST /finance/ledger/{id}/void` |
 | مستحقات العملاء | `/finance/ar` | `frontend/src/features/finance/ArPage.tsx` | `finance.view` | `/finance/ar/summary` + `/finance/ar/clients` + `/finance/ar/clients/{id}` |
 | العمولات | `/finance/commissions` | `frontend/src/features/finance/CommissionsPage.tsx` | `finance.view` (+`commissions.manage` للاعتماد/الصرف) | `/finance/commissions` + approve/pay |
-| الصندوق | `/finance/cashbox` | `frontend/src/features/finance/CashboxPage.tsx` | `finance.view` | `GET /finance/cashbox` |
+| الصندوق | `/finance/cashbox` | `frontend/src/features/finance/CashboxPage.tsx` | `finance.view` | `GET /finance/cashbox` (الرصيد = صافي حركة نقدية من `since` — لا رصيد افتتاحي ولا تقفيل يومي) |
 
 ---
 

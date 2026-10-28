@@ -340,7 +340,10 @@ function readToken(): string | null {
 /** Topic → the query-key roots a change in it makes stale. Prefix matching: `["requests"]` covers the queue,
  * the detail pane and the thread, because react-query compares key arrays by prefix. */
 export const TOPIC_QUERY_KEYS: Record<string, readonly string[]> = {
-  requests: ["requests", "dashboard", "notifications", "portal"],
+  // `nav` is the sidebar's open-request badge (`["nav", "open-requests"]`). Without it the pill kept the
+  // count it loaded with for as long as the tab stayed open — the queue underneath it was fresh and the
+  // number next to it was not, which is the "two screens disagree" failure this table exists to prevent.
+  requests: ["requests", "dashboard", "notifications", "portal", "nav"],
   leads: ["leads", "sales", "sales-team", "dashboard", "team", "users"],
   clients: ["clients", "dashboard", "portal", "sales-team"],
   policies: ["policies", "portal", "reports"],

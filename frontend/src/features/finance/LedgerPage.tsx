@@ -17,6 +17,7 @@ import type { components } from "@/lib/api/schema";
 import { useAuth } from "@/lib/auth";
 
 type LedgerPage = components["schemas"]["LedgerPageOut"];
+type VoidResult = components["schemas"]["LedgerVoidOut"];
 type LedgerEntry = components["schemas"]["LedgerEntryOut"];
 
 const TYPES = ["premium_receivable", "commission_receivable", "commission_payable", "expense", "adjustment"] as const;
@@ -38,10 +39,24 @@ export default function LedgerPage() {
 
   const voidEntry = useMutation({
     mutationFn: (payload: { id: string; reason: string }) =>
-      api.post<{ entry: LedgerEntry; cashbox_balance: number }>(`/finance/ledger/${payload.id}/void`, { reason: payload.reason }),
+      api.post<VoidResult>(`/finance/ledger/${payload.id}/void`, { reason: payload.reason }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["finance"] });
+      /*
+       * R10.1 — a void no longer stops at the ledger. The API reopens the installment (or returns the
+       * commission payout to `approved`) in the same transaction, so every screen that shows the *plan*
+       * or the commissions is stale the moment this succeeds. Invalidating only `finance` left the policy
+       * plan still reading "paid" behind a receipt that no longer exists — the inconsistency this round
+       * was asked to end, reproduced on screen instead of in the database.
+       */
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["policies"] }),
+        queryClient.invalidateQueries({ queryKey: ["executive"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+      ]);
       toast(t("finance.voided", { no: result.entry.entry_no, balance: formatMoney(result.cashbox_balance) }));
+      if (result.reopened?.kind === "installment") toast(t("finance.voidedReopenedInstallment"));
+      if (result.reopened?.kind === "commission") toast(t("finance.voidedReopenedCommission"));
       setVoiding(null);
       setReason("");
     },

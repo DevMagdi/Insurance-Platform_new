@@ -254,6 +254,17 @@ async def seed(session: AsyncSession, *, reset: bool = False) -> dict[str, int]:
                 payment_plan=RNG.choice(list(PaymentPlan)),
                 commission_rate=Decimal("5.00"),
                 status=PolicyStatus.ISSUED,
+                # R10.1: an issued policy carries its issue date. The demo rows have no `policy.issued` audit
+                # trail (they were never issued through the screen), and migration 0010 deliberately leaves
+                # such rows with `issued_at = NULL` rather than a guessed `created_at` — so the seed states
+                # the date it means, inside the current month, where the executive KPI can read it.
+                # deterministic on purpose: `RNG` is one shared stream, and drawing from it here shifted every
+                # later choice (insured names, call subjects) and silently changed the demo graph the smoke
+                # script and the e2e fixtures rely on.
+                issued_at=max(
+                    datetime.now(UTC) - timedelta(days=3),
+                    datetime.now(UTC).replace(day=1, hour=9, minute=0, second=0, microsecond=0),
+                ),
                 headcount=RNG.randint(12, 80),
             )
         )

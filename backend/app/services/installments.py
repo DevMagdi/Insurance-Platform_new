@@ -28,6 +28,7 @@ from app.core.errors import Conflict, NotFound
 from app.core.scope import Scope
 from app.domain.enums import InstallmentStatus, LedgerDirection, LedgerEntryType, PaymentMethod
 from app.models.auth import User
+from app.models.finance import LedgerEntry
 from app.models.phase2 import Commission, Installment, Policy
 from app.repositories.scope_filters import row_visible
 from app.services import audit
@@ -155,9 +156,25 @@ async def pay(
     if row is None:
         raise NotFound("Installment not found")
     if row.status == InstallmentStatus.PAID or row.paid_at is not None:
+        # The receipt is named in the refusal: "already paid" without it left the operator with no next step
+        # after a wrong receipt was voided (R10.1). Voiding the receipt reopens this installment.
+        receipt = (
+            await session.execute(
+                select(LedgerEntry.id, LedgerEntry.entry_no).where(
+                    LedgerEntry.entry_type == LedgerEntryType.PREMIUM_RECEIVABLE,
+                    LedgerEntry.installment_id == row.id,
+                )
+            )
+        ).first()
         raise Conflict(
             "This installment was already marked paid",
-            details={"installment_id": str(row.id), "paid_at": row.paid_at.isoformat() if row.paid_at else None},
+            details={
+                "installment_id": str(row.id),
+                "paid_at": row.paid_at.isoformat() if row.paid_at else None,
+                "receipt_entry_id": str(receipt.id) if receipt is not None else None,
+                "receipt_entry_no": receipt.entry_no if receipt is not None else None,
+                "how_to_reverse": "void the receipt (POST /finance/ledger/{entry_id}/void) — that reopens the installment",
+            },
         )
 
     row.paid_at = datetime.now(UTC)
