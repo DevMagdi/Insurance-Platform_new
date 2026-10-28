@@ -139,6 +139,9 @@ async def issue(
 
     before = {"status": policy.status.value, "policy_no": policy.policy_no}
     policy.status = PolicyStatus.ISSUED
+    # R10: the executive dashboard counts "issued this month" from this column, not from `created_at` — a
+    # draft that waited across a month boundary was not issued when it was booked (ADR-030 §3).
+    policy.issued_at = datetime.now(UTC)
     await session.flush()
     await audit.write(
         session,

@@ -735,3 +735,211 @@ class TeamRosterOut(Open):
 
     members: list[TeamMemberOut] = Field(default_factory=list)
     assignable_roles: list[TeamAssignableRole] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------- R10 money layer (ADR-030) ---------
+class LedgerEntryOut(Open):
+    id: UUID
+    entry_no: str
+    entry_type: str
+    direction: str
+    amount: float
+    currency: str = "EGP"
+    status: str
+    client_id: UUID | None = None
+    client_name: str | None = None
+    policy_id: UUID | None = None
+    policy_no: str | None = None
+    installment_id: UUID | None = None
+    installment_sequence: int | None = None
+    user_id: UUID | None = None
+    user_name: str | None = None
+    method: str | None = None
+    note: str | None = None
+    posted_at: datetime
+    posted_by_name: str | None = None
+    voided_at: datetime | None = None
+    void_reason: str | None = None
+
+
+class LedgerPageOut(PageOut):
+    items: list[LedgerEntryOut] = Field(default_factory=list)
+
+
+class MoneyByMethodOut(Open):
+    method: str
+    in_total: float
+    out_total: float
+    balance: float
+
+
+class CashboxOut(Open):
+    currency: str = "EGP"
+    as_of: datetime
+    balance: float
+    cash_in_total: float
+    cash_out_total: float
+    today_in: float
+    today_out: float
+    month_in: float
+    month_out: float
+    by_method: list[MoneyByMethodOut] = Field(default_factory=list)
+    movements: list[LedgerEntryOut] = Field(default_factory=list)
+
+
+class LedgerVoidOut(Open):
+    entry: LedgerEntryOut
+    cashbox_balance: float
+
+
+class AgingBucketOut(Open):
+    bucket: str
+    amount: float
+    count: int
+
+
+class ArSummaryOut(Open):
+    currency: str = "EGP"
+    as_of: date
+    outstanding_total: float
+    overdue_total: float
+    current_total: float
+    clients_count: int
+    overdue_clients_count: int
+    buckets: list[AgingBucketOut] = Field(default_factory=list)
+
+
+class ArClientRowOut(Open):
+    client_id: UUID
+    client_name: str
+    owner_name: str | None = None
+    outstanding_total: float
+    overdue_total: float
+    current_total: float
+    oldest_due_date: date | None = None
+    installments_count: int = 0
+    last_payment_at: datetime | None = None
+    buckets: list[AgingBucketOut] = Field(default_factory=list)
+
+
+class ArClientPageOut(PageOut):
+    items: list[ArClientRowOut] = Field(default_factory=list)
+
+
+class ArInstallmentOut(Open):
+    installment_id: UUID
+    policy_id: UUID
+    policy_no: str | None = None
+    sequence_no: int
+    due_date: date
+    amount: float
+    days_overdue: int
+    bucket: str
+    status: str
+
+
+class ArClientDetailOut(Open):
+    client_id: UUID
+    client_name: str
+    owner_name: str | None = None
+    outstanding_total: float
+    overdue_total: float
+    current_total: float
+    oldest_due_date: date | None = None
+    installments_count: int = 0
+    last_payment_at: datetime | None = None
+    buckets: list[AgingBucketOut] = Field(default_factory=list)
+    installments: list[ArInstallmentOut] = Field(default_factory=list)
+    payments: list[LedgerEntryOut] = Field(default_factory=list)
+
+
+class SettlementOut(Open):
+    """One commission and its payout state. `id` is the *commission* id the pay route takes."""
+
+    id: UUID
+    commission_id: UUID
+    settlement_id: UUID | None = None
+    status: str
+    amount: float
+    currency: str = "EGP"
+    payee_user_id: UUID | None = None
+    payee_name: str | None = None
+    policy_id: UUID
+    policy_no: str | None = None
+    client_id: UUID | None = None
+    client_name: str | None = None
+    installment_id: UUID | None = None
+    accrued_at: datetime | None = None
+    approved_at: datetime | None = None
+    paid_at: datetime | None = None
+    ledger_entry_id: UUID | None = None
+    ledger_entry_no: str | None = None
+    method: str | None = None
+    note: str | None = None
+
+
+class SettlementPageOut(PageOut):
+    items: list[SettlementOut] = Field(default_factory=list)
+
+
+class ExecutivePeriodOut(Open):
+    from_date: date
+    to_date: date
+    label: str
+
+
+class ExecutiveKpisOut(Open):
+    collections_mtd: float
+    #: `null` on purpose: the office has no collection target model yet, and a made-up denominator would
+    #: turn a real numerator into a fake percentage (R10 out of scope, ADR-030 §8).
+    collections_target: float | None = None
+    outstanding_ar: float
+    overdue_ar: float
+    commissions_accrued: float
+    commissions_paid_mtd: float
+    open_requests: int
+    overdue_requests: int
+    new_leads_mtd: int
+    converted_leads_mtd: int
+    policies_issued_mtd: int
+    cashbox_balance: float
+
+
+class SalesPerformanceOut(Open):
+    user_id: UUID | None = None
+    name: str
+    policies_issued_mtd: int
+    premium_mtd: float
+    collected_mtd: float
+
+
+class ChannelMixOut(Open):
+    channel: str
+    count: int
+
+
+class RenewalOut(Open):
+    policy_id: UUID
+    policy_no: str | None = None
+    client_name: str | None = None
+    insurer_name: str | None = None
+    end_date: date
+    days_left: int
+    premium_amount: float
+
+
+class ExecutiveAlertOut(Open):
+    code: str
+    severity: str
+    message: str
+    count: int
+
+
+class ExecutiveDashboardOut(Open):
+    period: ExecutivePeriodOut
+    kpis: ExecutiveKpisOut
+    sales_performance: list[SalesPerformanceOut] = Field(default_factory=list)
+    ar_aging: list[AgingBucketOut] = Field(default_factory=list)
+    channel_mix: list[ChannelMixOut] = Field(default_factory=list)
+    renewals_next_30d: list[RenewalOut] = Field(default_factory=list)
+    alerts: list[ExecutiveAlertOut] = Field(default_factory=list)

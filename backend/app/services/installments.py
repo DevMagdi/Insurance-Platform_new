@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, NotFound
 from app.core.scope import Scope
-from app.domain.enums import InstallmentStatus
+from app.domain.enums import InstallmentStatus, LedgerDirection, LedgerEntryType, PaymentMethod
 from app.models.auth import User
 from app.models.phase2 import Commission, Installment, Policy
 from app.repositories.scope_filters import row_visible
@@ -137,10 +137,17 @@ async def pay(
     policy_id: UUID,
     installment_id: UUID,
     *,
+    method: PaymentMethod = PaymentMethod.CASH,
     ip: str | None = None,
     user_agent: str | None = None,
 ) -> dict[str, Any]:
-    """Mark one installment paid, once. A second attempt is a `409`, not a second receipt."""
+    """Mark one installment paid, once, and **post the receipt** (R10, ADR-030 §2).
+
+    The ledger row is written in the same transaction as `paid_at`: a collection that exists on the plan but
+    not in the ledger is exactly the drift this round was asked to end. A second attempt is a `409`, not a
+    second receipt — and the partial unique index on `(entry_type, installment_id)` makes the race lose at
+    the database even if two requests slip past the check.
+    """
     policy = await policy_in_scope(session, scope, policy_id)
     row = (
         await session.execute(select(Installment).where(Installment.id == installment_id, Installment.policy_id == policy.id))
@@ -156,6 +163,24 @@ async def pay(
     row.paid_at = datetime.now(UTC)
     row.status = InstallmentStatus.PAID
     await session.flush()
+    from app.services import finance as finance_svc
+
+    entry = await finance_svc.post_entry(
+        session,
+        actor,
+        entry_type=LedgerEntryType.PREMIUM_RECEIVABLE,
+        direction=LedgerDirection.IN,
+        amount=row.amount,
+        currency=policy.currency or "EGP",
+        client_id=policy.client_id,
+        policy_id=policy.id,
+        installment_id=row.id,
+        user_id=actor.id,
+        method=method,
+        note=f"تحصيل قسط {row.sequence_no} — {policy.policy_no or ''}".strip(),
+        ip=ip,
+        user_agent=user_agent,
+    )
     await audit.write(
         session,
         actor=actor,
@@ -175,4 +200,13 @@ async def pay(
         "policy_id": str(policy.id),
         "installment": _row_brief(row),
         "commission": await commission_summary(session, policy),
+        "ledger_entry": {
+            "id": str(entry.id),
+            "entry_no": entry.entry_no,
+            "entry_type": entry.entry_type.value,
+            "direction": entry.direction.value,
+            "amount": float(entry.amount),
+            "method": entry.method.value if entry.method else None,
+            "posted_at": entry.posted_at.isoformat(),
+        },
     }

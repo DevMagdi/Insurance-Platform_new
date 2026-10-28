@@ -1,6 +1,7 @@
 from app.models.auth import ClientPortalUser, Permission, Role, User, UserScope, role_permissions
 from app.models.base import Base, TimestampMixin, utcnow
 from app.models.clients import Client, ClientContact, ImportJob, InsuredPerson
+from app.models.finance import CommissionSettlement, LedgerEntry
 from app.models.integrations import IntegrationConfig, WebhookEvent
 from app.models.leads import Lead, LeadActivity, LeadImportJob, LeadMeeting
 from app.models.masters import (
@@ -35,6 +36,7 @@ __all__ = [
     "ClientContact",
     "ClientPortalUser",
     "Commission",
+    "CommissionSettlement",
     "DocumentRequirement",
     "FeatureFlag",
     "ImportJob",
@@ -50,6 +52,7 @@ __all__ = [
     "LeadActivity",
     "LeadImportJob",
     "LeadMeeting",
+    "LedgerEntry",
     "LostReason",
     "Notification",
     "Permission",

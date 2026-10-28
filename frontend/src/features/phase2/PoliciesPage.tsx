@@ -257,6 +257,10 @@ function InstallmentsDialog({ policyId, onClose }: { policyId: string; onClose: 
     onSuccess: async () => {
       // the plan, the list (a paid row may change the KPIs) and the commission are all server facts
       await queryClient.invalidateQueries({ queryKey: ["policies"] });
+      // …and so is the receipt this payment just wrote: the ledger, the cashbox, AR and the executive
+      // dashboard all read it, and a stale cashbox after a payment is exactly the P1 the round forbids
+      await queryClient.invalidateQueries({ queryKey: ["finance"] });
+      await queryClient.invalidateQueries({ queryKey: ["executive"] });
       toast(t("phase2.paidNow"));
     },
     onError: (error: Error) => {

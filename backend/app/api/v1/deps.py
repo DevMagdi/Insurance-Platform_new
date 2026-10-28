@@ -36,13 +36,25 @@ PoliciesView = Annotated[User, Depends(require_any_perm(P.POLICIES_VIEW, P.POLIC
 ReportsView = Annotated[User, Depends(require_perm(P.REPORTS_VIEW))]
 ReportsExport = Annotated[User, Depends(require_perm(P.REPORTS_EXPORT))]
 SettingsManage = Annotated[User, Depends(require_perm(P.SETTINGS_MANAGE))]
+# R10 money layer (ADR-030): reading the ledger, writing to it, and taking a write back are three gates.
+# A rep holds none of them, which is what keeps the office cashbox out of a rep's screen — the 403 is the
+# isolation, not a hidden button.
+FinanceView = Annotated[User, Depends(require_perm(P.FINANCE_VIEW))]
+FinancePost = Annotated[User, Depends(require_perm(P.FINANCE_POST))]
+FinanceVoid = Annotated[User, Depends(require_perm(P.FINANCE_VOID))]
+CommissionsManage = Annotated[User, Depends(require_perm(P.COMMISSIONS_MANAGE))]
+ReportsExecutive = Annotated[User, Depends(require_perm(P.REPORTS_EXECUTIVE))]
 
 __all__ = [
     "CallsListen",
     "ClientsManage",
     "ClientsView",
+    "CommissionsManage",
     "CurrentUser",
     "DbSession",
+    "FinancePost",
+    "FinanceView",
+    "FinanceVoid",
     "InsuredManage",
     "LeadsAssign",
     "LeadsConvert",
@@ -50,6 +62,7 @@ __all__ = [
     "LeadsView",
     "PageQuery",
     "PoliciesView",
+    "ReportsExecutive",
     "ReportsExport",
     "ReportsView",
     "RequestsManage",

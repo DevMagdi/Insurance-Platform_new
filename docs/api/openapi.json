@@ -158,6 +158,363 @@
         "title": "AITranscribeOut",
         "type": "object"
       },
+      "AgingBucketOut": {
+        "additionalProperties": true,
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "bucket": {
+            "title": "Bucket",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bucket",
+          "amount",
+          "count"
+        ],
+        "title": "AgingBucketOut",
+        "type": "object"
+      },
+      "ArClientDetailOut": {
+        "additionalProperties": true,
+        "properties": {
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/AgingBucketOut"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "client_id": {
+            "format": "uuid",
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "current_total": {
+            "title": "Current Total",
+            "type": "number"
+          },
+          "installments": {
+            "items": {
+              "$ref": "#/components/schemas/ArInstallmentOut"
+            },
+            "title": "Installments",
+            "type": "array"
+          },
+          "installments_count": {
+            "default": 0,
+            "title": "Installments Count",
+            "type": "integer"
+          },
+          "last_payment_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Payment At"
+          },
+          "oldest_due_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Due Date"
+          },
+          "outstanding_total": {
+            "title": "Outstanding Total",
+            "type": "number"
+          },
+          "overdue_total": {
+            "title": "Overdue Total",
+            "type": "number"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntryOut"
+            },
+            "title": "Payments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "outstanding_total",
+          "overdue_total",
+          "current_total"
+        ],
+        "title": "ArClientDetailOut",
+        "type": "object"
+      },
+      "ArClientPageOut": {
+        "additionalProperties": true,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ArClientRowOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "default": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "default": 20,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "ArClientPageOut",
+        "type": "object"
+      },
+      "ArClientRowOut": {
+        "additionalProperties": true,
+        "properties": {
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/AgingBucketOut"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "client_id": {
+            "format": "uuid",
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "current_total": {
+            "title": "Current Total",
+            "type": "number"
+          },
+          "installments_count": {
+            "default": 0,
+            "title": "Installments Count",
+            "type": "integer"
+          },
+          "last_payment_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Payment At"
+          },
+          "oldest_due_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Due Date"
+          },
+          "outstanding_total": {
+            "title": "Outstanding Total",
+            "type": "number"
+          },
+          "overdue_total": {
+            "title": "Overdue Total",
+            "type": "number"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "outstanding_total",
+          "overdue_total",
+          "current_total"
+        ],
+        "title": "ArClientRowOut",
+        "type": "object"
+      },
+      "ArInstallmentOut": {
+        "additionalProperties": true,
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "bucket": {
+            "title": "Bucket",
+            "type": "string"
+          },
+          "days_overdue": {
+            "title": "Days Overdue",
+            "type": "integer"
+          },
+          "due_date": {
+            "format": "date",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "installment_id": {
+            "format": "uuid",
+            "title": "Installment Id",
+            "type": "string"
+          },
+          "policy_id": {
+            "format": "uuid",
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy No"
+          },
+          "sequence_no": {
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "installment_id",
+          "policy_id",
+          "sequence_no",
+          "due_date",
+          "amount",
+          "days_overdue",
+          "bucket",
+          "status"
+        ],
+        "title": "ArInstallmentOut",
+        "type": "object"
+      },
+      "ArSummaryOut": {
+        "additionalProperties": true,
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/AgingBucketOut"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "clients_count": {
+            "title": "Clients Count",
+            "type": "integer"
+          },
+          "currency": {
+            "default": "EGP",
+            "title": "Currency",
+            "type": "string"
+          },
+          "current_total": {
+            "title": "Current Total",
+            "type": "number"
+          },
+          "outstanding_total": {
+            "title": "Outstanding Total",
+            "type": "number"
+          },
+          "overdue_clients_count": {
+            "title": "Overdue Clients Count",
+            "type": "integer"
+          },
+          "overdue_total": {
+            "title": "Overdue Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "as_of",
+          "outstanding_total",
+          "overdue_total",
+          "current_total",
+          "clients_count",
+          "overdue_clients_count"
+        ],
+        "title": "ArSummaryOut",
+        "type": "object"
+      },
       "AttachmentOut": {
         "additionalProperties": true,
         "properties": {
@@ -369,6 +726,75 @@
         "title": "CallOut",
         "type": "object"
       },
+      "CashboxOut": {
+        "additionalProperties": true,
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "balance": {
+            "title": "Balance",
+            "type": "number"
+          },
+          "by_method": {
+            "items": {
+              "$ref": "#/components/schemas/MoneyByMethodOut"
+            },
+            "title": "By Method",
+            "type": "array"
+          },
+          "cash_in_total": {
+            "title": "Cash In Total",
+            "type": "number"
+          },
+          "cash_out_total": {
+            "title": "Cash Out Total",
+            "type": "number"
+          },
+          "currency": {
+            "default": "EGP",
+            "title": "Currency",
+            "type": "string"
+          },
+          "month_in": {
+            "title": "Month In",
+            "type": "number"
+          },
+          "month_out": {
+            "title": "Month Out",
+            "type": "number"
+          },
+          "movements": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntryOut"
+            },
+            "title": "Movements",
+            "type": "array"
+          },
+          "today_in": {
+            "title": "Today In",
+            "type": "number"
+          },
+          "today_out": {
+            "title": "Today Out",
+            "type": "number"
+          }
+        },
+        "required": [
+          "as_of",
+          "balance",
+          "cash_in_total",
+          "cash_out_total",
+          "today_in",
+          "today_out",
+          "month_in",
+          "month_out"
+        ],
+        "title": "CashboxOut",
+        "type": "object"
+      },
       "Channel": {
         "enum": [
           "whatsapp",
@@ -378,6 +804,25 @@
         ],
         "title": "Channel",
         "type": "string"
+      },
+      "ChannelMixOut": {
+        "additionalProperties": true,
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "channel",
+          "count"
+        ],
+        "title": "ChannelMixOut",
+        "type": "object"
       },
       "ClientCreate": {
         "properties": {
@@ -865,6 +1310,53 @@
         "title": "ClientUpdate",
         "type": "object"
       },
+      "CommissionApproveIn": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "CommissionApproveIn",
+        "type": "object"
+      },
+      "CommissionPayIn": {
+        "properties": {
+          "method": {
+            "default": "bank",
+            "enum": [
+              "cash",
+              "bank",
+              "wallet",
+              "other"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "CommissionPayIn",
+        "type": "object"
+      },
       "CommissionSummaryOut": {
         "additionalProperties": true,
         "description": "`state` is the honest part: `not_computed` means no commission row exists (premium/rate zero or unset).",
@@ -1256,6 +1748,188 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "ExecutiveAlertOut": {
+        "additionalProperties": true,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "message",
+          "count"
+        ],
+        "title": "ExecutiveAlertOut",
+        "type": "object"
+      },
+      "ExecutiveDashboardOut": {
+        "additionalProperties": true,
+        "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutiveAlertOut"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "ar_aging": {
+            "items": {
+              "$ref": "#/components/schemas/AgingBucketOut"
+            },
+            "title": "Ar Aging",
+            "type": "array"
+          },
+          "channel_mix": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelMixOut"
+            },
+            "title": "Channel Mix",
+            "type": "array"
+          },
+          "kpis": {
+            "$ref": "#/components/schemas/ExecutiveKpisOut"
+          },
+          "period": {
+            "$ref": "#/components/schemas/ExecutivePeriodOut"
+          },
+          "renewals_next_30d": {
+            "items": {
+              "$ref": "#/components/schemas/RenewalOut"
+            },
+            "title": "Renewals Next 30D",
+            "type": "array"
+          },
+          "sales_performance": {
+            "items": {
+              "$ref": "#/components/schemas/SalesPerformanceOut"
+            },
+            "title": "Sales Performance",
+            "type": "array"
+          }
+        },
+        "required": [
+          "period",
+          "kpis"
+        ],
+        "title": "ExecutiveDashboardOut",
+        "type": "object"
+      },
+      "ExecutiveKpisOut": {
+        "additionalProperties": true,
+        "properties": {
+          "cashbox_balance": {
+            "title": "Cashbox Balance",
+            "type": "number"
+          },
+          "collections_mtd": {
+            "title": "Collections Mtd",
+            "type": "number"
+          },
+          "collections_target": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collections Target"
+          },
+          "commissions_accrued": {
+            "title": "Commissions Accrued",
+            "type": "number"
+          },
+          "commissions_paid_mtd": {
+            "title": "Commissions Paid Mtd",
+            "type": "number"
+          },
+          "converted_leads_mtd": {
+            "title": "Converted Leads Mtd",
+            "type": "integer"
+          },
+          "new_leads_mtd": {
+            "title": "New Leads Mtd",
+            "type": "integer"
+          },
+          "open_requests": {
+            "title": "Open Requests",
+            "type": "integer"
+          },
+          "outstanding_ar": {
+            "title": "Outstanding Ar",
+            "type": "number"
+          },
+          "overdue_ar": {
+            "title": "Overdue Ar",
+            "type": "number"
+          },
+          "overdue_requests": {
+            "title": "Overdue Requests",
+            "type": "integer"
+          },
+          "policies_issued_mtd": {
+            "title": "Policies Issued Mtd",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "collections_mtd",
+          "outstanding_ar",
+          "overdue_ar",
+          "commissions_accrued",
+          "commissions_paid_mtd",
+          "open_requests",
+          "overdue_requests",
+          "new_leads_mtd",
+          "converted_leads_mtd",
+          "policies_issued_mtd",
+          "cashbox_balance"
+        ],
+        "title": "ExecutiveKpisOut",
+        "type": "object"
+      },
+      "ExecutivePeriodOut": {
+        "additionalProperties": true,
+        "properties": {
+          "from_date": {
+            "format": "date",
+            "title": "From Date",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "to_date": {
+            "format": "date",
+            "title": "To Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date",
+          "label"
+        ],
+        "title": "ExecutivePeriodOut",
+        "type": "object"
+      },
       "ExportKind": {
         "enum": [
           "requests",
@@ -1522,6 +2196,24 @@
           "status"
         ],
         "title": "InstallmentOut",
+        "type": "object"
+      },
+      "InstallmentPayIn": {
+        "description": "How the money arrived. Optional so an existing client that posts no body keeps working (cash).",
+        "properties": {
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          }
+        },
+        "title": "InstallmentPayIn",
         "type": "object"
       },
       "InstallmentPlanOut": {
@@ -3835,6 +4527,400 @@
         "title": "LeadUpdate",
         "type": "object"
       },
+      "LedgerEntryCreateIn": {
+        "description": "A manual movement. `amount` is rejected at the schema for `<= 0`, and again in the service.",
+        "properties": {
+          "amount": {
+            "description": "Always positive — `direction` carries the sign",
+            "exclusiveMinimum": 0.0,
+            "title": "Amount",
+            "type": "number"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "currency": {
+            "default": "EGP",
+            "maxLength": 8,
+            "minLength": 3,
+            "title": "Currency",
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "in",
+              "out"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "entry_type": {
+            "enum": [
+              "premium_receivable",
+              "commission_receivable",
+              "commission_payable",
+              "expense",
+              "adjustment"
+            ],
+            "title": "Entry Type",
+            "type": "string"
+          },
+          "installment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installment Id"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cash",
+                  "bank",
+                  "wallet",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "policy_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "entry_type",
+          "direction",
+          "amount"
+        ],
+        "title": "LedgerEntryCreateIn",
+        "type": "object"
+      },
+      "LedgerEntryOut": {
+        "additionalProperties": true,
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "currency": {
+            "default": "EGP",
+            "title": "Currency",
+            "type": "string"
+          },
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "entry_no": {
+            "title": "Entry No",
+            "type": "string"
+          },
+          "entry_type": {
+            "title": "Entry Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "installment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installment Id"
+          },
+          "installment_sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installment Sequence"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "policy_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Id"
+          },
+          "policy_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy No"
+          },
+          "posted_at": {
+            "format": "date-time",
+            "title": "Posted At",
+            "type": "string"
+          },
+          "posted_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted By Name"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
+          },
+          "void_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Void Reason"
+          },
+          "voided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voided At"
+          }
+        },
+        "required": [
+          "id",
+          "entry_no",
+          "entry_type",
+          "direction",
+          "amount",
+          "status",
+          "posted_at"
+        ],
+        "title": "LedgerEntryOut",
+        "type": "object"
+      },
+      "LedgerPageOut": {
+        "additionalProperties": true,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "default": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "default": 20,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "LedgerPageOut",
+        "type": "object"
+      },
+      "LedgerVoidIn": {
+        "properties": {
+          "reason": {
+            "description": "Why the row is being taken back — kept forever",
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "LedgerVoidIn",
+        "type": "object"
+      },
+      "LedgerVoidOut": {
+        "additionalProperties": true,
+        "properties": {
+          "cashbox_balance": {
+            "title": "Cashbox Balance",
+            "type": "number"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/LedgerEntryOut"
+          }
+        },
+        "required": [
+          "entry",
+          "cashbox_balance"
+        ],
+        "title": "LedgerVoidOut",
+        "type": "object"
+      },
       "LiveSwitchIn": {
         "properties": {
           "confirm": {
@@ -4168,6 +5254,35 @@
           }
         },
         "title": "MemberPatch",
+        "type": "object"
+      },
+      "MoneyByMethodOut": {
+        "additionalProperties": true,
+        "properties": {
+          "balance": {
+            "title": "Balance",
+            "type": "number"
+          },
+          "in_total": {
+            "title": "In Total",
+            "type": "number"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "out_total": {
+            "title": "Out Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "method",
+          "in_total",
+          "out_total",
+          "balance"
+        ],
+        "title": "MoneyByMethodOut",
         "type": "object"
       },
       "NoteCreate": {
@@ -5707,6 +6822,70 @@
         "title": "RefreshOut",
         "type": "object"
       },
+      "RenewalOut": {
+        "additionalProperties": true,
+        "properties": {
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "days_left": {
+            "title": "Days Left",
+            "type": "integer"
+          },
+          "end_date": {
+            "format": "date",
+            "title": "End Date",
+            "type": "string"
+          },
+          "insurer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insurer Name"
+          },
+          "policy_id": {
+            "format": "uuid",
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy No"
+          },
+          "premium_amount": {
+            "title": "Premium Amount",
+            "type": "number"
+          }
+        },
+        "required": [
+          "policy_id",
+          "end_date",
+          "days_left",
+          "premium_amount"
+        ],
+        "title": "RenewalOut",
+        "type": "object"
+      },
       "RepWorkloadOut": {
         "additionalProperties": true,
         "properties": {
@@ -6828,6 +8007,47 @@
         "title": "RolePermissionsIn",
         "type": "object"
       },
+      "SalesPerformanceOut": {
+        "additionalProperties": true,
+        "properties": {
+          "collected_mtd": {
+            "title": "Collected Mtd",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "policies_issued_mtd": {
+            "title": "Policies Issued Mtd",
+            "type": "integer"
+          },
+          "premium_mtd": {
+            "title": "Premium Mtd",
+            "type": "number"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "name",
+          "policies_issued_mtd",
+          "premium_mtd",
+          "collected_mtd"
+        ],
+        "title": "SalesPerformanceOut",
+        "type": "object"
+      },
       "ScopesIn": {
         "properties": {
           "scopes": {
@@ -6868,6 +8088,251 @@
           "display"
         ],
         "title": "SecretFieldOut",
+        "type": "object"
+      },
+      "SettlementOut": {
+        "additionalProperties": true,
+        "description": "One commission and its payout state. `id` is the *commission* id the pay route takes.",
+        "properties": {
+          "accrued_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accrued At"
+          },
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "commission_id": {
+            "format": "uuid",
+            "title": "Commission Id",
+            "type": "string"
+          },
+          "currency": {
+            "default": "EGP",
+            "title": "Currency",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "installment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installment Id"
+          },
+          "ledger_entry_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ledger Entry Id"
+          },
+          "ledger_entry_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ledger Entry No"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          },
+          "payee_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payee Name"
+          },
+          "payee_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payee User Id"
+          },
+          "policy_id": {
+            "format": "uuid",
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy No"
+          },
+          "settlement_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settlement Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "commission_id",
+          "status",
+          "amount",
+          "policy_id"
+        ],
+        "title": "SettlementOut",
+        "type": "object"
+      },
+      "SettlementPageOut": {
+        "additionalProperties": true,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SettlementOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "default": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "default": 20,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "SettlementPageOut",
         "type": "object"
       },
       "SlaPolicyOut": {
@@ -9470,6 +10935,27 @@
         ]
       }
     },
+    "/api/v1/executive/dashboard": {
+      "get": {
+        "operationId": "getApiV1ExecutiveDashboard",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutiveDashboardOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Executive control dashboard (every figure is a live query)",
+        "tags": [
+          "executive"
+        ]
+      }
+    },
     "/api/v1/exports": {
       "get": {
         "operationId": "getApiV1Exports",
@@ -9628,6 +11114,763 @@
         "summary": "Toggle a feature flag (admins only, audited)",
         "tags": [
           "users & roles"
+        ]
+      }
+    },
+    "/api/v1/finance/ar/clients": {
+      "get": {
+        "operationId": "getApiV1FinanceArClients",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "current",
+                    "d0_30",
+                    "d31_60",
+                    "d61_90",
+                    "d90_plus"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bucket"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "pattern": "^(asc|desc)$",
+              "title": "Order",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArClientPageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Customer AR per client (aging 0-30 / 31-60 / 61-90 / 90+)",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/ar/clients/{client_id}": {
+      "get": {
+        "operationId": "getApiV1FinanceArClientsClientId",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArClientDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One client's open installments and receipts",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/ar/summary": {
+      "get": {
+        "operationId": "getApiV1FinanceArSummary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Customer AR: totals and aging buckets",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/cashbox": {
+      "get": {
+        "operationId": "getApiV1FinanceCashbox",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashboxOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "The office cashbox (posted cash rows only)",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/commissions": {
+      "get": {
+        "operationId": "getApiV1FinanceCommissions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "accrued",
+                    "approved",
+                    "paid",
+                    "cancelled"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "pattern": "^(asc|desc)$",
+              "title": "Order",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementPageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Commissions and their payout state",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/commissions/{commission_id}/approve": {
+      "post": {
+        "operationId": "postApiV1FinanceCommissionsCommissionIdApprove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "commission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Commission Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CommissionApproveIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve an accrued commission",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/commissions/{commission_id}/pay": {
+      "post": {
+        "operationId": "postApiV1FinanceCommissionsCommissionIdPay",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "commission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Commission Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CommissionPayIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pay a commission (writes the ledger once)",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/ledger": {
+      "get": {
+        "operationId": "getApiV1FinanceLedger",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "posted",
+                    "void"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entry_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "premium_receivable",
+                    "commission_receivable",
+                    "commission_payable",
+                    "expense",
+                    "adjustment"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entry Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "in",
+                    "out"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Direction"
+            }
+          },
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "pattern": "^(asc|desc)$",
+              "title": "Order",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerPageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The ledger (append-only money movements)",
+        "tags": [
+          "finance"
+        ]
+      },
+      "post": {
+        "description": "Manual posting (an expense, an adjustment, a receivable). Out-of-scope clients are a `404`.",
+        "operationId": "postApiV1FinanceLedger",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LedgerEntryCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerEntryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post a ledger entry",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/ledger/{entry_id}/void": {
+      "post": {
+        "operationId": "postApiV1FinanceLedgerEntryIdVoid",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Entry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LedgerVoidIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerVoidOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Void a posted entry (reverses every total)",
+        "tags": [
+          "finance"
         ]
       }
     },
@@ -11397,7 +13640,7 @@
     },
     "/api/v1/policies/{policy_id}/installments/{installment_id}/pay": {
       "post": {
-        "description": "`unpaid → paid` once, with an audit row. A second call is a `409` (see `services.installments`).",
+        "description": "`unpaid → paid` once, with an audit row **and the ledger receipt** (R10). A second call is a `409`.",
         "operationId": "postApiV1PoliciesPolicyIdInstallmentsInstallmentIdPay",
         "parameters": [
           {
@@ -11421,6 +13664,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/InstallmentPayIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

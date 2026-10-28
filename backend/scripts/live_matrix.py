@@ -965,6 +965,196 @@ async def main() -> int:
         record("live", "the Meta driver accepts a valid X-Hub-Signature-256", meta.verify_signature(wa_sample, wa_signature), "", p0=True)
         record("live", "and refuses a forged one", not meta.verify_signature(wa_sample, "sha256=forged"), "", p0=True)
 
+        # ------------------------------------------------------------------ 5.6 R10 · the money layer
+        # The round's promises at API level: one receipt per installment, a void that reverses a balance, a
+        # commission paid once, an executive screen whose numbers are the same queries the modules use, and a
+        # rep who is refused the office cash position (ADR-030).
+        ledger_list = await get("/api/v1/finance/ledger?page_size=5", mgr)
+        check("finance", "GET /finance/ledger", ledger_list, 200, p0=True)
+        cash_before = (await get("/api/v1/finance/cashbox", mgr)).json()["balance"]
+        manual = await c.post(
+            "/api/v1/finance/ledger",
+            headers=mgr,
+            json={"entry_type": "adjustment", "direction": "in", "amount": 1000, "method": "cash", "note": "qa"},
+        )
+        check("finance", "POST /finance/ledger", manual, 201, p0=True)
+        if manual.status_code == 201:
+            made_id = manual.json()["id"]
+            record("finance", "the entry number is human", str(manual.json()["entry_no"]).startswith("LE-"), "", p0=True)
+            after_cash = (await get("/api/v1/finance/cashbox", mgr)).json()["balance"]
+            record(
+                "finance",
+                "the cashbox moves by the posted amount",
+                round(after_cash - cash_before, 2) == 1000,
+                f"{cash_before}→{after_cash}",
+                p0=True,
+            )
+            voided = await c.post(f"/api/v1/finance/ledger/{made_id}/void", headers=mgr, json={"reason": "qa void"})
+            check("finance", "POST /finance/ledger/{id}/void", voided, 200, p0=True)
+            if voided.status_code == 200:
+                record(
+                    "finance",
+                    "the void reverses the balance exactly",
+                    round(voided.json()["cashbox_balance"], 2) == round(cash_before, 2),
+                    f"{voided.json()['cashbox_balance']} vs {cash_before}",
+                    p0=True,
+                )
+                record("finance", "the voided row stays, as void", voided.json()["entry"]["status"] == "void", "", p0=True)
+            check(
+                "finance",
+                "voiding twice → 409",
+                await c.post(f"/api/v1/finance/ledger/{made_id}/void", headers=mgr, json={"reason": "again"}),
+                409,
+                p0=True,
+            )
+        check(
+            "finance",
+            "a zero amount → 422",
+            await c.post(
+                "/api/v1/finance/ledger", headers=mgr, json={"entry_type": "expense", "direction": "out", "amount": 0, "method": "cash"}
+            ),
+            422,
+            p0=True,
+        )
+        check(
+            "finance",
+            "a receipt declared as money out → 422",
+            await c.post(
+                "/api/v1/finance/ledger",
+                headers=mgr,
+                json={"entry_type": "premium_receivable", "direction": "out", "amount": 10, "method": "cash"},
+            ),
+            422,
+            p0=True,
+        )
+        ar_summary = await get("/api/v1/finance/ar/summary", mgr)
+        check("finance", "GET /finance/ar/summary", ar_summary, 200, p0=True)
+        if ar_summary.status_code == 200:
+            keys = {row["bucket"] for row in ar_summary.json()["buckets"]}
+            record(
+                "finance",
+                "five aging buckets, not four-and-a-guess",
+                keys == {"current", "d0_30", "d31_60", "d61_90", "d90_plus"},
+                str(sorted(keys)),
+                p0=True,
+            )
+            record(
+                "finance",
+                "the buckets sum to the outstanding total",
+                round(sum(row["amount"] for row in ar_summary.json()["buckets"]), 2) == round(ar_summary.json()["outstanding_total"], 2),
+                "",
+                p0=True,
+            )
+        ar_list = await get("/api/v1/finance/ar/clients?page_size=5", mgr)
+        check("finance", "GET /finance/ar/clients", ar_list, 200, p0=True)
+        if ar_list.status_code == 200 and ar_list.json()["items"]:
+            first_client = ar_list.json()["items"][0]["client_id"]
+            check("finance", "GET /finance/ar/clients/{id}", await get(f"/api/v1/finance/ar/clients/{first_client}", mgr), 200, p0=True)
+
+        commissions = await get("/api/v1/finance/commissions?page_size=50", mgr)
+        check("finance", "GET /finance/commissions", commissions, 200, p0=True)
+        if commissions.status_code == 200:
+            pending_commission = next((row for row in commissions.json()["items"] if row["status"] == "accrued"), None)
+            if pending_commission:
+                cid = pending_commission["id"]
+                check(
+                    "finance",
+                    "paying before approval → 409",
+                    await c.post(f"/api/v1/finance/commissions/{cid}/pay", headers=mgr, json={}),
+                    409,
+                    p0=True,
+                )
+                check(
+                    "finance",
+                    "POST /finance/commissions/{id}/approve",
+                    await c.post(f"/api/v1/finance/commissions/{cid}/approve", headers=mgr, json={}),
+                    200,
+                    p0=True,
+                )
+                paid = await c.post(f"/api/v1/finance/commissions/{cid}/pay", headers=mgr, json={"method": "bank"})
+                check("finance", "POST /finance/commissions/{id}/pay", paid, 200, p0=True)
+                if paid.status_code == 200:
+                    record("finance", "the payout wrote a ledger row", bool(paid.json()["ledger_entry_no"]), "", p0=True)
+                check(
+                    "finance",
+                    "paying twice → 409",
+                    await c.post(f"/api/v1/finance/commissions/{cid}/pay", headers=mgr, json={"method": "bank"}),
+                    409,
+                    p0=True,
+                )
+            else:
+                record("finance", "an accrued commission to pay", False, "none in the seed", p0=True)
+
+        dashboard = await get("/api/v1/executive/dashboard", mgr)
+        check("executive", "GET /executive/dashboard", dashboard, 200, p0=True)
+        if dashboard.status_code == 200:
+            body = dashboard.json()
+            record(
+                "executive",
+                "the fixed shape",
+                set(body) == {"period", "kpis", "sales_performance", "ar_aging", "channel_mix", "renewals_next_30d", "alerts"},
+                str(sorted(body)),
+                p0=True,
+            )
+            record(
+                "executive",
+                "collections_target stays null (no invented KPI)",
+                body["kpis"]["collections_target"] is None,
+                str(body["kpis"]["collections_target"]),
+                p0=True,
+            )
+            cash_now = (await get("/api/v1/finance/cashbox", mgr)).json()["balance"]
+            record(
+                "executive",
+                "cashbox_balance is the cashbox route's own number",
+                round(body["kpis"]["cashbox_balance"], 2) == round(cash_now, 2),
+                f"{body['kpis']['cashbox_balance']} vs {cash_now}",
+                p0=True,
+            )
+            ar_now = (await get("/api/v1/finance/ar/summary", mgr)).json()
+            record(
+                "executive",
+                "outstanding_ar is the AR route's own number",
+                round(body["kpis"]["outstanding_ar"], 2) == round(ar_now["outstanding_total"], 2),
+                f"{body['kpis']['outstanding_ar']} vs {ar_now['outstanding_total']}",
+                p0=True,
+            )
+            record(
+                "executive",
+                "the aging row is the AR route's own buckets",
+                [row["bucket"] for row in body["ar_aging"]] == [row["bucket"] for row in ar_now["buckets"]],
+                "",
+                p0=True,
+            )
+            record(
+                "executive",
+                "the sales board is per rep",
+                isinstance(body["sales_performance"], list) and bool(body["sales_performance"]),
+                "",
+                p0=True,
+            )
+            record(
+                "executive",
+                "collections by rep never exceed the office total",
+                sum(row["collected_mtd"] for row in body["sales_performance"]) <= body["kpis"]["collections_mtd"] + 0.01,
+                "",
+                p0=True,
+            )
+
+        for path in ("/api/v1/finance/ledger", "/api/v1/finance/cashbox", "/api/v1/finance/ar/summary", "/api/v1/executive/dashboard"):
+            check("finance", f"a rep on {path} → 403", await get(path, rep), 403, p0=True)
+        check(
+            "finance",
+            "a rep cannot post a movement → 403",
+            await c.post(
+                "/api/v1/finance/ledger", headers=rep, json={"entry_type": "expense", "direction": "out", "amount": 5, "method": "cash"}
+            ),
+            403,
+            p0=True,
+        )
+        check("finance", "CS on the cashbox → 403", await get("/api/v1/finance/cashbox", cs), 403, p0=True)
+        check("finance", "the portal owner on the cashbox → 403", await get("/api/v1/finance/cashbox", owner), 403, p0=True)
+
         # ------------------------------------------------------------------ 4.12 negatives
         check("negative", "GET /leads without a token → 401", await c.get("/api/v1/leads"), 401, p0=True)
         check("negative", "GET /clients/{unknown} → 404", await get("/api/v1/clients/00000000-0000-4000-8000-000000000000", mgr), 404)

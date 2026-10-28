@@ -14,4 +14,9 @@ export const STAFF_ROUTES = [
   "/policies",
   "/reports",
   "/issuing",
+  "/executive",
+  "/finance/ledger",
+  "/finance/ar",
+  "/finance/commissions",
+  "/finance/cashbox",
 ] as const;
