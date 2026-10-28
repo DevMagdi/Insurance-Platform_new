@@ -78,9 +78,20 @@ async def login(session: AsyncSession, identifier: str, password: str, *, ip: st
             select(User).where(or_(func.lower(User.email) == handle, func.lower(func.coalesce(User.username, "")) == handle))
         )
     ).scalar_one_or_none()
+    if user is None:
+        _register_failure(key)
+        raise Unauthorized("Email or password is incorrect")
+    # Release the pooled connection *before* the expensive hash. SQLAlchemy keeps a connection checked out
+    # from the first statement until the transaction ends, and Argon2 costs ~110 ms of CPU per verify plus
+    # whatever queue a burst puts in front of it — so a login burst used to sit on the whole pool while it
+    # was only *waiting*. R8 measured the result: 25 concurrent users + a 10 logins/s arrival rate drew
+    # `QueuePool limit of size 10 overflow 20 reached, connection timed out, timeout 30.00` and two
+    # `POST /auth/login` answers of 500 after 19–35 s. `expire_on_commit=False` (core/db.py) keeps `user`
+    # usable after the commit, and the audit row below re-acquires a connection when it writes.
+    await session.commit()
     # the hash check runs in a worker thread: 110 ms of Argon2 on the event loop is 110 ms in which no
     # other request in this process can even be read (see `security.hash_password_async`)
-    if user is None or not await verify_password_async(password, user.password_hash):
+    if not await verify_password_async(password, user.password_hash):
         _register_failure(key)
         raise Unauthorized("Email or password is incorrect")
     if not user.is_active or user.deleted_at is not None:

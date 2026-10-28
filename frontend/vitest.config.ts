@@ -9,7 +9,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./tests/setup.ts"],
     css: false,
-    exclude: ["e2e/**", "node_modules/**", "dist/**"],
+    // `load/**` is the R8 Playwright load spec — it needs a real browser and 25 contexts, not jsdom
+    exclude: ["e2e/**", "load/**", "node_modules/**", "dist/**"],
     coverage: { provider: "v8", reporter: ["text", "html"], include: ["src/**"] },
   },
 });
