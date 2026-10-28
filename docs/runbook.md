@@ -245,6 +245,39 @@ curl -sS -X POST "https://<نطاق-الوسيط>/api/v1/webhooks/telephony" \
 `calls/CA-runbook-1.wav`؛ وإن تعذّر التنزيل يظهر `recording_fetch_failed` في
 `GET /api/v1/settings/integrations/events` ولا تُسقَط المكالمة.
 
+### ب.١) قبل تشغيل الوضع الحيّ: ما يفحصه النظام، وما يقوله بالعربي (R7)
+
+`live` لا يُشغَّل بمجرّد النقر: `GET /api/v1/settings/integrations/{provider}/preflight` يعيد **قائمة
+الحواجز كاملة**، والشاشة تعطّل المفتاح وتكتب السبب بجانبه (ADR-027). الأسماء كما يراها المشغّل:
+
+| المزوّد | الحاجز (`code`) | الرسالة كما تظهر |
+|---|---|---|
+| الثلاثة | `confirm` | «التبديل إلى الوضع الحيّ يحتاج تأكيدًا صريحًا (confirm=true)» |
+| الثلاثة | `test` | «لم ينجح أي اختبار اتصال لهذا المزوّد بعد — شغّل «اختبار الاتصال» أولًا» |
+| `whatsapp` | `fields` | «إعدادات ناقصة للوضع الحيّ: معرّف رقم واتساب (Phone Number ID)، توكين الوصول (Access Token)» |
+| `telephony` | `fields` | «إعدادات ناقصة للوضع الحيّ: عنوان السنترال (PBX URL)، سر توقيع أحداث السنترال (Webhook Secret)» |
+| `email` | `fields` | «إعدادات ناقصة للوضع الحيّ: مضيف SMTP، بريد المرسل، كلمة مرور SMTP» |
+
+(الحقول المطلوبة للوضع الحيّ تُقرأ من `PROVIDER_FIELDS` و`PRIMARY_SECRET` في
+`app/services/integrations_settings.py` — الجدول أعلاه نقلٌ حرفي لرسائلها، لا اجتهاد.)
+
+الترتيب العملي الذي يمرّ من أول مرة: **احفظ الحقول الناقصة → «اختبار الاتصال» حتى يصبح أخضر → المفتاح**.
+الضغط على المفتاح قبل الاختبار يعطي `409` مقصوداً ومعه أسماء الحقول — لا خطأ صامت ولا شاشة مكسورة.
+
+سطر واحد للتشخيص من الطرفية (بعد الحفظ):
+
+```bash
+TOKEN=$(curl -sS -X POST http://127.0.0.1:8000/api/v1/auth/login -H 'content-type: application/json' \
+  -d '{"email":"manager@brokerhub.test","password":"Br0kerHub!2026"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/v1/settings/integrations/whatsapp/preflight | python3 -m json.tool
+# ready=false ⇒ لا تضغط المفتاح بعد؛ اقرأ blockers[].label وهي أسماء الحقول المطلوبة بالعربية
+```
+
+**ما لا يُدّعى:** لا يوجد في هذه الجولة حساب Meta ولا سنترال حقيقي ولا رقم مرخّص، فالاتصال الفعلي بمزود
+خارجي **لم يُجرَّب**. المثبت أن مسار `live` كامل ومختبَر بعقد: توقيع HMAC على البايتات الخام، رفض التوقيع
+الخاطئ، منع التكرار (idempotency)، وحصر مضيف التسجيل (SSRF) — `tests/test_live_channels.py` و
+`scripts/live_matrix.py`، وإعادة تشغيل الوضع الحيّ من الشاشة مرتين لا تُنتج طلبين.
+
 ### ج) حسابات بوابة العملاء
 
 - تُنشأ من **ملف العميل → «دخول بوابة العميل»**: اسم مستخدم (٣ أحرف على الأقل، `a-z0-9._-`) أو بريد.

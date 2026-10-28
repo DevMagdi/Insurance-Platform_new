@@ -142,6 +142,11 @@ test.describe("R5 · issuance, filters and portal accounts", () => {
     await expect(password, "the one-time password must be on screen after creating the account").toBeVisible({ timeout: 20_000 });
     expect(((await password.textContent()) ?? "").trim().length).toBeGreaterThan(7);
 
+    // the handoff: one block a staff member can copy and send, with the username and that same password
+    const handoff = page.getByTestId("portal-handoff");
+    await expect(handoff).toBeVisible();
+    await expect(handoff).toContainText(((await password.textContent()) ?? "").trim());
+
     // and it really exists in the database, against this client only
     const accounts = await (await request.get(`/api/v1/clients/${ownerClient}/portal-accounts`, { headers: auth })).json();
     const rows = (accounts.items ?? accounts) as { username: string | null; temporary_password?: string }[];

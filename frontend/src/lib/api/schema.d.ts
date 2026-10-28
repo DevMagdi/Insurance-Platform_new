@@ -1190,10 +1190,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Installments */
+        /**
+         * Installments
+         * @description The plan, with lateness applied and the commission in words (R7).
+         *
+         *     The commit is deliberate: `plan()` moves overdue rows to `late`, and a derived write that is rolled back
+         *     at the end of the request would leave the next reader disagreeing with this one.
+         */
         get: operations["getApiV1PoliciesPolicyIdInstallments"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/policies/{policy_id}/installments/{installment_id}/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a payment on one installment
+         * @description `unpaid → paid` once, with an audit row. A second call is a `409` (see `services.installments`).
+         */
+        post: operations["postApiV1PoliciesPolicyIdInstallmentsInstallmentIdPay"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1350,7 +1376,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Server-sent change feed (topics + revision, no row data) */
+        /**
+         * Server-sent change feed (topics + revision, no row data)
+         * @description Authenticated *before* the stream opens, in a session that is closed before the first frame.
+         *
+         *     The dependency form (`CurrentUser` + `ScopeDep`) kept a pooled connection checked out for the entire life
+         *     of the stream — one per open tab — and starved the pool under parallel browser sessions (R7). The identity
+         *     is resolved here instead, so a stream holds a subscription and a queue, never a connection.
+         */
         get: operations["getApiV1RealtimeStream"];
         put?: never;
         post?: never;
@@ -2240,6 +2273,21 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * ClientRefOut
+         * @description Enough to name a client on a policy row — no contacts, no notes, nothing to leak.
+         */
+        ClientRefOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
          * ClientStatus
          * @enum {string}
          */
@@ -2258,6 +2306,27 @@ export interface components {
             status?: ("active" | "inactive" | "archived") | null;
             /** Tax Number */
             tax_number?: string | null;
+        };
+        /**
+         * CommissionSummaryOut
+         * @description `state` is the honest part: `not_computed` means no commission row exists (premium/rate zero or unset).
+         */
+        CommissionSummaryOut: {
+            /** Amount */
+            amount?: number | null;
+            /** Rate */
+            rate?: number | null;
+            /** Settled At */
+            settled_at?: string | null;
+            /**
+             * State
+             * @default not_computed
+             */
+            state: string;
+            /** Status */
+            status?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         /** ConnectionTestIn */
         ConnectionTestIn: {
@@ -2544,9 +2613,56 @@ export interface components {
         };
         /** InstallmentPlanOut */
         InstallmentPlanOut: {
+            commission?: components["schemas"]["CommissionSummaryOut"] | null;
             /** Items */
             items?: components["schemas"]["InstallmentOut"][];
             policy: components["schemas"]["PolicyOut"];
+            totals?: components["schemas"]["InstallmentTotalsOut"] | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** InstallmentTotalsOut */
+        InstallmentTotalsOut: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Due Amount
+             * @default 0
+             */
+            due_amount: number;
+            /**
+             * Due Count
+             * @default 0
+             */
+            due_count: number;
+            /**
+             * Late Amount
+             * @default 0
+             */
+            late_amount: number;
+            /**
+             * Late Count
+             * @default 0
+             */
+            late_count: number;
+            /**
+             * Outstanding Amount
+             * @default 0
+             */
+            outstanding_amount: number;
+            /**
+             * Paid Amount
+             * @default 0
+             */
+            paid_amount: number;
+            /**
+             * Paid Count
+             * @default 0
+             */
+            paid_count: number;
         } & {
             [key: string]: unknown;
         };
@@ -3562,6 +3678,7 @@ export interface components {
          *     policy, which is what took the `screens`, `screenshots` and therefore three e2e tests down (R3).
          */
         PolicyOut: {
+            client?: components["schemas"]["ClientRefOut"] | null;
             /** Client Id */
             client_id?: string | null;
             /** Commission Rate */
@@ -7057,6 +7174,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstallmentPlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1PoliciesPolicyIdInstallmentsInstallmentIdPay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policy_id: string;
+                installment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

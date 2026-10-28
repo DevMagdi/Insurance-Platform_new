@@ -283,6 +283,7 @@ def policy_brief(row: Policy) -> dict[str, Any]:
         "payment_plan": row.payment_plan.value,
         "commission_rate": row.commission_rate,
         "headcount": row.headcount,
+        "client": None if row.client is None else {"id": str(row.client.id), "name": row.client.name},
         "insurer": None if row.insurer is None else {"id": str(row.insurer.id), "name": row.insurer.name},
         "insurance_type": None
         if row.insurance_type is None

@@ -24,6 +24,8 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.api.v1.deps import CurrentUser, ScopeDep
+from app.core.db import get_sessionmaker
+from app.core.deps import authenticate
 from app.services import realtime
 
 router = APIRouter(tags=["realtime"])
@@ -40,10 +42,16 @@ def _frame(event: str, payload: dict[str, Any]) -> str:
 @router.get("/realtime/stream", summary="Server-sent change feed (topics + revision, no row data)")
 async def stream(
     request: Request,
-    actor: CurrentUser,
-    scope: ScopeDep,
     since: int = Query(default=0, ge=0, description="last revision the client applied; 0 = only new changes"),
 ) -> StreamingResponse:
+    """Authenticated *before* the stream opens, in a session that is closed before the first frame.
+
+    The dependency form (`CurrentUser` + `ScopeDep`) kept a pooled connection checked out for the entire life
+    of the stream — one per open tab — and starved the pool under parallel browser sessions (R7). The identity
+    is resolved here instead, so a stream holds a subscription and a queue, never a connection.
+    """
+    async with get_sessionmaker()() as session:
+        actor, scope = await authenticate(request, session)
     perms = frozenset(actor.permission_codes)
     topics = realtime.topics_for(perms=perms, is_portal=scope.is_portal)
     id_visible = realtime.id_visible_for(perms=perms, is_portal=scope.is_portal)

@@ -58,6 +58,13 @@ def test_webhook_signature_helpers_accept_correct_and_reject_tampered() -> None:
     assert verify_webhook_signature(raw + b" ", _signature(raw), secret) is False
     assert verify_webhook_signature(raw, None, secret) is False
     assert verify_webhook_signature(raw, "sha256=deadbeef", secret) is False
+    # R7: an unset secret must refuse, not sign with the empty key — otherwise a live deployment that lost
+    # its App Secret accepts any body signed with HMAC("", body), which anyone can compute.
+    import hashlib
+    import hmac
+
+    forgeable = "sha256=" + hmac.new(b"", raw, hashlib.sha256).hexdigest()
+    assert verify_webhook_signature(raw, forgeable, "") is False
 
 
 @pytest.mark.parametrize("mobile", ["01099887766", "+201099887766", "00201099887766"])

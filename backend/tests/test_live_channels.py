@@ -307,6 +307,25 @@ async def test_telephony_webhook_refuses_a_bad_signature(client, monkeypatch: py
     assert response.status_code == 403
 
 
+async def test_a_live_webhook_with_no_app_secret_is_refused_not_forged_through(client, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The empty-secret case, end to end: live driver, no App Secret saved, a body signed with HMAC(b"", …).
+
+    Signing with an empty key is computable by anyone, so accepting it would turn "App Secret not configured
+    yet" into an open intake endpoint. It must be a 403 with a recorded rejection (R7).
+    """
+    from app.api.v1.endpoints import webhooks
+
+    monkeypatch.setattr(webhooks, "whatsapp_provider", lambda: WhatsAppMeta(token=TOKEN, phone_number_id=PHONE_ID, app_secret=""))
+    raw = _inbound("wamid.no_secret_001")
+    empty_key_signature = "sha256=" + hmac.new(b"", raw, hashlib.sha256).hexdigest()
+    response = await client.post(
+        "/api/v1/webhooks/whatsapp",
+        content=raw,
+        headers={"content-type": "application/json", "x-hub-signature-256": empty_key_signature},
+    )
+    assert response.status_code == 403, response.text
+
+
 def test_settings_connection_test_reports_the_missing_url_instead_of_a_green_light() -> None:
     """`_test_telephony` used to answer "signature ok" for a PBX nobody could reach."""
     import inspect

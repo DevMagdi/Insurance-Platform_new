@@ -61,6 +61,22 @@ async def current_user(request: Request, session: DbSession) -> User:
 CurrentUser = Annotated[User, Depends(current_user)]
 
 
+async def authenticate(request: Request, session: AsyncSession) -> tuple[User, Scope]:
+    """`current_user` + `build_scope`, for a route that must not hold a request-scoped session.
+
+    A dependency-yielded session lives until the *response* is finished, which for `text/event-stream` is
+    minutes. The stream used to depend on `DbSession` (through `CurrentUser`/`ScopeDep`), so every open tab
+    pinned one pooled connection for as long as the tab stayed open: with the default SQLite pool of 5+10,
+    a handful of tabs plus their own queries starved the pool and every other request answered
+    `QueuePool limit of size 5 overflow 10 reached` after 30 s (found by the R7 e2e run). The streaming route
+    now opens a session, resolves the caller, and closes it before the first byte is sent.
+    """
+    user = await current_user_optional(request, session)
+    if user is None:
+        raise Unauthorized("Authentication required")
+    return user, build_scope(user)
+
+
 def scope_of(user: CurrentUser) -> Scope:
     """Single source of truth for data isolation (see core/scope.py).
 

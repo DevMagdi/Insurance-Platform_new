@@ -450,6 +450,13 @@ class InsurerRefOut(Open):
     name: str
 
 
+class ClientRefOut(Open):
+    """Enough to name a client on a policy row — no contacts, no notes, nothing to leak."""
+
+    id: UUID
+    name: str
+
+
 class InsuranceTypeRefOut(Open):
     id: UUID
     code: str
@@ -486,6 +493,7 @@ class PolicyOut(Open):
     payment_plan: str | None = None
     commission_rate: float | str | None = None
     headcount: int | None = None
+    client: ClientRefOut | None = None
     insurer: InsurerRefOut | None = None
     insurance_type: InsuranceTypeRefOut | None = None
     document: PolicyDocumentRefOut | None = None
@@ -509,9 +517,32 @@ class PolicyKpisOut(Open):
     currency: str = "EGP"
 
 
+class CommissionSummaryOut(Open):
+    """`state` is the honest part: `not_computed` means no commission row exists (premium/rate zero or unset)."""
+
+    state: str = "not_computed"
+    amount: float | None = None
+    rate: float | None = None
+    status: str | None = None
+    settled_at: str | None = None
+
+
+class InstallmentTotalsOut(Open):
+    count: int = 0
+    paid_count: int = 0
+    late_count: int = 0
+    due_count: int = 0
+    paid_amount: float = 0.0
+    late_amount: float = 0.0
+    due_amount: float = 0.0
+    outstanding_amount: float = 0.0
+
+
 class InstallmentPlanOut(Open):
     policy: PolicyOut
     items: list[InstallmentOut] = Field(default_factory=list)
+    totals: InstallmentTotalsOut | None = None
+    commission: CommissionSummaryOut | None = None
 
 
 class IssuingDocumentOut(Open):

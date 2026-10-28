@@ -61,6 +61,15 @@ export function PortalAccountsCard({ clientId }: { clientId: string }) {
     onError: (error: Error) => toast(error.message, "error"),
   });
 
+  /** The exact text a staff member sends — one source for the block and for the copy button. */
+  const handoff = issued
+    ? t("clients.portal.handoffBody", {
+        url: typeof window === "undefined" ? "/login" : `${window.location.origin}/login`,
+        username: issued.username,
+        password: issued.password || "—",
+      })
+    : "";
+
   const reset = useMutation({
     mutationFn: (id: string) => api.post<CreatedAccount>(`/clients/${clientId}/portal-accounts/${id}/password`, {}),
     onSuccess: async (result) => {
@@ -153,6 +162,32 @@ export function PortalAccountsCard({ clientId }: { clientId: string }) {
           }
         >
           <p className="text-[12.5px] text-muted">{t("clients.portal.issuedNote")}</p>
+          {/*
+            The handoff, not just the facts: what a staff member has to do next is *send this*, and a screen
+            that shows two fields and a copy button leaves them to compose the message themselves — with the
+            password pasted into the wrong chat (R7). The block is select-all, and the warning is next to it.
+          */}
+          <div className="mt-3 rounded-btn border border-line bg-[var(--kanban-col)] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[12px] font-semibold text-ink">{t("clients.portal.handoffTitle")}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Copy size={13} strokeWidth={1.8} />}
+                onClick={() => {
+                  void navigator.clipboard?.writeText(handoff);
+                  toast(t("clients.portal.copied"));
+                }}
+              >
+                {t("clients.portal.copyMessage")}
+              </Button>
+            </div>
+            <pre data-testid="portal-handoff" className="mt-2 select-all whitespace-pre-wrap break-words text-[12px] leading-[20px] text-ink" dir="ltr">
+              {handoff}
+            </pre>
+            <p className="mt-2 text-[11.5px] text-muted">{t("clients.portal.handoffWarning")}</p>
+          </div>
+
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[13px]">
             <dt className="text-muted">{t("clients.portal.username")}</dt>
             <dd className="font-bold text-ink" dir="ltr">

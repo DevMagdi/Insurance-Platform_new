@@ -50,6 +50,9 @@ class Policy(UUIDPkMixin, TimestampMixin, Base):
 
     insurer: Mapped[Insurer | None] = relationship(lazy="joined")
     insurance_type: Mapped[InsuranceType | None] = relationship(lazy="joined")
+    #: the row the office actually recognises ("شركة النيل للأدوية"), not a UUID in a column. `joined` so the
+    #: list costs one query: screen 12 printed an em dash in the client column for every policy (R7).
+    client: Mapped[Client | None] = relationship(lazy="joined")
     documents: Mapped[list[PolicyDocument]] = relationship(
         back_populates="policy", lazy="selectin", cascade="all, delete-orphan", order_by="PolicyDocument.created_at.desc()"
     )
