@@ -86,6 +86,26 @@ Frontend:
   npm run codegen:api       openapi.json (110 paths, 146 schemas)
 ```
 
+### e2e في CI (تشغيل `40612666618` — أربع وظائف خضراء)
+
+```
+backend · ruff · mypy · pytest        success
+frontend · lint · typecheck · unit    success
+docker · compose · full stack boot    success
+e2e · playwright · screenshots        success
+
+**192 اختباراً** · 144 ناجح · 0 فاشل · 48 مُتخطٍّ · flaky=0 · مجموع الزمن 144s
+desktop 92 ناجح / 4 مُتخطٍّ / 0 فاشل · mobile 52 ناجح / 44 مُتخطٍّ / 0 فاشل
+```
+
+`r7-round.spec.ts` نُفِّذ على `desktop` ونجح الاختباران (وهما في قائمة التخطي على `mobile` بحكم ADR‑019).
+التشغيل الأول (`40610776389`) فشل في هذين الاختبارين **لسبب في الاختبار لا في المنتج**:
+`apiLogin(request, "owner@brokerhub.test")` — بريد مستخدم موجود في بذرة pytest فقط، أما بذرة e2e
+فتستخدم `owner.mantiq@company.test` (`fixtures.OWNER`). أُصلح الاختبار ليستورد الثابت، ثم صار الاختبار
+يحجز شركته الخاصة (اسم فريد عبر `POST /clients`) ويجد صفّه بالاسم بدل «أول صفّ» — لأن صفوف الجدول مرتّبة
+بزمن الإنشاء ومواصفات أخرى تُنشئ سياسات بالتوازي. التشغيل نفسه كشف **متذبذبًا قديمًا** في
+`R6 · a change reaches every tab in ≤2 s` (فشل مرة، ونجح في التشغيل التالي بلا تغيير في الكود).
+
 ## 6) ما لم يُشغَّل ولماذا
 
 - **e2e (Playwright):** لا متصفح في هذه البيئة، وتنزيله محجوب. `frontend/e2e/r7-round.spec.ts` (2) يُنفَّذ في
