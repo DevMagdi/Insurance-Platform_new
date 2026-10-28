@@ -39,6 +39,12 @@ export default function CashboxPage() {
         }
       />
 
+      {data.is_net_movements_only ? (
+        <div role="note" className="mb-4 rounded-card border border-line bg-card px-4 py-3 text-[13px] font-semibold text-ink">
+          {t("finance.cashboxNetNote")} ({data.balance_note})
+        </div>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi label={t("finance.cashBalance")} value={formatMoney(data.balance)} delta={t("finance.asOf", { date: formatDate(data.as_of) })} tone="b" />
         <Kpi label={t("finance.inToday")} value={formatMoney(data.today_in)} delta={t("finance.outToday", { amount: formatMoney(data.today_out) })} tone="g" />

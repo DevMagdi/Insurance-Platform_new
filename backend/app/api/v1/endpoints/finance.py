@@ -46,6 +46,7 @@ from app.schemas.out import (
     LedgerVoidOut,
     SettlementOut,
     SettlementPageOut,
+    SpendByPeriodOut,
 )
 from app.services import finance as svc
 
@@ -179,6 +180,16 @@ async def void_ledger_entry(
     response = {"entry": svc.entry_brief(entry), "cashbox_balance": balance["balance"]}
     await session.commit()
     return response
+
+
+@router.get("/spend-by-period", summary="ERP hub: posted in/out totals for a period", response_model=SpendByPeriodOut)
+async def spend_by_period(
+    session: DbSession,
+    scope: ScopeDep,
+    actor: FinanceView,
+    period: Literal["month", "quarter", "semiannual", "year"] = Query(default="month"),
+) -> Any:
+    return await svc.spend_by_period(session, scope, period)
 
 
 # ------------------------------------------------------------------ AR ------------------------------

@@ -738,6 +738,11 @@
             "title": "Balance",
             "type": "number"
           },
+          "balance_note": {
+            "default": "net_movements_only",
+            "title": "Balance Note",
+            "type": "string"
+          },
           "by_method": {
             "items": {
               "$ref": "#/components/schemas/MoneyByMethodOut"
@@ -757,6 +762,11 @@
             "default": "EGP",
             "title": "Currency",
             "type": "string"
+          },
+          "is_net_movements_only": {
+            "default": true,
+            "title": "Is Net Movements Only",
+            "type": "boolean"
           },
           "month_in": {
             "title": "Month In",
@@ -8364,6 +8374,93 @@
         "title": "SlaPolicyOut",
         "type": "object"
       },
+      "SpendByPeriodOut": {
+        "additionalProperties": true,
+        "properties": {
+          "by_type": {
+            "items": {
+              "$ref": "#/components/schemas/SpendByTypeOut"
+            },
+            "title": "By Type",
+            "type": "array"
+          },
+          "currency": {
+            "default": "EGP",
+            "title": "Currency",
+            "type": "string"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "net": {
+            "title": "Net",
+            "type": "number"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "total_in": {
+            "title": "Total In",
+            "type": "number"
+          },
+          "total_out": {
+            "title": "Total Out",
+            "type": "number"
+          }
+        },
+        "required": [
+          "period",
+          "label",
+          "start",
+          "end",
+          "total_in",
+          "total_out",
+          "net"
+        ],
+        "title": "SpendByPeriodOut",
+        "type": "object"
+      },
+      "SpendByTypeOut": {
+        "additionalProperties": true,
+        "properties": {
+          "entry_type": {
+            "title": "Entry Type",
+            "type": "string"
+          },
+          "in_total": {
+            "title": "In Total",
+            "type": "number"
+          },
+          "net": {
+            "title": "Net",
+            "type": "number"
+          },
+          "out_total": {
+            "title": "Out Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "entry_type",
+          "in_total",
+          "out_total",
+          "net"
+        ],
+        "title": "SpendByTypeOut",
+        "type": "object"
+      },
       "TeamAssignableRole": {
         "additionalProperties": true,
         "properties": {
@@ -11869,6 +11966,55 @@
           }
         },
         "summary": "Void a posted entry (reverses every total)",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/spend-by-period": {
+      "get": {
+        "operationId": "getApiV1FinanceSpend-By-Period",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "month",
+              "enum": [
+                "month",
+                "quarter",
+                "semiannual",
+                "year"
+              ],
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendByPeriodOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "ERP hub: posted in/out totals for a period",
         "tags": [
           "finance"
         ]
