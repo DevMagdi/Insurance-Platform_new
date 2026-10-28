@@ -784,6 +784,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/finance/spend-by-period": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ERP hub: posted in/out totals for a period */
+        get: operations["getApiV1FinanceSpend-By-Period"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/import-jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -2462,6 +2479,11 @@ export interface components {
             as_of: string;
             /** Balance */
             balance: number;
+            /**
+             * Balance Note
+             * @default net_movements_only
+             */
+            balance_note: string;
             /** By Method */
             by_method?: components["schemas"]["MoneyByMethodOut"][];
             /** Cash In Total */
@@ -2473,6 +2495,11 @@ export interface components {
              * @default EGP
              */
             currency: string;
+            /**
+             * Is Net Movements Only
+             * @default true
+             */
+            is_net_movements_only: boolean;
             /** Month In */
             month_in: number;
             /** Month Out */
@@ -5264,6 +5291,51 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** SpendByPeriodOut */
+        SpendByPeriodOut: {
+            /** By Type */
+            by_type?: components["schemas"]["SpendByTypeOut"][];
+            /**
+             * Currency
+             * @default EGP
+             */
+            currency: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Label */
+            label: string;
+            /** Net */
+            net: number;
+            /** Period */
+            period: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /** Total In */
+            total_in: number;
+            /** Total Out */
+            total_out: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SpendByTypeOut */
+        SpendByTypeOut: {
+            /** Entry Type */
+            entry_type: string;
+            /** In Total */
+            in_total: number;
+            /** Net */
+            net: number;
+            /** Out Total */
+            out_total: number;
+        } & {
+            [key: string]: unknown;
+        };
         /** TeamAssignableRole */
         TeamAssignableRole: {
             /** Code */
@@ -7134,6 +7206,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LedgerVoidOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "getApiV1FinanceSpend-By-Period": {
+        parameters: {
+            query?: {
+                period?: "month" | "quarter" | "semiannual" | "year";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpendByPeriodOut"];
                 };
             };
             /** @description Validation Error */

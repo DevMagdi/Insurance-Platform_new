@@ -1,18 +1,14 @@
 import {
   BarChart3,
-  BookOpen,
   ClipboardList,
   FolderOpen,
-  Gauge,
-  HandCoins,
   Inbox,
   KanbanSquare,
+  Landmark,
   LayoutDashboard,
   LogOut,
-  ReceiptText,
   Settings,
   Users,
-  Vault,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -41,13 +37,9 @@ const NAV: NavItem[] = [
   { to: "/sales-team", labelKey: "leads.team", icon: <Users size={20} strokeWidth={1.8} />, permsAll: ["leads.view_all", "leads.assign"] },
   { to: "/policies", labelKey: "nav.policies", icon: <ClipboardList size={20} strokeWidth={1.8} />, perms: ["policies.view"] },
   { to: "/reports", labelKey: "nav.reports", icon: <BarChart3 size={20} strokeWidth={1.8} />, perms: ["reports.view"] },
-  // R10: the executive screen and the money layer. A role without `finance.view` never sees these, and the
+  // ERP hub (ADR-031): one money item. Deep finance routes stay reachable from /erp cards/bookmarks; a role without finance.view never sees this, and the
   // API answers 403 for the same paths — the hidden item and the refusal are the same rule (ADR-030 §5).
-  { to: "/executive", labelKey: "nav.executive", icon: <Gauge size={20} strokeWidth={1.8} />, perms: ["reports.executive"] },
-  { to: "/finance/ledger", labelKey: "nav.ledger", icon: <BookOpen size={20} strokeWidth={1.8} />, perms: ["finance.view"] },
-  { to: "/finance/ar", labelKey: "nav.ar", icon: <ReceiptText size={20} strokeWidth={1.8} />, perms: ["finance.view"] },
-  { to: "/finance/commissions", labelKey: "nav.commissions", icon: <HandCoins size={20} strokeWidth={1.8} />, perms: ["finance.view"] },
-  { to: "/finance/cashbox", labelKey: "nav.cashbox", icon: <Vault size={20} strokeWidth={1.8} />, perms: ["finance.view"] },
+  { to: "/erp", labelKey: "nav.erp", icon: <Landmark size={20} strokeWidth={1.8} />, perms: ["finance.view", "reports.executive"] },
   { to: "/settings", labelKey: "nav.settings", icon: <Settings size={20} strokeWidth={1.8} />, perms: ["settings.manage"] },
 ];
 

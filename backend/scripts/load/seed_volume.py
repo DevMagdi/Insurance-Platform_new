@@ -174,8 +174,12 @@ async def main() -> int:
             made += 1
         await session.flush()
 
-        # the counter row the request-number sequence uses
-        counter_row = (await session.execute(select(RequestNumberCounter))).scalar_one_or_none()
+        # the counter row the request-number sequence uses — filtered by key: since R10 the ledger
+        # keeps its own `ledger` counter row, so an unfiltered scalar_one_or_none raises
+        # MultipleResultsFound and the whole load stack fails to boot (found by CI on PR #15)
+        counter_row = (
+            await session.execute(select(RequestNumberCounter).where(RequestNumberCounter.key == "requests"))
+        ).scalar_one_or_none()
         if counter_row is None:
             session.add(RequestNumberCounter(key="requests", last_value=top_number))
         else:

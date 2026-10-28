@@ -29,6 +29,7 @@ const LedgerPage = lazy(() => import("@/features/finance/LedgerPage"));
 const ArPage = lazy(() => import("@/features/finance/ArPage"));
 const CommissionsPage = lazy(() => import("@/features/finance/CommissionsPage"));
 const CashboxPage = lazy(() => import("@/features/finance/CashboxPage"));
+const ErpPage = lazy(() => import("@/features/finance/ErpPage"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   override state: { error: Error | null } = { error: null };
@@ -222,6 +223,14 @@ export default function App() {
                 element={
                   <StaffRoute permit={["reports.executive"]}>
                     <ExecutiveDashboardPage />
+                  </StaffRoute>
+                }
+              />
+              <Route
+                path="/erp"
+                element={
+                  <StaffRoute permit={["finance.view", "reports.executive"]}>
+                    <ErpPage />
                   </StaffRoute>
                 }
               />

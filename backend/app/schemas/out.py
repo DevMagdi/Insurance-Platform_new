@@ -773,9 +773,30 @@ class MoneyByMethodOut(Open):
     balance: float
 
 
+class SpendByTypeOut(Open):
+    entry_type: str
+    in_total: float
+    out_total: float
+    net: float
+
+
+class SpendByPeriodOut(Open):
+    currency: str = "EGP"
+    period: str
+    label: str
+    start: date
+    end: date
+    total_in: float
+    total_out: float
+    net: float
+    by_type: list[SpendByTypeOut] = Field(default_factory=list)
+
+
 class CashboxOut(Open):
     currency: str = "EGP"
     as_of: datetime
+    is_net_movements_only: bool = True
+    balance_note: str = "net_movements_only"
     #: the earliest posted cash movement — the balance is the net movement from here to `as_of`
     since: datetime | None = None
     balance: float

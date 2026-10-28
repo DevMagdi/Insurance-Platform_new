@@ -235,6 +235,8 @@ async def void_entry(
     entry.void_reason = reason
     await session.flush()
 
+    # R10.1's `_reopen_what_the_entry_paid` is the void↔installment reversal (ADR-031 adopts it as-is:
+    # same rule, plus its own `installment.reopened` audit row and commission-settlement reopening)
     reopened = await _reopen_what_the_entry_paid(session, actor, entry, reason, ip=ip, user_agent=user_agent)
     await audit.write(
         session,
@@ -328,6 +330,85 @@ async def _reopen_what_the_entry_paid(
         return {"kind": "commission", "id": str(settlement.id), "status": settlement.status.value}
 
     return None
+
+
+PERIODS = ("month", "quarter", "semiannual", "year")
+
+
+def period_range(period: str, *, today: date | None = None) -> tuple[date, date, str]:
+    """(start, end_inclusive, label) for a named period anchored at `today`; unknown period → 422."""
+    import calendar as _cal
+
+    day = today or date.today()
+    if period == "month":
+        return day.replace(day=1), day.replace(day=_cal.monthrange(day.year, day.month)[1]), f"{day.year:04d}-{day.month:02d}"
+    if period == "quarter":
+        first_month = 3 * ((day.month - 1) // 3) + 1
+        end_month = first_month + 2
+        return (
+            date(day.year, first_month, 1),
+            date(day.year, end_month, _cal.monthrange(day.year, end_month)[1]),
+            f"{day.year:04d} Q{(day.month - 1) // 3 + 1}",
+        )
+    if period == "semiannual":
+        half = 1 if day.month <= 6 else 2
+        return (
+            date(day.year, 1 if half == 1 else 7, 1),
+            date(day.year, 6 if half == 1 else 12, 30 if half == 1 else 31),
+            f"{day.year:04d} H{half}",
+        )
+    if period == "year":
+        return date(day.year, 1, 1), date(day.year, 12, 31), f"{day.year:04d}"
+    raise ValidationFailed("Unknown period", details={"field": "period", "allowed": list(PERIODS)})
+
+
+async def spend_by_period(session: AsyncSession, scope: Scope, period: str, *, today: date | None = None) -> dict[str, Any]:
+    """Posted-only in/out totals for one period, grouped by entry type (ERP hub, ADR-031).
+
+    One grouped aggregate (`entry_type × direction × currency`) rather than one sum per type: at
+    50k+ rows this is a single indexed scan, which is what the load gate measures.
+    """
+    start, end, label = period_range(period, today=today)
+    start_dt = datetime.combine(start, datetime.min.time(), tzinfo=UTC)
+    end_dt = datetime.combine(end + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
+    stmt = with_scope(
+        select(LedgerEntry.entry_type, LedgerEntry.direction, LedgerEntry.currency, func.coalesce(func.sum(LedgerEntry.amount), 0))
+        .select_from(LedgerEntry)
+        .group_by(LedgerEntry.entry_type, LedgerEntry.direction, LedgerEntry.currency),
+        scope,
+        "ledger",
+    ).where(LedgerEntry.status == LedgerStatus.POSTED, LedgerEntry.posted_at >= start_dt, LedgerEntry.posted_at < end_dt)
+    by_type_map: dict[str, dict[str, Any]] = {
+        t.value: {"entry_type": t.value, "in_total": 0.0, "out_total": 0.0, "net": 0.0} for t in LedgerEntryType
+    }
+    total_in = Decimal("0")
+    total_out = Decimal("0")
+    currency = "EGP"
+    for entry_type, direction, row_currency, amount in (await session.execute(stmt)).all():
+        value = money(amount)
+        currency = row_currency or currency
+        row = by_type_map[entry_type.value]
+        if direction == LedgerDirection.IN:
+            row["in_total"] = float(money(row["in_total"]) + value)
+            total_in += value
+        else:
+            row["out_total"] = float(money(row["out_total"]) + value)
+            total_out += value
+    by_type: list[dict[str, Any]] = []
+    for row in by_type_map.values():
+        row["net"] = float(money(row["in_total"]) - money(row["out_total"]))
+        by_type.append(row)
+    return {
+        "currency": currency,
+        "period": period,
+        "label": label,
+        "start": start,
+        "end": end,
+        "total_in": float(total_in),
+        "total_out": float(total_out),
+        "net": float(total_in - total_out),
+        "by_type": by_type,
+    }
 
 
 # --------------------------------------------------------------------------- reads ----------------
@@ -491,6 +572,9 @@ async def cashbox(session: AsyncSession, scope: Scope, *, as_of: datetime | None
     return {
         "currency": "EGP",
         "as_of": moment,
+        # Transparency (ADR-031): this is net posted movements only — no opening balance, no daily close.
+        "is_net_movements_only": True,
+        "balance_note": "net_movements_only",
         "since": since,
         "balance": float(cash_in - cash_out),
         "cash_in_total": float(cash_in),

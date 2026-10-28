@@ -39,6 +39,12 @@ export default function CashboxPage() {
         }
       />
 
+      {data.is_net_movements_only ? (
+        <div role="note" className="mb-4 rounded-card border border-line bg-card px-4 py-3 text-[13px] font-semibold text-ink">
+          {t("finance.cashboxNetNote")} ({data.balance_note})
+        </div>
+      ) : null}
+
       {/*
        * R10.1 — the balance is a *net movement*, and the screen has to say so. An accountant reading
        * "رصيد الصندوق" assumes an opening balance plus a daily close; this module has neither (no opening
