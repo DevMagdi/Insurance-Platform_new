@@ -4,12 +4,18 @@ import { login, MANAGER, REPS } from "./fixtures";
 
 /** ERP hub (ADR-031): manager reaches /erp, switches period, opens the ledger; a rep never sees ERP. */
 test.describe("ERP accounting hub", () => {
-  test("manager opens /erp, switches period and opens the ledger from a card", async ({ page }) => {
+  test("manager opens /erp, switches period and opens the ledger from a card", async ({ page }, testInfo) => {
     await login(page, MANAGER);
-    await page.getByRole("link", { name: /ERP المحاسبي/ }).first().click();
+    if (testInfo.project.name === "desktop") {
+      // the sidebar item is the entry point on desktop; on mobile the bottom bar shows only the
+      // first five items (ADR-018), so the deep route is the honest path there
+      await page.getByRole("link", { name: /ERP المحاسبي/ }).first().click();
+    } else {
+      await page.goto("/erp");
+    }
     await expect(page).toHaveURL(/\/erp$/);
     await expect(page.getByRole("heading", { name: "ERP المحاسبي" })).toBeVisible();
-    await page.getByRole("button", { name: "سنوي" }).click();
+    await page.getByRole("button", { name: "سنوي", exact: true }).click();
     await expect(page.getByText("صُرف / دخل على إيه", { exact: false })).toBeVisible();
     await page.getByRole("link", { name: /دفتر الحركات/ }).first().click();
     await expect(page).toHaveURL(/\/finance\/ledger$/);
