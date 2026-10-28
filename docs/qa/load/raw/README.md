@@ -23,6 +23,7 @@
 | `s7-login-under-load-stats.csv` | حمل الـ25 مستخدمًا الذي جرى بالتوازي مع العيّنة أعلاه |
 | `api-server-before-queuepool.txt` | مقتطف حرفي من سجل الخادم **قبل** الإصلاح عند 11:25:00–11:25:05: تسجيلات دخول بـ19–35 ثانية وأثر `QueuePool limit of size 10 overflow 20 reached` (السجل الكامل 37MB لم يُودَع؛ المقتطف هو الأسطر نفسها) |
 | `api-server-after-queuepool-count.txt` | ناتج `grep -c QueuePool` على سجل الخادم **بعد** الإصلاح = **0** |
+| `ci-s3-browser.json` | أرقام S3 من تشغيل CI `40690660084` (مقتطف من تعليق الـPR؛ الملف الكامل في artifact `r8-browser-load`) |
 | `api-server-after-sample.txt` | آخر 2000 سطر من سجل ما بعد الإصلاح (بلا ANSI) — القراءات والكتابات أثناء S6/التحمّل |
 
 الخلاصة القابلة للتحقق بلا لغة إنشائية: `python backend/scripts/load/summarize.py docs/qa/load/raw`

@@ -1,0 +1,64 @@
+{
+  "scenario": "S3 concurrent browser users",
+  "web_url": "http://127.0.0.1:5173",
+  "minutes": 10,
+  "users": 25,
+  "users_by_role": {
+    "manager": 5,
+    "rep": 10,
+    "cs": 5,
+    "portal": 5
+  },
+  "flows": 1550,
+  "flows_ok": 1408,
+  "flows_ok_pct": 90.8,
+  "steps": 3044,
+  "steps_failed": 246,
+  "steps_failed_pct": 8.1,
+  "step_p50_ms": 2288,
+  "step_p95_ms": 5257,
+  "step_p99_ms": 6358,
+  "by_step": {
+    "dashboard": {
+      "n": 219,
+      "p50": 2588,
+      "p95": 30228,
+      "failed": 60
+    },
+    "kanban": {
+      "n": 1199,
+      "p50": 2282,
+      "p95": 5251,
+      "failed": 22
+    },
+    "inbox": {
+      "n": 219,
+      "p50": 3258,
+      "p95": 30201,
+      "failed": 62
+    },
+    "sales-team": {
+      "n": 76,
+      "p50": 2844,
+      "p95": 30177,
+      "failed": 22
+    },
+    "new-lead": {
+      "n": 1123,
+      "p50": 2190,
+      "p95": 5107,
+      "failed": 0
+    },
+    "portal": {
+      "n": 208,
+      "p50": 6182,
+      "p95": 30237,
+      "failed": 80
+    }
+  },
+  "pageerrors": [],
+  "pageerror_count": 0,
+  "server_5xx": [],
+  "server_5xx_count": 0,
+  "_note": "مقتطع من تعليق الـPR (أول 4000 حرف من /tmp/r8-browser-load.json لتشغيل CI 40690660084). الملف الكامل في artifact r8-browser-load."
+}
