@@ -133,6 +133,23 @@ def _params_for(client: Any, headers: dict[str, str], known: dict[str, str]) -> 
     request_id = table["request_id"]
     if request_id:
         table["call_id"] = _first_id(client, headers, f"/api/v1/requests/{request_id}/calls")
+    # an attachment id must belong to the same request (download-url checks the pairing), and the seed
+    # ships no attachments — upload one through the real staff endpoint, which also smokes the upload
+    for row in _items(client, headers, "/api/v1/requests?page_size=25"):
+        found = _first_id(client, headers, f"/api/v1/requests/{row['id']}/attachments")
+        if found:
+            table["attachment_id"] = found
+            table["request_id"] = str(row["id"])
+            break
+    if "attachment_id" not in table and table.get("request_id"):
+        rid = table["request_id"]
+        up = client.post(
+            f"/api/v1/requests/{rid}/attachments",
+            headers=headers,
+            files={"file": ("smoke-fixture.pdf", b"%PDF-1.4 smoke fixture", "application/pdf")},
+        )
+        if up.status_code == 201:
+            table["attachment_id"] = str(up.json()["id"])
     # an installment lives under one policy, so it cannot come from a global list — take it from the plan of
     # the first policy the seed knows (the curated block overwrites `policy_id` with a fresh issued one)
     if table["policy_id"]:
