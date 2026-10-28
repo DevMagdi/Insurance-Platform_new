@@ -213,9 +213,7 @@ async def test_email_reply_goes_out_over_smtp_notifier(client, ids) -> None:
     assert made.status_code == 200, made.text
     request_id = made.json()["request_id"]
     async with login(client, MANAGER) as mgr:
-        reply = await client.post(
-            f"/api/v1/requests/{request_id}/messages", headers=mgr, json={"body": "رد البريد", "channel": "email"}
-        )
+        reply = await client.post(f"/api/v1/requests/{request_id}/messages", headers=mgr, json={"body": "رد البريد", "channel": "email"})
         assert reply.status_code == 201, reply.text
         assert reply.json()["delivery_status"] == "sent"
     assert ConsoleNotifier.sent and ConsoleNotifier.sent[-1]["to"] == "client@example.com"
