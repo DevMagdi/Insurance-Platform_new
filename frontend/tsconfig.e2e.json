@@ -12,6 +12,8 @@
   },
   "include": [
     "e2e",
-    "playwright.config.ts"
+    "load",
+    "playwright.config.ts",
+    "playwright.load.config.ts"
   ]
 }
