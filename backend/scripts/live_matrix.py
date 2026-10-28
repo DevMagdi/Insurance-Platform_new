@@ -561,6 +561,122 @@ async def main() -> int:
                 p0=True,
             )
 
+        # ------------------------------------------------------------- 4.9b production gate (R9)
+        # The claim "production never runs on simulation" is a *mode*, so it is checked as one: flip the
+        # environment, drop the settings cache, and ask the real objects. Everything is restored after.
+        saved_env = {
+            key: os.environ.get(key)
+            for key in (
+                "ENV",
+                "INTEGRATIONS_DRIVER",
+                "JWT_SECRET",
+                "SECRETS_ENCRYPTION_KEY",
+                "WHATSAPP_ACCESS_TOKEN",
+                "WHATSAPP_APP_SECRET",
+                "TELEPHONY_WEBHOOK_SECRET",
+            )
+        }
+        try:
+            os.environ.update(
+                ENV="prod",
+                INTEGRATIONS_DRIVER="live",
+                JWT_SECRET="qa-production-jwt-secret-that-is-long-enough",
+                SECRETS_ENCRYPTION_KEY="qa-production-secrets-key-that-is-long-enough",
+                WHATSAPP_ACCESS_TOKEN="",
+                TELEPHONY_WEBHOOK_SECRET="",
+                WHATSAPP_APP_SECRET="",
+            )
+            import app.core.config as config_module
+            from app.core.errors import IntegrationNotConfigured
+            from app.integrations import registry as registry_module
+            from app.integrations.sims import MobileCallsSim, SimulationDisabled, WhatsAppSim
+
+            config_module.get_settings.cache_clear()
+            registry_module.reset_providers()
+            # a real production boot has no primed dev snapshot; drop it so credentials come from the
+            # environment only (this is what the module-level cache would look like after a restart)
+            registry_module._primed = None
+
+            settings = config_module.get_settings()
+            record(
+                "production",
+                "ENV=prod forces INTEGRATIONS_DRIVER=live",
+                settings.INTEGRATIONS_DRIVER == "live",
+                settings.INTEGRATIONS_DRIVER,
+                p0=True,
+            )
+            record(
+                "production",
+                "ENV=prod allows no simulation",
+                settings.simulation_allowed is False,
+                str(settings.simulation_allowed),
+                p0=True,
+            )
+
+            refused: list[str] = []
+            for label, factory in (
+                ("whatsapp", registry_module.whatsapp_provider),
+                ("mobile-calls", registry_module.mobile_calls_provider),
+            ):
+                try:
+                    driver = factory()
+                except IntegrationNotConfigured:
+                    refused.append(label)
+                    continue
+                if getattr(driver, "name", "") == "sim":
+                    refused.append(f"{label}: SIM BUILT")
+            record(
+                "production",
+                "no credentials ⇒ no simulated driver (named failure instead)",
+                sorted(refused) == ["mobile-calls", "whatsapp"],
+                str(refused),
+                p0=True,
+            )
+
+            try:
+                registry_module.assert_production_ready()
+                boot_refused = False
+                boot_detail = "boot gate accepted a production process with no credentials"
+            except RuntimeError as exc:
+                boot_refused = "ENV=prod" in str(exc)
+                boot_detail = str(exc).splitlines()[0][:120]
+            record("production", "the boot gate fails closed on missing credentials", boot_refused, boot_detail, p0=True)
+
+            sim_blocked = 0
+            for simulator in (WhatsAppSim, MobileCallsSim):
+                try:
+                    simulator()
+                except SimulationDisabled:
+                    sim_blocked += 1
+            record("production", "both simulators are unconstructible in production", sim_blocked == 2, f"{sim_blocked}/2", p0=True)
+
+            from app.main import create_app
+
+            prod_app = create_app()
+            async with AsyncClient(transport=ASGITransport(app=prod_app), base_url="http://qa-prod") as prod_client:
+                hidden = await prod_client.get("/api/v1/dev/sim")
+                hidden_post = await prod_client.post("/api/v1/dev/sim/call", json={"from_number": "01000000000"})
+            record("production", "GET /dev/sim is 404 in a production build", hidden.status_code == 404, f"{hidden.status_code}", p0=True)
+            record(
+                "production",
+                "POST /dev/sim/call is 404 in a production build",
+                hidden_post.status_code == 404,
+                f"{hidden_post.status_code}",
+                p0=True,
+            )
+        finally:
+            for key, value in saved_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+            import app.core.config as config_module
+
+            config_module.get_settings.cache_clear()
+            from app.integrations import registry as registry_module
+
+            registry_module.reset_providers()
+
         # ------------------------------------------------------------------ 4.10 portal
         po = check("portal", "GET /portal/overview", await get("/api/v1/portal/overview", owner), 200, p0=True)
         text = json.dumps(po.json(), ensure_ascii=False).lower()
@@ -827,13 +943,13 @@ async def main() -> int:
         # The drivers themselves are exercised end-to-end in `tests/test_live_channels.py` against an injected
         # HTTP transport. Here the matrix only proves the contract every live deployment depends on: an HMAC
         # over the raw bytes, and a normalizer that understands the aliases real providers send.
-        from app.integrations.telephony import TelephonyGeneric, parse_event
+        from app.integrations.mobile_calls import MobileCallsProvider, parse_event
         from app.integrations.whatsapp import WhatsAppMeta
 
         sample = b'{"CallSid":"CA-qa","CallStatus":"call.ended"}'
         signature = "sha256=" + hmac.new(b"qa-secret", sample, hashlib.sha256).hexdigest()
-        driver = TelephonyGeneric(webhook_secret="qa-secret")
-        record("live", "the PBX driver accepts an HMAC over the raw body", driver.verify_signature(sample, signature), "", p0=True)
+        driver = MobileCallsProvider(webhook_secret="qa-secret")
+        record("live", "the mobile-calls driver accepts an HMAC over the raw body", driver.verify_signature(sample, signature), "", p0=True)
         record("live", "and refuses one byte of drift", not driver.verify_signature(sample + b" ", signature), "", p0=True)
         normal = parse_event(sample)
         record(

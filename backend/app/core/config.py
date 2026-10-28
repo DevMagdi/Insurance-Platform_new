@@ -8,8 +8,22 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+#: `ENV` values that mean "this process serves real customers". `production` and `prod` are the same mode;
+#: `prod` is the canonical spelling (it is what `.env.example`, `infra/` and `core/secrets.py` already say).
+PRODUCTION_ENVS: frozenset[str] = frozenset({"prod", "production"})
+#: `ENV` values that may construct a simulated driver (R9: simulation never exists in production).
+SIMULATION_ENVS: frozenset[str] = frozenset({"dev", "test"})
+
+#: Development placeholders that must never sign or verify anything in production. A known secret is worse
+#: than a missing one: `hmac.new(b"dev-app-secret", …)` is computable by anybody who has read this repo.
+DEV_PLACEHOLDER_SECRETS: dict[str, str] = {
+    "WHATSAPP_APP_SECRET": "dev-app-secret",
+    "WHATSAPP_VERIFY_TOKEN": "dev-verify-token",
+    "TELEPHONY_WEBHOOK_SECRET": "dev-telephony-secret",
+}
 
 
 class Settings(BaseSettings):
@@ -66,15 +80,17 @@ class Settings(BaseSettings):
     # --- integrations ---
     # `INTEGRATIONS_DRIVER` is the *fallback*: a saved row in `integration_configs` wins over it (ADR-016),
     # so the settings screen — not a file on the server — is the normal way to go live.
-    INTEGRATIONS_DRIVER: str = "sim"  # sim | live
+    # R9: `ENV=prod` forces `live`; an explicit `sim` in production is refused at boot (see `_production_rules`).
+    INTEGRATIONS_DRIVER: str = "sim"  # sim | live (dev/test only for sim)
     # WhatsApp Business Cloud API
     WHATSAPP_ACCESS_TOKEN: str = ""
     WHATSAPP_PHONE_NUMBER_ID: str = ""
     WHATSAPP_APP_SECRET: str = "dev-app-secret"
     WHATSAPP_VERIFY_TOKEN: str = "dev-verify-token"
     WHATSAPP_BUSINESS_ACCOUNT_ID: str = ""
-    # Telephony / cloud PBX
-    TELEPHONY_PROVIDER: str = "generic"  # generic | sim
+    # Mobile phone calls provider (a VoIP/mobile-call gateway that signs its webhook with HMAC).
+    # `twilio` is the documented live dialect (Programmable Voice); `generic` is the JSON contract.
+    TELEPHONY_PROVIDER: str = "twilio"  # twilio | generic
     TELEPHONY_WEBHOOK_SECRET: str = "dev-telephony-secret"
     TELEPHONY_API_KEY: str = ""
     TELEPHONY_WEBHOOK_URL: str = ""
@@ -146,6 +162,46 @@ class Settings(BaseSettings):
         if os.environ.get("ENV", "dev") == "prod" and (v == "dev-only-insecure-secret-change-me" or len(v) < 32):
             raise ValueError("JWT_SECRET must be a strong value (>=32 chars) when ENV=prod")
         return v
+
+    @model_validator(mode="after")
+    def _production_rules(self) -> Settings:
+        """R9 — production runs live integrations and nothing else.
+
+        Three rules, all enforced at settings load so the failure is a **clear boot error**, not a silent
+        fall-through to a simulator halfway through a webhook:
+
+        1. `ENV=production` is the same mode as `ENV=prod` (it is rewritten to the canonical `prod`).
+        2. `INTEGRATIONS_DRIVER` is forced to `live`; an explicitly configured `sim` in production is
+           refused outright — that is an operator intent we must not quietly override.
+        3. The development placeholder secrets (`dev-app-secret`, …) are blanked, so production cannot
+           pass a preflight — or verify a webhook — with a key that is published in this repository.
+        """
+        if self.ENV.strip().lower() == "production":
+            self.ENV = "prod"
+        if self.is_production:
+            driver = self.INTEGRATIONS_DRIVER.strip().lower()
+            if driver == "sim":
+                raise ValueError(
+                    "ENV=prod does not allow INTEGRATIONS_DRIVER=sim: production serves the live WhatsApp "
+                    "Cloud API and the live mobile-calls webhook only. Remove the variable or set it to `live`."
+                )
+            if driver != "live":
+                raise ValueError(f"INTEGRATIONS_DRIVER must be `live` when ENV=prod, got {self.INTEGRATIONS_DRIVER!r}")
+            self.INTEGRATIONS_DRIVER = "live"
+            for field_name, placeholder in DEV_PLACEHOLDER_SECRETS.items():
+                if getattr(self, field_name) == placeholder:
+                    setattr(self, field_name, "")
+        return self
+
+    @property
+    def is_production(self) -> bool:
+        """The single place the rest of the app asks `is this serving real customers?`."""
+        return self.ENV.strip().lower() in PRODUCTION_ENVS
+
+    @property
+    def simulation_allowed(self) -> bool:
+        """Simulated drivers exist only outside production (R9 §1.A)."""
+        return not self.is_production and self.ENV.strip().lower() in SIMULATION_ENVS
 
     # --- deployment ---
     # Absolute origin used to render webhook URLs for copy-paste (Meta asks for a public callback URL).

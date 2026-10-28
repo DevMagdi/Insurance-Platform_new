@@ -78,6 +78,17 @@ class FeatureDisabled(AppError):
     code = "feature_disabled"
 
 
+class IntegrationNotConfigured(AppError):
+    """A live provider is missing the credential it needs, so the channel cannot work (R9).
+
+    R8 answered this case with a simulator: the API stayed 200 and the message went nowhere. A 503 with a
+    named, Arabic reason is the honest answer — and in production the same check fails the boot instead.
+    """
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "integration_not_configured"
+
+
 def error_json(status_code: int, code: str, message: str, details: Any = None) -> dict[str, Any]:
     """Body shape used by exception handlers."""
     return {"code": code, "message": message, "details": details, "status_code": status_code}

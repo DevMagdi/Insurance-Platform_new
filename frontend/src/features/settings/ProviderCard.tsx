@@ -20,8 +20,9 @@ import { asText } from "@/lib/text";
 
 import { liveBlockersOf, liveSwitchError, MASK, secretPatch, statusBadge, type Preflight, type ProviderState, type SecretDraft } from "./model";
 
+/** The dialects the API accepts in a text field. `sim` is deliberately not one of them (R9 §1.D). */
 const CHOICES: Record<string, readonly string[]> = {
-  provider: ["generic", "sim"],
+  provider: ["twilio", "generic"],
   encryption: ["none", "starttls", "ssl"],
 };
 
@@ -61,6 +62,10 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
     retry: 0,
   });
   const badge = statusBadge(state?.status);
+  /* R9 §1.D: «إيقاف الوضع الحيّ» is offered only where a simulator exists. A production process answers
+     `sim_allowed: false`, and the control is not rendered at all instead of failing with a 409. While the
+     preflight is still loading the answer is unknown, and the dev default (a simulator exists) stands. */
+  const simAllowed = preflight.data?.sim_allowed !== false;
   const blockers = liveBlockersOf(state, preflight.data);
   const ready = blockers.length === 0;
   const blockerText = blockers
@@ -115,7 +120,7 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
     mutationFn: (isLive: boolean) => api.post<ProviderState>(`/settings/integrations/${state.provider}/live`, { is_live: isLive, confirm: isLive }),
     onSuccess: async (next) => {
       setConfirming(false);
-      toast(next.is_live ? t("settings.nowLive") : t("settings.nowSim"));
+      toast(next.is_live ? t("settings.nowLive") : t("settings.leftLive"));
       await refresh();
     },
     onError: async (error: unknown) => {
@@ -332,16 +337,19 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
         <Button variant="ghost" busy={save.isPending} disabled={!dirty} onClick={() => save.mutate()}>
           {t("common.save")}
         </Button>
-        <Button
-          variant={state.is_live ? "danger" : "primary"}
-          icon={<ShieldAlert size={15} strokeWidth={1.9} />}
-          onClick={() => (state.is_live ? live.mutate(false) : setConfirming(true))}
-          disabled={live.isPending || (!state.is_live && !ready)}
-          title={state.is_live || ready ? undefined : blockerText}
-          data-testid={`live-switch-${providerKey}`}
-        >
-          {state.is_live ? t("settings.backToSim") : t("settings.goLive")}
-        </Button>
+        {/* render the off-switch only where a simulator exists (dev/test) */}
+        {(!state.is_live || simAllowed) && (
+          <Button
+            variant={state.is_live ? "danger" : "primary"}
+            icon={<ShieldAlert size={15} strokeWidth={1.9} />}
+            onClick={() => (state.is_live ? live.mutate(false) : setConfirming(true))}
+            disabled={live.isPending || (!state.is_live && !ready)}
+            title={state.is_live || ready ? undefined : blockerText}
+            data-testid={`live-switch-${providerKey}`}
+          >
+            {state.is_live ? t("settings.leaveLive") : t("settings.goLive")}
+          </Button>
+        )}
       </footer>
 
       {confirming ? (

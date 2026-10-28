@@ -1,4 +1,9 @@
-"""Provider protocols (spec §8): one interface per external system, real + simulated drivers."""
+"""Provider protocols (spec §8): one interface per external system.
+
+R9: every protocol here is implemented by a **live** driver. The simulated implementations live in
+`integrations/sims.py` and cannot be constructed outside dev/test, so "is this a real provider?" is
+answered by the process mode, not by a subclass check.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +22,9 @@ class WhatsAppProvider(Protocol):
 
 
 @runtime_checkable
-class TelephonyProvider(Protocol):
+class MobileCallsProviderProtocol(Protocol):
+    """A provider of calls to the platform's mobile number (R9 §1.C)."""
+
     name: str
 
     def verify_signature(self, payload: bytes, signature_header: str | None) -> bool: ...

@@ -33,7 +33,7 @@ test.describe("settings hub · providers", () => {
     await login(page, MANAGER);
     await page.goto("/settings");
     await expect(page.getByRole("heading", { name: "الإعدادات" })).toBeVisible();
-    for (const provider of ["واتساب للأعمال", "السنترال (Telephony)", "البريد (SMTP)"]) {
+    for (const provider of ["واتساب للأعمال", "مكالمات الموبايل (Live)", "البريد (SMTP)"]) {
       await expect(page.getByRole("heading", { name: provider })).toBeVisible();
     }
 
@@ -136,8 +136,9 @@ test.describe("settings hub · providers", () => {
       .poll(async () => ((await (await request.get("/api/v1/settings/integrations/whatsapp", { headers: auth })).json()).is_live as boolean))
       .toBe(true);
 
-    await whatsapp.getByRole("button", { name: "الرجوع إلى المحاكاة" }).click();
-    await expect(whatsapp.getByText("محاكاة", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await whatsapp.getByRole("button", { name: "إيقاف الوضع الحيّ" }).click();
+    // R9 §1.D: the badge of a configured, not-live provider is «جاهز», never «محاكاة»
+    await expect(whatsapp.getByText("جاهز", { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("dialog")).toHaveCount(0); // the safe direction needs no confirmation
 
     await page.getByTestId(DROP_TOKEN).click();
@@ -149,7 +150,7 @@ test.describe("settings hub · providers", () => {
   test("an inbound event is readable from the screen, without opening a server log", async ({ page, request }) => {
     test.skip(test.info().project.name !== "desktop", "desktop-only — see the header");
     const auth = await apiLogin(request, ADMIN);
-    const delivered = await request.post("/api/v1/webhooks/telephony", {
+    const delivered = await request.post("/api/v1/webhooks/mobile-calls", {
       headers: auth,
       data: { call_id: "e2e-call-1", event: "call.started", from: "+201000000000" },
     });

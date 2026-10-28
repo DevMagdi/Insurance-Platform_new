@@ -517,7 +517,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Simulator: inbound call → request → recording in storage */
+        /** Simulator: mobile call → request → recording in storage (dev/test only) */
         post: operations["postApiV1DevSimCall"];
         delete?: never;
         options?: never;
@@ -534,7 +534,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Simulator: deliver an inbound WhatsApp message */
+        /** Simulator: deliver an inbound WhatsApp message (dev/test only) */
         post: operations["postApiV1DevSimWhatsapp"];
         delete?: never;
         options?: never;
@@ -1677,7 +1677,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Callback URLs to paste into Meta / the PBX */
+        /** Callback URLs to paste into Meta / the mobile-calls provider */
         get: operations["getApiV1SettingsIntegrationsWebhook-Urls"];
         put?: never;
         post?: never;
@@ -1860,7 +1860,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/webhooks/telephony": {
+    "/api/v1/webhooks/mobile-calls": {
         parameters: {
             query?: never;
             header?: never;
@@ -1869,8 +1869,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Call-centre events (started/ended/recording_ready) */
-        post: operations["postApiV1WebhooksTelephony"];
+        /**
+         * Inbound mobile-call events (signature-checked, idempotent)
+         * @description A call to the platform's mobile number: `call.started` opens/links the request, `call.ended` closes
+         *     the timing, `recording_ready` attaches the recording we pulled and stored ourselves.
+         */
+        post: operations["postApiV1WebhooksMobile-Calls"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4042,7 +4046,10 @@ export interface components {
              * @description machine keys of the fields the live switch requires
              */
             missing: string[];
-            /** Mode */
+            /**
+             * Mode
+             * @description live | ready — `sim` no longer exists in production (R9)
+             */
             mode: string;
             /** Next */
             next: string;
@@ -4053,6 +4060,11 @@ export interface components {
              * @description true when nothing stands between this provider and live mode
              */
             ready: boolean;
+            /**
+             * Sim Allowed
+             * @description false in production: the screen hides the switch back to simulation
+             */
+            sim_allowed: boolean;
             /** Status */
             status: string;
             /** Test Status */
@@ -4080,7 +4092,7 @@ export interface components {
             secrets: components["schemas"]["SecretFieldOut"][];
             /**
              * Status
-             * @description live | sim | unset | error — the badge tone in the card header
+             * @description live | ready | unset | error — the badge tone in the card header (R9 §1.D)
              */
             status: string;
             /** Updated At */
@@ -8563,7 +8575,7 @@ export interface operations {
             };
         };
     };
-    postApiV1WebhooksTelephony: {
+    "postApiV1WebhooksMobile-Calls": {
         parameters: {
             query?: never;
             header?: {

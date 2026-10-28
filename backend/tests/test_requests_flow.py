@@ -9,7 +9,7 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from app.core.db import get_sessionmaker
-from app.integrations.whatsapp import WhatsAppSim
+from app.integrations.sims import WhatsAppSim
 from app.models.requests import ServiceRequest
 from app.services import requests_svc
 

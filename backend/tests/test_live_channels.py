@@ -1,6 +1,6 @@
 """Contract tests for the *live* channel drivers — the paths a simulator cannot prove (ADR-023).
 
-The rule this file enforces: nothing here swaps a live driver for `WhatsAppSim`/`TelephonySim`. The live
+The rule this file enforces: nothing here swaps a live driver for `WhatsAppSim`/`MobileCallsSim`. The live
 code runs against an injected HTTP transport, so what is asserted is the URL, the bearer token, the JSON
 shape, the HMAC over the raw bytes, the SSRF guard and the error mapping that ship in production. A test
 that replaced the driver with a fake would pass on a driver nobody ever uses.
@@ -19,9 +19,9 @@ from typing import Any
 import httpx
 import pytest
 from app.core.errors import ValidationFailed
-from app.integrations import telephony as telephony_mod
+from app.integrations import mobile_calls as mobile_calls_mod
 from app.integrations import whatsapp as whatsapp_mod
-from app.integrations.telephony import TelephonyGeneric, parse_event
+from app.integrations.mobile_calls import MobileCallsProvider, parse_event
 from app.integrations.whatsapp import WhatsAppMeta
 from sqlalchemy import select
 
@@ -168,10 +168,10 @@ async def test_live_signed_webhook_creates_a_request_and_a_duplicate_does_not(cl
     assert all(TOKEN not in json.dumps({"d": row.detail, "e": row.external_id}) for row in rows)
 
 
-# ---------------------------------------------------------------------------------------------- Telephony
+# ------------------------------------------------------------------------------------------ Mobile calls
 
 
-def test_parse_event_accepts_the_aliases_real_centrals_send() -> None:
+def test_parse_event_accepts_the_aliases_real_mobile_call_providers_send() -> None:
     twilio_like = json.dumps(
         {
             "CallSid": "CA-live-1",
@@ -195,15 +195,15 @@ def test_parse_event_accepts_the_aliases_real_centrals_send() -> None:
         parse_event(b"[1,2,3]")
 
 
-def test_recording_is_fetched_from_the_pbx_host_and_anywhere_else_is_refused() -> None:
+def test_recording_is_fetched_from_the_provider_host_and_anywhere_else_is_refused() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.host == "pbx.example.com"
         return httpx.Response(200, content=b"RIFFfake-wav-bytes", headers={"content-type": "audio/wav"})
 
-    telephony_mod.use_transport(httpx.MockTransport(handler))
+    mobile_calls_mod.use_transport(httpx.MockTransport(handler))
     try:
-        driver = TelephonyGeneric(webhook_secret="s3cret", provider_url="https://pbx.example.com/api")
+        driver = MobileCallsProvider(webhook_secret="s3cret", provider_url="https://pbx.example.com/api")
         assert asyncio.run(driver.fetch_recording("https://pbx.example.com/rec/1.wav")) == b"RIFFfake-wav-bytes"
         # an SSRF guard, not politeness: the same signed body could carry any URL
         with pytest.raises(ValidationFailed):
@@ -211,26 +211,26 @@ def test_recording_is_fetched_from_the_pbx_host_and_anywhere_else_is_refused() -
         with pytest.raises(ValidationFailed):
             asyncio.run(driver.fetch_recording("https://evil.example.net/rec.wav"))
     finally:
-        telephony_mod.use_transport(None)
+        mobile_calls_mod.use_transport(None)
 
 
-def test_probe_tells_the_operator_whether_the_pbx_is_reachable() -> None:
+def test_probe_tells_the_operator_whether_the_mobile_calls_provider_is_reachable() -> None:
 
-    telephony_mod.use_transport(httpx.MockTransport(lambda request: httpx.Response(200, text="ok")))
+    mobile_calls_mod.use_transport(httpx.MockTransport(lambda request: httpx.Response(200, text="ok")))
     try:
-        ok, detail = asyncio.run(TelephonyGeneric(webhook_secret="s", provider_url="https://pbx.example.com").probe())
+        ok, detail = asyncio.run(MobileCallsProvider(webhook_secret="s", provider_url="https://pbx.example.com").probe())
     finally:
-        telephony_mod.use_transport(None)
+        mobile_calls_mod.use_transport(None)
     assert ok is True and "200" in detail
 
-    telephony_mod.use_transport(httpx.MockTransport(lambda request: httpx.Response(503)))
+    mobile_calls_mod.use_transport(httpx.MockTransport(lambda request: httpx.Response(503)))
     try:
-        down, down_detail = asyncio.run(TelephonyGeneric(webhook_secret="s", provider_url="https://pbx.example.com").probe())
+        down, down_detail = asyncio.run(MobileCallsProvider(webhook_secret="s", provider_url="https://pbx.example.com").probe())
     finally:
-        telephony_mod.use_transport(None)
+        mobile_calls_mod.use_transport(None)
     assert down is False and "503" in down_detail
 
-    unreachable, message = asyncio.run(TelephonyGeneric(webhook_secret="s", provider_url="").probe())
+    unreachable, message = asyncio.run(MobileCallsProvider(webhook_secret="s", provider_url="").probe())
     assert unreachable is False and "provider_url" in message
 
 
@@ -241,8 +241,8 @@ async def test_live_call_webhook_stores_the_recording_and_is_idempotent(client, 
     from app.models.requests import CallRecord
     from sqlalchemy import select
 
-    driver = TelephonyGeneric(webhook_secret="s3cret-app", provider_url="https://pbx.example.com")
-    monkeypatch.setattr(webhooks, "telephony_provider", lambda: driver)
+    driver = MobileCallsProvider(webhook_secret="s3cret-app", provider_url="https://pbx.example.com")
+    monkeypatch.setattr(webhooks, "mobile_calls_provider", lambda: driver)
 
     fetched: list[str] = []
 
@@ -250,12 +250,12 @@ async def test_live_call_webhook_stores_the_recording_and_is_idempotent(client, 
         fetched.append(str(request.url))
         return httpx.Response(200, content=b"RIFF-live-recording", headers={"content-type": "audio/wav"})
 
-    telephony_mod.use_transport(httpx.MockTransport(handler))
+    mobile_calls_mod.use_transport(httpx.MockTransport(handler))
     try:
         started = {"CallSid": "CA-live-900", "CallStatus": "call.started", "From": "+201000000001"}
         raw = json.dumps(started).encode()
         response = await client.post(
-            "/api/v1/webhooks/telephony", content=raw, headers={"content-type": "application/json", "x-call-signature": _signed(raw)}
+            "/api/v1/webhooks/mobile-calls", content=raw, headers={"content-type": "application/json", "x-call-signature": _signed(raw)}
         )
         assert response.status_code == 200, response.text
         assert response.json()["status"] in {"started", "created", "linked"}
@@ -269,13 +269,13 @@ async def test_live_call_webhook_stores_the_recording_and_is_idempotent(client, 
         }
         raw_end = json.dumps(ended).encode()
         closed = await client.post(
-            "/api/v1/webhooks/telephony",
+            "/api/v1/webhooks/mobile-calls",
             content=raw_end,
             headers={"content-type": "application/json", "x-call-signature": _signed(raw_end)},
         )
         assert closed.status_code == 200, closed.text
     finally:
-        telephony_mod.use_transport(None)
+        mobile_calls_mod.use_transport(None)
 
     assert fetched == ["https://pbx.example.com/rec/900.wav"], "the recording is pulled while the URL is alive"
 
@@ -289,7 +289,7 @@ async def test_live_call_webhook_stores_the_recording_and_is_idempotent(client, 
     # a replay of the same started event changes nothing
     replay = json.dumps(started).encode()
     again = await client.post(
-        "/api/v1/webhooks/telephony",
+        "/api/v1/webhooks/mobile-calls",
         content=replay,
         headers={"content-type": "application/json", "x-call-signature": _signed(replay)},
     )
@@ -299,10 +299,12 @@ async def test_live_call_webhook_stores_the_recording_and_is_idempotent(client, 
 async def test_telephony_webhook_refuses_a_bad_signature(client, monkeypatch: pytest.MonkeyPatch) -> None:
     from app.api.v1.endpoints import webhooks
 
-    monkeypatch.setattr(webhooks, "telephony_provider", lambda: TelephonyGeneric(webhook_secret="s3cret-app"))
+    monkeypatch.setattr(webhooks, "mobile_calls_provider", lambda: MobileCallsProvider(webhook_secret="s3cret-app"))
     raw = json.dumps({"CallSid": "CA-bad", "CallStatus": "call.started", "From": "+201000000009"}).encode()
     response = await client.post(
-        "/api/v1/webhooks/telephony", content=raw, headers={"content-type": "application/json", "x-call-signature": _signed(raw, "wrong")}
+        "/api/v1/webhooks/mobile-calls",
+        content=raw,
+        headers={"content-type": "application/json", "x-call-signature": _signed(raw, "wrong")},
     )
     assert response.status_code == 403
 
@@ -327,14 +329,14 @@ async def test_a_live_webhook_with_no_app_secret_is_refused_not_forged_through(c
 
 
 def test_settings_connection_test_reports_the_missing_url_instead_of_a_green_light() -> None:
-    """`_test_telephony` used to answer "signature ok" for a PBX nobody could reach."""
+    """`_test_mobile_calls` must not answer "signature ok" for a provider nobody could reach."""
     import inspect
 
     from app.services import integrations_settings as cfg
 
-    assert inspect.iscoroutinefunction(cfg._test_telephony)
+    assert inspect.iscoroutinefunction(cfg._test_mobile_calls)
     outcome = asyncio.run(
-        cfg._test_telephony(
+        cfg._test_mobile_calls(
             cfg.ResolvedIntegration(provider="telephony", is_live=True, config={"provider_url": ""}, secrets={"webhook_secret": "s3cret"})
         )
     )
