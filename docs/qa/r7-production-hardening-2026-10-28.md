@@ -87,7 +87,7 @@ Frontend:
   npm run codegen:api       openapi.json (110 paths, 146 schemas)
 ```
 
-### e2e في CI (تشغيل `40612666618` — أربع وظائف خضراء)
+### e2e في CI (التشغيل الأخضر `40621482249` — أربع وظائف خضراء، بعد إصلاح تجميد المجمّع)
 
 ```
 backend · ruff · mypy · pytest        success
@@ -95,7 +95,7 @@ frontend · lint · typecheck · unit    success
 docker · compose · full stack boot    success
 e2e · playwright · screenshots        success
 
-**192 اختباراً** · 144 ناجح · 0 فاشل · 48 مُتخطٍّ · flaky=0 · مجموع الزمن 144s
+**192 اختباراً** · 144 ناجح · 0 فاشل · 48 مُتخطٍّ · flaky=0 · مجموع الزمن 138s
 desktop 92 ناجح / 4 مُتخطٍّ / 0 فاشل · mobile 52 ناجح / 44 مُتخطٍّ / 0 فاشل
 ```
 
