@@ -151,3 +151,71 @@ async def test_settings_report_connection_semantics(client, ids) -> None:
         assert urls.status_code == 200, urls.text
         providers = {item["provider"] for item in urls.json()["items"]}
         assert {"whatsapp", "telephony", "email"} <= providers
+
+
+async def test_whatsapp_reply_with_document_sends_then_surfaces_failure(client, ids) -> None:
+    from app.integrations.notifier import ConsoleNotifier
+    from app.integrations.sims import WhatsAppSim
+
+    WhatsAppSim.reset()
+    ConsoleNotifier.reset()
+    raw = _wa([{"id": "wamid.r12reply1", "from": "2010555000222", "type": "text", "text": {"body": "محتاج الجدول"}}])
+    delivered = await client.post("/api/v1/webhooks/whatsapp", content=raw, headers={"content-type": "application/json"})
+    request_id = delivered.json()["results"][0]["request_id"]
+
+    async with login(client, MANAGER) as mgr:
+        up = await client.post(
+            f"/api/v1/requests/{request_id}/attachments",
+            headers=mgr,
+            files={"file": ("schedule.pdf", b"%PDF-1.4 reply fixture", "application/pdf")},
+        )
+        assert up.status_code == 201, up.text
+        att_id = up.json()["id"]
+
+        reply = await client.post(
+            f"/api/v1/requests/{request_id}/messages", headers=mgr, json={"body": "الجدول مرفق", "attachment_ids": [att_id]}
+        )
+        assert reply.status_code == 201, reply.text
+        assert reply.json()["delivery_status"] == "sent"
+        assert any(row.get("document") == "schedule.pdf" for row in WhatsAppSim.sent)
+
+        # a file that vanished from storage must fail visibly on the row, never 500 the reply
+        from app.domain.enums import AttachmentOwner
+
+        async with get_sessionmaker()() as session:
+            ghost = Attachment(
+                owner_type=AttachmentOwner.REQUEST,
+                owner_id=UUID(request_id),
+                request_id=UUID(request_id),
+                filename="ghost.pdf",
+                object_key="requests/ghost/missing.pdf",
+                mime="application/pdf",
+                size=3,
+            )
+            session.add(ghost)
+            await session.commit()
+            ghost_id = str(ghost.id)
+        reply2 = await client.post(
+            f"/api/v1/requests/{request_id}/messages", headers=mgr, json={"body": "محاولة ثانية", "attachment_ids": [ghost_id]}
+        )
+        assert reply2.status_code == 201, reply2.text
+        assert reply2.json()["delivery_status"] == "failed"
+
+
+async def test_email_reply_goes_out_over_smtp_notifier(client, ids) -> None:
+    from app.integrations.notifier import ConsoleNotifier
+
+    ConsoleNotifier.reset()
+    made = await client.post(
+        "/api/v1/webhooks/email",
+        json={"external_id": "mail-reply-1", "from": "client@example.com", "subject": "استفسار", "body": "النص", "attachments": []},
+    )
+    assert made.status_code == 200, made.text
+    request_id = made.json()["request_id"]
+    async with login(client, MANAGER) as mgr:
+        reply = await client.post(
+            f"/api/v1/requests/{request_id}/messages", headers=mgr, json={"body": "رد البريد", "channel": "email"}
+        )
+        assert reply.status_code == 201, reply.text
+        assert reply.json()["delivery_status"] == "sent"
+    assert ConsoleNotifier.sent and ConsoleNotifier.sent[-1]["to"] == "client@example.com"

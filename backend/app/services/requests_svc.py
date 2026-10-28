@@ -273,6 +273,7 @@ async def add_outbound_message(
     if request.status in {RequestStatus.NEW, RequestStatus.IN_PROGRESS, RequestStatus.WAITING_INSURER}:
         request.status = RequestStatus.REPLIED
     if attachment_ids:
+        await session.flush()  # the message needs its id before attachments can point at it
         await session.execute(
             sa.update(Attachment).where(Attachment.id.in_(attachment_ids)).values(request_id=request.id, owner_id=message.id)
         )
