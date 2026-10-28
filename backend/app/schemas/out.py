@@ -776,6 +776,8 @@ class MoneyByMethodOut(Open):
 class CashboxOut(Open):
     currency: str = "EGP"
     as_of: datetime
+    #: the earliest posted cash movement — the balance is the net movement from here to `as_of`
+    since: datetime | None = None
     balance: float
     cash_in_total: float
     cash_out_total: float
@@ -790,6 +792,8 @@ class CashboxOut(Open):
 class LedgerVoidOut(Open):
     entry: LedgerEntryOut
     cashbox_balance: float
+    #: what the void put back: `{"kind": "installment"|"commission", "id": ..., "status": ...}`, or null
+    reopened: dict[str, Any] | None = None
 
 
 class AgingBucketOut(Open):

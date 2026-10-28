@@ -138,11 +138,22 @@ async def dashboard(session: AsyncSession, scope: Scope, *, today: date | None =
         session,
         with_scope(select(func.count()).select_from(Lead), scope, "lead").where(Lead.converted_at >= month_start_dt),
     )
+    # R10.1: `issued_at` only — no `coalesce(issued_at, created_at)`. A policy whose issue date was never
+    # recorded (no `policy.issued` audit row) is *not* counted under a month it may not belong to; it is
+    # reported as unknown below instead. Guessing here is exactly the wrong number the screen must not show.
     issued = with_scope(select(Policy), scope, "policy").where(
         Policy.status == PolicyStatus.ISSUED,
-        func.coalesce(Policy.issued_at, Policy.created_at) >= month_start_dt,
+        Policy.issued_at.is_not(None),
+        Policy.issued_at >= month_start_dt,
     )
     policies_issued_mtd = await _count(session, issued.with_only_columns(func.count()).order_by(None))
+    issue_date_unknown = await _count(
+        session,
+        with_scope(select(func.count()).select_from(Policy), scope, "policy").where(
+            Policy.status == PolicyStatus.ISSUED,
+            Policy.issued_at.is_(None),
+        ),
+    )
 
     return {
         "period": {"from_date": month_start, "to_date": month_end, "label": f"{month_start:%Y-%m}"},
@@ -166,6 +177,14 @@ async def dashboard(session: AsyncSession, scope: Scope, *, today: date | None =
         "channel_mix": await channel_mix(session, scope, today=moment),
         "renewals_next_30d": await renewals(session, scope, today=moment),
         "alerts": [
+            {
+                "code": "issue_date_unknown",
+                "severity": "low",
+                # an issue that was never recorded is not counted in `policies_issued_mtd`; saying so is the
+                # difference between an honest undercount and a number nobody can reproduce
+                "message": "سياسات صادرة بلا تاريخ إصدار مسجَّل — لا تُحتسب في «صادر هذا الشهر»",
+                "count": issue_date_unknown,
+            },
             {
                 "code": "overdue_ar",
                 "severity": "high",
@@ -209,7 +228,8 @@ async def sales_performance(session: AsyncSession, scope: Scope, *, today: date 
             await session.execute(
                 with_scope(select(Policy), scope, "policy").where(
                     Policy.status == PolicyStatus.ISSUED,
-                    func.coalesce(Policy.issued_at, Policy.created_at) >= month_start_dt,
+                    Policy.issued_at.is_not(None),
+                    Policy.issued_at >= month_start_dt,
                 )
             )
         )

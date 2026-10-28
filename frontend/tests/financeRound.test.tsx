@@ -18,15 +18,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import ExecutiveDashboardPage from "@/features/executive/ExecutiveDashboardPage";
 import CommissionsPage from "@/features/finance/CommissionsPage";
+import CashboxPage from "@/features/finance/CashboxPage";
 import LedgerPage from "@/features/finance/LedgerPage";
 import { ar } from "@/lib/i18n/ar";
 
 const calls: { method: string; path: string; body?: unknown }[] = [];
+/** The two rarer powers are off by default; a test that needs them flips this instead of the mock. */
+let moneyPowers = false;
+const denied = (permission: string) => !moneyPowers && ["finance.void", "finance.post"].includes(permission);
 const AUTH = {
   user: { full_name: "مدير", role: "sales_manager" },
-  // this caller reads the ledger but may neither post to it nor take a row back — the two rarer powers
-  can: (permission: string) => !["finance.void", "finance.post"].includes(permission),
-  canAny: (...permissions: string[]) => permissions.some((permission) => !["finance.void", "finance.post"].includes(permission)),
+  // by default this caller reads the ledger but may neither post to it nor take a row back
+  can: (permission: string) => !denied(permission),
+  canAny: (...permissions: string[]) => permissions.some((permission) => !denied(permission)),
   ready: true,
   isManager: true,
   isPortal: false,
@@ -100,6 +104,24 @@ const COMMISSIONS = {
   page_size: 50,
 };
 
+const CASHBOX = {
+  currency: "EGP",
+  as_of: "2026-10-28T12:00:00Z",
+  since: "2026-06-01T09:00:00Z",
+  balance: 51500,
+  cash_in_total: 240000,
+  cash_out_total: 188500,
+  today_in: 6000,
+  today_out: 0,
+  month_in: 42000,
+  month_out: 12500,
+  by_method: [
+    { method: "cash", in_total: 240000, out_total: 188500, balance: 51500 },
+    { method: "bank", in_total: 90000, out_total: 30000, balance: 60000 },
+  ],
+  movements: [],
+};
+
 vi.mock("@/lib/api/client", () => {
   class ApiError extends Error {
     status = 422;
@@ -112,11 +134,17 @@ vi.mock("@/lib/api/client", () => {
         if (path.startsWith("/finance/ledger")) return Promise.resolve(LEDGER);
         if (path.startsWith("/finance/commissions")) return Promise.resolve(COMMISSIONS);
         if (path.startsWith("/clients")) return Promise.resolve({ items: [{ id: "cl-1", name: "شركة النيل" }], total: 1 });
+        if (path.startsWith("/finance/cashbox")) return Promise.resolve(CASHBOX);
         return Promise.resolve({});
       },
       post: (path: string, body?: unknown) => {
         calls.push({ method: "POST", path, body });
-        return Promise.resolve({ entry: { ...LEDGER.items[0], status: "void" }, cashbox_balance: 45500 });
+        return Promise.resolve({
+          entry: { ...LEDGER.items[0], status: "void" },
+          cashbox_balance: 45500,
+          // R10.1: a void of an installment receipt reopens the installment in the same transaction
+          reopened: path.endsWith("/void") ? { kind: "installment", id: "in-1", status: "upcoming" } : null,
+        });
       },
       patch: () => Promise.resolve({}),
       put: () => Promise.resolve({}),
@@ -194,5 +222,37 @@ describe("ledger", () => {
     harness(<LedgerPage />);
     await waitFor(() => expect(screen.getByText("LE-000042")).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: ar.finance.newEntry })).toBeNull();
+  });
+
+  it("says what a void put back, so the plan is not left silently stale (R10.1)", async () => {
+    moneyPowers = true;
+    try {
+      harness(<LedgerPage />);
+      await waitFor(() => expect(screen.getByText("LE-000042")).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole("button", { name: ar.finance.void }));
+      fireEvent.change(screen.getByLabelText(ar.finance.voidReason), { target: { value: "شيك مرتجع" } });
+      fireEvent.click(screen.getByRole("button", { name: ar.finance.voidConfirm }));
+
+      await waitFor(() => expect(calls.some((call) => call.path === "/finance/ledger/le-1/void")).toBe(true));
+      // the operator is told the installment went back to unpaid — not just that the money moved
+      await waitFor(() => expect(toast).toHaveBeenCalledWith(ar.finance.voidedReopenedInstallment));
+    } finally {
+      moneyPowers = false;
+    }
+  });
+});
+
+describe("cashbox (R10.1 point 6)", () => {
+  it("states that the balance is a net movement, with no opening balance and no daily close", async () => {
+    harness(<CashboxPage />);
+    await waitFor(() => expect(screen.getByText(ar.finance.cashbox)).toBeInTheDocument());
+
+    // the sentence is rendered with the first posted cash row, so "since when" is answered on screen
+    expect(screen.getByText(/لا يوجد رصيد افتتاحي/)).toBeInTheDocument();
+    // …and "since when" is answered with the first posted cash row the API reported
+    expect(screen.getByText(/من 01 يونيو 2026/)).toBeInTheDocument();
+    // and the KPI is labelled as a movement, not as a drawer balance carried forward
+    expect(screen.getByText(ar.finance.cashNetMovement)).toBeInTheDocument();
   });
 });

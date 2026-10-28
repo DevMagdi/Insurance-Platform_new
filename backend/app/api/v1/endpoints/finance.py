@@ -166,7 +166,7 @@ async def void_ledger_entry(
     actor: FinanceVoid,
     request: Request,
 ) -> Any:
-    entry = await svc.void_entry(
+    entry, reopened = await svc.void_entry(
         session,
         actor,
         entry_id,
@@ -176,7 +176,9 @@ async def void_ledger_entry(
         user_agent=request.headers.get("user-agent"),
     )
     balance = await svc.cashbox(session, scope)
-    response = {"entry": svc.entry_brief(entry), "cashbox_balance": balance["balance"]}
+    # `reopened` is the business fact the void put back (an installment, a commission payout) — without it
+    # the operator sees money move and has to go and check whether the plan followed (R10.1)
+    response = {"entry": svc.entry_brief(entry), "cashbox_balance": balance["balance"], "reopened": reopened}
     await session.commit()
     return response
 

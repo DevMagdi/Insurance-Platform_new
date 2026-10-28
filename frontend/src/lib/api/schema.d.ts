@@ -2479,6 +2479,8 @@ export interface components {
             month_out: number;
             /** Movements */
             movements?: components["schemas"]["LedgerEntryOut"][];
+            /** Since */
+            since?: string | null;
             /** Today In */
             today_in: number;
             /** Today Out */
@@ -4005,6 +4007,10 @@ export interface components {
             /** Cashbox Balance */
             cashbox_balance: number;
             entry: components["schemas"]["LedgerEntryOut"];
+            /** Reopened */
+            reopened?: {
+                [key: string]: unknown;
+            } | null;
         } & {
             [key: string]: unknown;
         };
