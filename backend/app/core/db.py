@@ -27,6 +27,12 @@ def make_engine(url: str | None = None, *, echo: bool | None = None) -> AsyncEng
     kwargs: dict[str, Any] = {"echo": settings.DB_ECHO if echo is None else echo, "future": True}
     if target.startswith("postgresql"):
         kwargs.update(pool_size=10, max_overflow=20, pool_pre_ping=True)
+    elif target.startswith("sqlite") and ":memory:" not in target and "mode=memory" not in target:
+        # SQLite file databases are pooled in SQLAlchemy 2.0, and the *dialect default* is 5 + 10 — a limit
+        # nobody chose. The e2e/eval deployment runs on such a file, and parallel browser sessions exhausted
+        # those 15 connections with `QueuePool limit of size 5 overflow 10 reached` (R7). The size is now the
+        # same explicit decision it already was for PostgreSQL, instead of an inherited accident.
+        kwargs.update(pool_size=10, max_overflow=20)
     return create_async_engine(target, **kwargs)
 
 

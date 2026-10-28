@@ -1376,7 +1376,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Server-sent change feed (topics + revision, no row data) */
+        /**
+         * Server-sent change feed (topics + revision, no row data)
+         * @description Authenticated *before* the stream opens, in a session that is closed before the first frame.
+         *
+         *     The dependency form (`CurrentUser` + `ScopeDep`) kept a pooled connection checked out for the entire life
+         *     of the stream — one per open tab — and starved the pool under parallel browser sessions (R7). The identity
+         *     is resolved here instead, so a stream holds a subscription and a queue, never a connection.
+         */
         get: operations["getApiV1RealtimeStream"];
         put?: never;
         post?: never;

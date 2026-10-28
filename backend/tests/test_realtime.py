@@ -198,6 +198,44 @@ async def _next_frame(lines: Any, *, event: str) -> dict[str, Any]:
     return await asyncio.wait_for(read(), timeout=5.0)
 
 
+async def test_an_open_stream_does_not_pin_a_database_connection(ids: dict[str, dict[str, str]]) -> None:
+    """R7: a stream must cost a subscription and a queue, never a pooled connection.
+
+    The route used to take `CurrentUser`/`ScopeDep`, and a dependency-yielded session lives until the
+    response ends — which for `text/event-stream` is as long as the tab is open. Every open tab therefore held
+    one connection for minutes; the e2e run answered `QueuePool limit of size 5 overflow 10 reached` after
+    30 s on `/auth/login` while the browsers were merely sitting there with their streams open.
+
+    The engine here has exactly **one** connection, so the fact is not a matter of tuning: if the stream keeps
+    a session, the next request cannot be served at all. It is served, in milliseconds.
+    """
+    import httpx
+    from app.core.db import get_engine, set_sessionmaker
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from tests.conftest import IS_POSTGRES, TEST_DB, TEST_URL
+
+    one = create_async_engine(TEST_URL if IS_POSTGRES else f"sqlite+aiosqlite:///{TEST_DB}", pool_size=1, max_overflow=0, future=True)
+    set_sessionmaker(async_sessionmaker(one, expire_on_commit=False, autoflush=False))
+    try:
+        async with served_app() as base, httpx.AsyncClient(base_url=base, timeout=10) as http:
+            login = await http.post("/api/v1/auth/login", json={"email": MANAGER, "password": PASSWORD})
+            auth = {"Authorization": f"Bearer {login.json()['access_token']}"}
+            async with http.stream("GET", "/api/v1/realtime/stream", headers=auth) as response:
+                assert response.status_code == 200
+                lines = response.aiter_lines()
+                hello = await _next_frame(lines, event="hello")
+                assert hello["revision"] >= 0
+
+                # the only connection in the pool must be free *while* the stream is open
+                other = await asyncio.wait_for(http.get("/api/v1/realtime/revision", headers=auth), timeout=5)
+                assert other.status_code == 200, other.text
+                assert get_engine().pool.checkedout() <= 1  # type: ignore[attr-defined]
+    finally:
+        await one.dispose()
+        set_sessionmaker(async_sessionmaker(get_engine(), expire_on_commit=False, autoflush=False))
+
+
 async def test_a_change_on_one_connection_reaches_another(ids: dict[str, dict[str, str]]) -> None:
     """The requirement, literally: client B is told within seconds that client A changed a request."""
     import httpx

@@ -11763,6 +11763,7 @@
     },
     "/api/v1/realtime/stream": {
       "get": {
+        "description": "Authenticated *before* the stream opens, in a session that is closed before the first frame.\n\nThe dependency form (`CurrentUser` + `ScopeDep`) kept a pooled connection checked out for the entire life\nof the stream — one per open tab — and starved the pool under parallel browser sessions (R7). The identity\nis resolved here instead, so a stream holds a subscription and a queue, never a connection.",
         "operationId": "getApiV1RealtimeStream",
         "parameters": [
           {

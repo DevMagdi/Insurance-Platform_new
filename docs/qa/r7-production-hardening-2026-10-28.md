@@ -19,6 +19,7 @@
 | 7 | **P1 أمني:** توقيع webhook صحيح على مفتاح **فارغ** | `hmac.new(b"", …)` قابل للحساب من أي أحد، فغياب App Secret كان يفتح مسار الاستقبال بدل أن يرفضه | `verify_webhook_signature` ترفض المفتاح الفارغ | `test_intake.py` (وحدة) + `test_live_channels.py` (طرف‑لطرف `403`) |
 | 8 | لم يكن هناك دليل أن الفلتر الإداري يقرأ من الخادم | لا اختبار للـ`board` بفلتر أصلًا | `tests/test_manager_filters.py` | 3 اختبارات |
 | 9 | موظف الاستقبال يسلّم كلمة المرور يدويًا فيُخطئ العنوان | البطاقة تعرض حقلين فقط | كتلة رسالة جاهزة + «نسخ الرسالة» + تحذير | `e2e/live-round.spec.ts` (وجود الكتلة وكلمة المرور داخلها) |
+| 10 | **P1 تشغيلي:** `QueuePool limit of size 5 overflow 10 reached` — كل تسجيل دخول يفشل بعد 30 ثانية أثناء تشغيل e2e، وتوقّف تشغيلان كاملان (أحدهما بلغ حدّ 35 دقيقة للمهمة) | مسار `/realtime/stream` كان يعتمد `CurrentUser`/`ScopeDep`، وجلسة الاعتماد تبقى مفتوحة حتى **نهاية الاستجابة** — أي طول عمر التبويب. كل تبويب يحجز اتصالًا من الميزانية (5+10 افتراضي SQLite)، فتُستهلك القاعدة ولا يبقى لبقية الطلبات شيء | `authenticate()` في `core/deps.py`: المصادقة في جلسة قصيرة تُغلق **قبل** أول إطار. وميزانية مجمّع SQLite صارت قرارًا صريحًا (10+20) لا افتراضيًا موروثًا | `test_an_open_stream_does_not_pin_a_database_connection`: محرّك باتصال واحد فقط، والبثّ مفتوح، ثم طلب آخر يخدم في <5s. شُغِّل على الكود القديم فأعاد `TimeoutError` (الأثر أدناه) |
 
 ## 2) دليل PDF والبوابة (طلبات المالك: «بدليل حرفي»)
 
@@ -105,6 +106,27 @@ desktop 92 ناجح / 4 مُتخطٍّ / 0 فاشل · mobile 52 ناجح / 44 �
 يحجز شركته الخاصة (اسم فريد عبر `POST /clients`) ويجد صفّه بالاسم بدل «أول صفّ» — لأن صفوف الجدول مرتّبة
 بزمن الإنشاء ومواصفات أخرى تُنشئ سياسات بالتوازي. التشغيل نفسه كشف **متذبذبًا قديمًا** في
 `R6 · a change reaches every tab in ≤2 s` (فشل مرة، ونجح في التشغيل التالي بلا تغيير في الكود).
+
+### أثر انحدار تجميد المجمّع (كما هو)
+
+```
+الكود القديم، محرّك باتصال واحد، والبثّ مفتوح:
+2026-10-28 02:25:11 [info] method=POST ms=141.9  path=/api/v1/auth/login status=200
+2026-10-28 02:25:11 [info] method=GET  ms=230.6  path=/api/v1/realtime/stream status=200
+2026-10-28 02:25:16 [info] method=GET  ms=5011.5 path=/api/v1/realtime/revision status=200
+E   TimeoutError                     ← الطلب الثاني انتظر الاتصال الوحيد 5 ثوانٍ وفشل
+FAILED tests/test_realtime.py::test_an_open_stream_does_not_pin_a_database_connection
+
+الكود الجديد: 1 passed
+```
+
+وفي سجل الـAPI من تشغيل CI `40618435086` السبب كما رآه الخادم:
+
+```
+sqlalchemy.exc.TimeoutError: QueuePool limit of size 5 overflow 10 reached, connection timed out, timeout 30.00
+unhandled error=TimeoutError path=/api/v1/auth/login
+INFO: "POST /api/v1/auth/login HTTP/1.1" 500 Internal Server Error
+```
 
 ## 6) ما لم يُشغَّل ولماذا
 

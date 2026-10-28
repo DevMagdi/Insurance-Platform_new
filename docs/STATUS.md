@@ -544,7 +544,8 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 | 10 | فلتر المدير | بلا اختبار يثبت أن النتيجة من الخادم | `tests/test_manager_filters.py` (3): ممثل + مرحلة + القائمة، والممثل لا يقرأ كتاب زميله | 3 خضراء |
 | 11 | اختبار كان يحمي عيبًا | `status == "upcoming"` لتواريخ ماضية | يشتقّ المتوقّع من `due_date` مقابل اليوم | `test_integrations_settings.py` |
 | 12 | `smoke_api.py` | لا يغطّي الأقساط ولا الدفع | يغطيهما، ويحلّ `installment_id` من خطة السياسة نفسها | `SMOKE OK — 126/129` |
-| 13 | `runbook.md` | لا قسم «قبل الوضع الحيّ» | قسم ب.١: جدول الحواجز **منقول حرفيًا** من `switch_blockers()`/`FIELD_LABELS` + أمر `preflight` + نصّ «لم يُجرَّب اتصال بمزوّد حقيقي» | `docs/runbook.md` |
+| 13 | **P1 تشغيلي:** نفاد مجمّع الاتصالات في e2e (`QueuePool limit of size 5 overflow 10 reached`، ولوجين يفشل بعد 30s) | مسار SSE كان يحجز اتصالًا لكل تبويب لطول عمر البثّ (جلسة الاعتماد تُغلق مع نهاية الاستجابة) | `authenticate()` بجلسة قصيرة تُغلق قبل أول إطار + ميزانية مجمّع SQLite صريحة (10+20) لا افتراضية (5+10) | `test_an_open_stream_does_not_pin_a_database_connection` (يفشل على الكود القديم بـ`TimeoutError`، وينجح الآن) |
+| 14 | `runbook.md` | لا قسم «قبل الوضع الحيّ» | قسم ب.١: جدول الحواجز **منقول حرفيًا** من `switch_blockers()`/`FIELD_LABELS` + أمر `preflight` + نصّ «لم يُجرَّب اتصال بمزوّد حقيقي» | `docs/runbook.md` |
 
 **بوابات R7 (مخرجات حرفية):** `ruff check .` ⇒ `All checks passed!` · `ruff format --check .` ⇒
 `165 files already formatted` · `mypy app` ⇒ `Success: no issues found in 113 source files` ·
