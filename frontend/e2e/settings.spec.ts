@@ -129,7 +129,8 @@ test.describe("settings hub · providers", () => {
 
     await whatsapp.getByRole("button", { name: "التبديل إلى الحيّ" }).click();
     await page.getByRole("dialog", { name: "تأكيد التحوّل إلى الوضع الحيّ" }).getByRole("button", { name: "تأكيد والتبديل" }).click();
-    await expect(whatsapp.getByText("حيّ", { exact: true })).toBeVisible({ timeout: 20_000 });
+    // R9 §1.D: the live badge reads `Live` in both languages
+    await expect(whatsapp.getByText("Live", { exact: true })).toBeVisible({ timeout: 20_000 });
     // the row is what the drivers read, so the badge is checked against it, not against a label alone
     const auth = await apiLogin(request, MANAGER);
     await expect
