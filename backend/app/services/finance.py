@@ -204,8 +204,23 @@ async def void_entry(
     scope: Scope,
     ip: str | None = None,
     user_agent: str | None = None,
-) -> LedgerEntry:
-    """Take a posted entry back. The row stays; `status` moves to `void` and every sum stops counting it."""
+) -> tuple[LedgerEntry, dict[str, Any] | None]:
+    """Take a posted entry back — the row *and* the business fact that produced it (R10.1).
+
+    A void used to move `status` to `void` and stop there, which left the ledger and the plan disagreeing:
+    the money was gone from every sum, but the installment it paid stayed `paid` — so the customer's plan
+    still read "collected", and `installments.pay()` answered `409 already marked paid` when the office tried
+    to take the money again. The reversal is now part of the same transaction:
+
+    * a `premium_receivable` receipt reopens its installment (`paid_at = None`, `status = unpaid`), and paying
+      it again is an ordinary payment that posts a new receipt with its own `entry_no`;
+    * a `commission_payable` payout returns its settlement to `approved` and the commission to `approved`, so
+      the payout can be made again instead of leaving an orphaned "paid" row behind a voided transfer;
+    * an office entry (expense, adjustment) has no dependent row and is a pure ledger reversal.
+
+    Each reopening writes its own audit row, so "why is this installment unpaid again?" has an answer with a
+    name and a reason attached.
+    """
     entry = await row_visible(session, select(LedgerEntry).where(LedgerEntry.id == entry_id), scope, "ledger")
     if entry is None:
         raise NotFound("Ledger entry not found")
@@ -219,17 +234,10 @@ async def void_entry(
     entry.voided_by = actor.id
     entry.void_reason = reason
     await session.flush()
-    # ERP hub (ADR-031): voiding a premium receipt re-opens its installment. The partial unique index
-    # already freed the receipt slot; without this the installment stayed `paid`, so AR and the pay
-    # endpoint disagreed with the ledger and the customer could never be re-charged.
-    installment_reopened: dict[str, Any] | None = None
-    if entry.entry_type == LedgerEntryType.PREMIUM_RECEIVABLE and entry.installment_id is not None:
-        installment = (await session.execute(select(Installment).where(Installment.id == entry.installment_id))).scalar_one_or_none()
-        if installment is not None and installment.paid_at is not None:
-            installment.paid_at = None
-            installment.status = InstallmentStatus.LATE if installment.due_date < date.today() else InstallmentStatus.UPCOMING
-            await session.flush()
-            installment_reopened = {"installment_id": str(installment.id), "status": installment.status.value, "paid_at": None}
+
+    # R10.1's `_reopen_what_the_entry_paid` is the void↔installment reversal (ADR-031 adopts it as-is:
+    # same rule, plus its own `installment.reopened` audit row and commission-settlement reopening)
+    reopened = await _reopen_what_the_entry_paid(session, actor, entry, reason, ip=ip, user_agent=user_agent)
     await audit.write(
         session,
         actor=actor,
@@ -237,11 +245,91 @@ async def void_entry(
         entity_type="ledger_entry",
         entity_id=entry.id,
         before=before,
-        after={"status": entry.status.value, "reason": reason, "voided_at": entry.voided_at, "installment_reopened": installment_reopened},
+        after={"status": entry.status.value, "reason": reason, "voided_at": entry.voided_at, "reopened": reopened},
         ip=ip,
         user_agent=user_agent,
     )
-    return entry
+    return entry, reopened
+
+
+async def _reopen_what_the_entry_paid(
+    session: AsyncSession,
+    actor: User,
+    entry: LedgerEntry,
+    reason: str,
+    *,
+    ip: str | None,
+    user_agent: str | None,
+) -> dict[str, Any] | None:
+    """Undo the business fact behind a voided entry, in the same transaction (see `void_entry`).
+
+    Returns a small description of what was reopened so the caller (and the audit trail) can say it out loud,
+    or `None` for an entry that nothing depends on (an expense, a manual adjustment).
+    """
+    if entry.entry_type == LedgerEntryType.PREMIUM_RECEIVABLE and entry.installment_id is not None:
+        installment = await session.get(Installment, entry.installment_id)
+        if installment is None or installment.paid_at is None:
+            return None
+        installment.paid_at = None
+        # the plan's own rule for an unpaid row: late once its due date has passed, upcoming before that
+        installment.status = InstallmentStatus.LATE if installment.due_date < date.today() else InstallmentStatus.UPCOMING
+        await session.flush()
+        await audit.write(
+            session,
+            actor=actor,
+            action="installment.reopened",
+            entity_type="installment",
+            entity_id=installment.id,
+            before={"status": InstallmentStatus.PAID.value},
+            after={
+                "status": installment.status.value,
+                "policy_id": str(installment.policy_id),
+                "reason": reason,
+                "voided_entry_no": entry.entry_no,
+                "voided_entry_id": str(entry.id),
+            },
+            ip=ip,
+            user_agent=user_agent,
+        )
+        return {"kind": "installment", "id": str(installment.id), "status": installment.status.value}
+
+    if entry.entry_type == LedgerEntryType.COMMISSION_PAYABLE:
+        settlement = (
+            await session.execute(select(CommissionSettlement).where(CommissionSettlement.ledger_entry_id == entry.id))
+        ).scalar_one_or_none()
+        if settlement is None or settlement.status != SettlementStatus.PAID:
+            return None
+        commission = await session.get(Commission, settlement.commission_id)
+        settlement.status = SettlementStatus.APPROVED
+        settlement.paid_at = None
+        settlement.paid_by = None
+        settlement.ledger_entry_id = None
+        settlement.method = None
+        if commission is not None:
+            # `commissions.status` is the *accrual* (accrued | settled | clawed_back): a voided payout puts
+            # the accrual back to "owed", which is what the commissions screen and the executive KPI read
+            commission.status = CommissionStatus.ACCRUED
+            commission.settled_at = None
+        await session.flush()
+        await audit.write(
+            session,
+            actor=actor,
+            action="commission.reopened",
+            entity_type="commission_settlement",
+            entity_id=settlement.id,
+            before={"status": SettlementStatus.PAID.value},
+            after={
+                "status": settlement.status.value,
+                "commission_id": str(settlement.commission_id),
+                "reason": reason,
+                "voided_entry_no": entry.entry_no,
+            },
+            ip=ip,
+            user_agent=user_agent,
+        )
+        return {"kind": "commission", "id": str(settlement.id), "status": settlement.status.value}
+
+    return None
 
 
 PERIODS = ("month", "quarter", "semiannual", "year")
@@ -471,12 +559,23 @@ async def cashbox(session: AsyncSession, scope: Scope, *, as_of: datetime | None
         .scalars()
         .all()
     )
+    # R10.1: the screen has to be able to say *what* the number is. `since` is the first posted cash movement
+    # this balance was accumulated from, so "net movement since 1 June" is a sentence the API can support —
+    # there is no opening balance in the model and no daily close, and the screen says both out loud.
+    since = (
+        await session.execute(
+            with_scope(select(func.min(LedgerEntry.posted_at)).select_from(LedgerEntry), scope, "ledger").where(
+                LedgerEntry.status == LedgerStatus.POSTED, LedgerEntry.method == PaymentMethod.CASH
+            )
+        )
+    ).scalar_one()
     return {
         "currency": "EGP",
         "as_of": moment,
         # Transparency (ADR-031): this is net posted movements only — no opening balance, no daily close.
         "is_net_movements_only": True,
         "balance_note": "net_movements_only",
+        "since": since,
         "balance": float(cash_in - cash_out),
         "cash_in_total": float(cash_in),
         "cash_out_total": float(cash_out),

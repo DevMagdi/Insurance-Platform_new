@@ -4,7 +4,7 @@
  * Every other method is reported next to it, so nothing is hidden — it is just not called cash (ADR-030 §5).
  */
 import { useQuery } from "@tanstack/react-query";
-import { Vault } from "lucide-react";
+import { Info, Vault } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Badge, Button, Card, DataTable, Kpi, PageHeader, SectionTitle, StateBlock } from "@/components/ui";
@@ -45,8 +45,29 @@ export default function CashboxPage() {
         </div>
       ) : null}
 
+      {/*
+       * R10.1 — the balance is a *net movement*, and the screen has to say so. An accountant reading
+       * "رصيد الصندوق" assumes an opening balance plus a daily close; this module has neither (no opening
+       * balance exists in the model, and nothing closes the drawer at end of day), so the number is
+       * accumulated from the first posted cash row and the page states that in one sentence instead of
+       * letting the reader assume the other thing.
+       */}
+      <Card className="mb-3 flex items-start gap-2.5">
+        <Info size={16} strokeWidth={1.9} className="mt-[2px] shrink-0 text-muted" />
+        <p className="text-[12.5px] leading-[20px] text-muted">
+          {data.since
+            ? t("finance.cashboxBasis", { since: formatDate(data.since) })
+            : t("finance.cashboxBasisNoHistory")}
+        </p>
+      </Card>
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi label={t("finance.cashBalance")} value={formatMoney(data.balance)} delta={t("finance.asOf", { date: formatDate(data.as_of) })} tone="b" />
+        <Kpi
+          label={t("finance.cashNetMovement")}
+          value={formatMoney(data.balance)}
+          delta={t("finance.asOf", { date: formatDate(data.as_of) })}
+          tone="b"
+        />
         <Kpi label={t("finance.inToday")} value={formatMoney(data.today_in)} delta={t("finance.outToday", { amount: formatMoney(data.today_out) })} tone="g" />
         <Kpi label={t("finance.inMonth")} value={formatMoney(data.month_in)} delta={t("finance.outMonth", { amount: formatMoney(data.month_out) })} tone="t" />
         <Kpi label={t("finance.cashInTotal")} value={formatMoney(data.cash_in_total)} delta={t("finance.cashOutTotal", { amount: formatMoney(data.cash_out_total) })} tone="a" />

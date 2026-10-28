@@ -765,8 +765,11 @@ export const en: Messages = {
     posted: "Posted",
     void: "Void",
     voided: "Voided {no} — the cashbox is now {balance}",
+    voidedReopenedInstallment: "The installment is unpaid again — it can be collected with a new receipt",
+    voidedReopenedCommission: "The commission is approved again — it can be paid again",
     voidTitle: "Void entry {no}",
-    voidBody: "{amount} leaves every total; the row stays in the statement with the reason.",
+    voidBody:
+      "{amount} leaves every total; the row stays in the statement with the reason. If this is an installment receipt or a commission payout, the row it paid is put back to its state before it — in the same transaction.",
     voidReason: "Why",
     voidReasonHint: "e.g. duplicate receipt",
     voidConfirm: "Void it",
@@ -824,6 +827,10 @@ export const en: Messages = {
     cashboxSubtitle: "Recorded cash only; transfers are shown separately in the table",
     cashboxNetNote: "This number is net posted movements only — no opening balance and no daily close yet.",
     cashBalance: "Cashbox balance",
+    cashboxBasis:
+      "Balance = net recorded cash movement (in minus out) since {since}, up to now. There is no opening balance and no daily close: the drawer is never closed and no balance is carried forward.",
+    cashboxBasisNoHistory: "Balance = net recorded cash movement. There is no opening balance and no daily close.",
+    cashNetMovement: "Net cash movement (in − out)",
     asOf: "as of {date}",
     inToday: "In today",
     outToday: "out {amount}",

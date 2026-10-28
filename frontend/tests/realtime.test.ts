@@ -194,7 +194,7 @@ describe("RealtimeClient", () => {
 
   it("maps a topic to every screen that shows it", () => {
     // a requests change must refetch the queue *and* the KPIs and the portal, or two screens disagree
-    expect(queryKeysFor("requests")).toEqual(expect.arrayContaining(["requests", "dashboard", "portal"]));
+    expect(queryKeysFor("requests")).toEqual(expect.arrayContaining(["requests", "dashboard", "portal", "nav"]));
     expect(queryKeysFor("policies")).toEqual(expect.arrayContaining(["policies", "portal"]));
     expect(queryKeysFor("nonsense")).toEqual([]);
   });

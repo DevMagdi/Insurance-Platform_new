@@ -783,6 +783,18 @@
             "title": "Movements",
             "type": "array"
           },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
           "today_in": {
             "title": "Today In",
             "type": "number"
@@ -4922,6 +4934,18 @@
           },
           "entry": {
             "$ref": "#/components/schemas/LedgerEntryOut"
+          },
+          "reopened": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reopened"
           }
         },
         "required": [

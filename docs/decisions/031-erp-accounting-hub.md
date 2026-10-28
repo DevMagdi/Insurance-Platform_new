@@ -19,3 +19,9 @@
 حمل Locust موثّق في `docs/perf/erp-load-2026-10-28.md` (50,004 قيدًا posted): بوابة spend-by-period نجحت
 (p95 530ms < 800ms)، وledger list جاء p95 730ms فوق بوابة 600ms على عامل uvicorn واحد و2vCPU — موثّق
 كفشل بوابة على هذا العتاد لا كنجاح.
+
+## تحديث الدمج مع R10.1 (PR #14 دُمج أثناء هذه الجولة)
+عند دمج `main` ظهر أن R10.1 نفّذ void↔installment أعمق (إعادة فتح تسوية العمولة + audit منفصل
+`installment.reopened`). اعتُمد تنفيذه كما هو وحُذف التكرار من هذه الجولة؛ بقي من R11: الـ hub والفترات
+وحقلا `is_net_movements_only/balance_note` (إضافةً إلى `since` من R10.1). لا migration جديدة من R11؛
+ترحيل R10.1 ‏`0010` قائم كما هو.
