@@ -185,7 +185,10 @@ jobs:
         # the load config boots the stack itself (migrations → seed → volume seed → API → `vite preview`),
         # the same command strings the e2e job uses. Nothing here starts a server by hand.
         working-directory: frontend
-        run: npx playwright test --config playwright.load.config.ts 2>&1 | tee /tmp/r8-browser-load.log
+        run: |
+          set -o pipefail   # `| tee` alone hides a failing Playwright behind tee's own exit code
+          npx playwright --version
+          npx playwright test --config playwright.load.config.ts 2>&1 | tee /tmp/r8-browser-load.log
       - name: Keep the numbers
         if: always()
         run: |
@@ -214,5 +217,13 @@ jobs:
             head -c 4000 /tmp/r8-browser-load.json 2>/dev/null || echo "browser report missing"
             echo
             echo '```'
+            echo
+            echo "<details><summary>سجل التشغيل (آخر 80 سطرًا)</summary>"
+            echo
+            echo '```'
+            tail -80 /tmp/r8-browser-load.log 2>/dev/null || echo "no log written"
+            echo '```'
+            echo
+            echo "</details>"
           } > /tmp/r8-comment.md
           gh pr comment "${{ github.event.number }}" --repo "$GITHUB_REPOSITORY" --body-file /tmp/r8-comment.md
