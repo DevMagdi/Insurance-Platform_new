@@ -38,7 +38,14 @@ Broker Hub — insurance brokerage platform (Phase 1: service desk + leads + cli
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     setup_logging(json_logs=not settings.DEBUG)
-    log.info("startup", env=settings.ENV, driver=settings.INTEGRATIONS_DRIVER, postgres=settings.is_postgres)
+    log.info(
+        "startup",
+        env=settings.ENV,
+        driver=settings.INTEGRATIONS_DRIVER,
+        production=settings.is_production,
+        simulation=settings.simulation_allowed,
+        postgres=settings.is_postgres,
+    )
     # The settings rows are the source of truth for provider credentials (ADR-016); the process loads them
     # once here and again on every save. Logged after priming so the line says what the screen says.
     if not settings.is_postgres and settings.DEBUG:
@@ -52,6 +59,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with get_sessionmaker()() as session:
         await registry.prime(session)
     log.info("integrations_primed", live=[p for p in ("whatsapp", "telephony", "email") if registry.live_mode(p)])
+    # R9 §1.A/§2.1: production has no simulator to fall back on, so a missing live credential is a boot
+    # failure with the missing keys named — not a process that answers 200 while messages go nowhere.
+    registry.assert_production_ready()
     yield
     log.info("shutdown")
 
@@ -127,6 +137,12 @@ def create_app() -> FastAPI:
         return await call_next(request)
 
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+    # R9 §1.A: the simulator routes (`/api/v1/dev/sim*`) are not part of the production build at all —
+    # they are mounted only in a dev/test process, so production has no such path to probe, hide or disable.
+    if settings.simulation_allowed:
+        from app.api.v1.endpoints.dev_sim import router as dev_sim_router
+
+        app.include_router(dev_sim_router, prefix=settings.API_V1_PREFIX)
     # Ops probes stay at the root so container healthchecks do not need to know the API prefix.
     app.include_router(health_router)
 

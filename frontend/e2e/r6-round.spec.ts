@@ -277,7 +277,7 @@ test.describe("R6 · the live switch", () => {
       await expect(page.getByTestId("live-ready")).toBeVisible();
       await page.getByRole("button", { name: "تأكيد والتبديل", exact: true }).click();
 
-      await expect(page.getByTestId("live-switch-whatsapp")).toHaveText(/الرجوع إلى المحاكاة/, { timeout: 20_000 });
+      await expect(page.getByTestId("live-switch-whatsapp")).toHaveText(/إيقاف الوضع الحيّ/, { timeout: 20_000 });
       const stored = await request.get("/api/v1/settings/integrations/whatsapp", { headers: auth });
       expect(stored.status(), await stored.text()).toBe(200);
       expect((await stored.json()).is_live).toBe(true);
@@ -311,8 +311,8 @@ test.describe("R6 · the live switch", () => {
 
     const switchButton = page.getByTestId("live-switch-telephony");
     await expect(switchButton).toBeDisabled({ timeout: 20_000 });
-    await expect(switchButton).toHaveAttribute("title", /PBX|السنترال/);
-    await expect(page.getByTestId("live-blockers-telephony")).toContainText(/PBX|السنترال/);
+    await expect(switchButton).toHaveAttribute("title", /مكالمات الموبايل/);
+    await expect(page.getByTestId("live-blockers-telephony")).toContainText(/مكالمات الموبايل/);
 
     // pressing it anyway does nothing — and, above all, sends nothing
     await switchButton.click({ force: true });

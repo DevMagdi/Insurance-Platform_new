@@ -1,6 +1,14 @@
 # STATUS — منصة إدارة الوساطة التأمينية (Broker Hub)
 
-آخر تحديث: 2026-10-27 · فرع العمل: `arena/a961502a-insurance-platform-new` من `main` عند `c73fcb5`.
+آخر تحديث: 2026-10-28 · الفرع: `arena/0fa05dfd-insurance-platform-new`.
+جولة R9 (الإنتاج حيّ فقط + مكالمات الموبايل): التكاملات في الإنتاج لا تعمل بالمحاكاة إطلاقًا — `ENV=prod`
+يفرض `live`، والسائقان المحاكيان غير قابلين للبناء خارج dev/test، ومسارات `/api/v1/dev/sim*` غير موجودة في
+بناء الإنتاج، ومزوّد حيّ ناقص الأسرار يُفشل الإقلاع برسالة تسمّي المفتاح (لا سقوط صامت على sim). قناة
+المكالمات أُعيد تسميتها وتثبيتها كـ**مكالمات موبايل** (`/webhooks/mobile-calls`، مزوّد Twilio موثَّق +
+بدائل) وتُفتح منها طلبات بقناة `call` بمفتاح رقم الموبايل. التفاصيل في
+[`qa/r9-production-live-2026-10-28.md`](qa/r9-production-live-2026-10-28.md) و[ADR-029](decisions/029-production-live-only-integrations.md).
+
+آخر تحديث للسجل السابق: 2026-10-27 · فرع R6: `arena/a961502a-insurance-platform-new` من `main` عند `c73fcb5`.
 هذه الجولة = **R6 (Realtime · Overdue · Live switch)**: ثلاث ميزات جاهزة للإنتاج — «طلبات متأخرة» صار
 باباً يفتح طابوراً مفلتراً قابلاً للمشاركة، وكل تغيير يصل كل تبويب مصرّح **خلال ثانيتين بلا تحديث**، ومفتاح
 «التحويل إلى الوضع الحيّ» لا يعيد 409 في المسار السعيد. التفاصيل في
@@ -37,6 +45,7 @@
 | M10 الاختبارات النهائية + parity + تجهيز الدمج | 🟡 جارية | بعد R3: backend أخضر على SQLite (**198** + 9 مُتخطَّاة بعلامة `postgres_only`)، و**PostgreSQL 16 يقيسه CI** وحده في هذه البيئة · frontend أخضر (82 اختبار وحدة في 11 ملفاً + `build` ✓) · e2e: نوعان من الأدلة — typecheck محلي ✓، و**CI شغّلها فعلاً: 166 اختباراً · 131 ناجحاً · 0 فاشل · 35 مُتخطٍّ** (تعليق تلقائي بالأرقام على الـPR #6) · ruff (146 ملفاً)/mypy (107)/تغطية النواة (14/14)/استقرار الـOpenAPI (98 مساراً)/**تمرير كل النقاط** نظيفة |
 | R1 مركز الإعدادات: تكاملات حقيقية + إنشاء وثيقة | ✅ منتهية (محلياً) | `/settings` بثلاث بطاقات + حيّ/محاكاة بتأكيد + سجلّ `webhook_events` + `POST /policies` بجدول أقساط وعمولة · `tests/test_integrations_settings.py` (16) · `frontend/tests/settingsView.test.tsx` (14) · ADR-016 |
 | R2 مكتب المبيعات: مقاعد + استيراد Excel/CSV + إعادة توزيع الحوض | ✅ منتهية (محلياً؛ e2e تُقاس في CI) | `POST /leads/import` ⇒ `lead_import_jobs` + `POST /leads/assign-bulk` + `/sales-team/members` · `tests/test_lead_import.py` (10) `tests/test_team_members.py` (6) `tests/test_lead_redistribute.py` (11) · `frontend/tests/teamRound.test.tsx` (8) · `frontend/e2e/team-round.spec.ts` (4) · ADR-017 · جدول Proof حيّ في هذا الملف |
+| R9 الإنتاج حيّ فقط: واتساب + مكالمات الموبايل بلا محاكاة | ✅ منتهية (اتصال ميداني ⬜ يحتاج أسرار المشغّل) | `ENV=prod` يفرض live و`sim` صريحة تفشل الإقلاع · `integrations/sims.py` يرفض البناء خارج dev/test · `registry.assert_production_ready()` يُفشل الإقلاع بلا أسرار · `/webhooks/mobile-calls` (Twilio + بدائل) يفتح طلبًا بقناة `call` · `dev_sim.py` يُركّب في dev/test فقط · `tests/test_production_live_only.py` (11) · `live_matrix` §4.9b (7 فحوص production) · ADR-029 |
 | مزوّد AI (§11 M10): واجهة واحدة خلف `ai.enabled` + مراجعة بشرية | ✅ السطح كامل بسائق محاكاة · ⬜ بلا مزوّد حقيقي | `integrations/ai_sim.py` (حتمي، استخلاصي) · `endpoints/ai.py`: `GET /ai/status` · `POST /ai/calls/{id}/transcribe` · `POST /ai/requests/{id}/summarize` · `POST /ai/classify` · `tests/test_ai.py` (7) · زر «تلخيص آلي» في `InboxPage` يظهر فقط عند تشغيل الراية · ADR-013 |
 
 ## جولة R3 — ما كان أحمر، ولماذا، وما أُصلح

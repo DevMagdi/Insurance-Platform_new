@@ -155,7 +155,7 @@ ROLLBACK;
 
 لا يوجد مسار يقرأ سرّاً إلى المتصفح: `GET /settings/integrations/{provider}` يعطي
 `{"set": true, "display": "••••••••"}` فقط، والحقل الفارغ في الحفظ = «لا تغيير»، و`null` = حذف (ADR-016 §2).
-كل حفظ وكل اختبار وكل تبديل حيّ/محاكاة يكتب صفاً في `audit_logs` بأسماء الحقول لا بقيمها.
+كل حفظ وكل اختبار وكل تبديل إلى الوضع الحيّ يكتب صفاً في `audit_logs` بأسماء الحقول لا بقيمها.
 
 بوابة «كل النقاط شغّالة»: `python scripts/smoke_api.py` — قاعدة مؤقتة مُزروعة ثم كل `(path, method)` في
 وثيقة OpenAPI (125 نداءً؛ 2 مستثنيان بسبب مكتوب). تُشغَّل في CI بعد بوابات التغطية.
@@ -171,12 +171,25 @@ ROLLBACK;
   `aws s3api head-object --bucket brokerhub --key <object_key>`؛ ومع المخزن المحلي ابحث في وحدة
   `objectsdata` (`docker compose exec backend ls -l /srv/objects/<prefix>`).
 
-## 6.1) القنوات الحيّة: واتساب (Meta Cloud API) والسنترال
+## 6.1) القنوات الحيّة: واتساب (Meta Cloud API) ومكالمات الموبايل
 
-الوضع الافتراضي `INTEGRATIONS_DRIVER=sim` (كل شيء يُسجَّل ولا يخرج). الانتقال إلى `live` لا يحتاج نشراً
-جديداً: الشاشة `/settings` هي المصدر (صف `integration_configs` يتغلّب على متغيّر البيئة، ADR-016)،
-وبعد أي حفظ تُشغَّل `registry.prime()` — أي أن السائق يُعاد بناؤه بلا إعادة تشغيل. إن كان لديك أكثر من
-عامل API، أعد تشغيل العمال بعد الحفظ (المذكرة في `registry.py`).
+**R9 — الإنتاج حيّ فقط.** في `ENV=prod`:
+
+- `INTEGRATIONS_DRIVER` يُفرض `live`، وكتابته `sim` صريحة **تُفشل الإقلاع** (لا تجاوز صامت).
+- لا يوجد سائق محاكاة في العملية إطلاقًا: `WhatsAppSim` و`MobileCallsSim` يرفضان البناء خارج `ENV=dev|test`.
+- `registry.assert_production_ready()` يفحص الأسرار الحيّة عند الإقلاع، وإن نقص شيء **تفشل العملية** برسالة
+  عربية تسمّي الناقص (`WHATSAPP_ACCESS_TOKEN`، `TELEPHONY_WEBHOOK_SECRET` …) — لا سقوط صامت على المحاكاة.
+- مسارات `/api/v1/dev/sim*` **غير موجودة في بناء الإنتاج** (404 من الموجّه؛ اللوحة تُركّب فقط في dev/test).
+- أسرار التطوير المنشورة في المستودع (`dev-app-secret`, `dev-verify-token`, `dev-telephony-secret`) تُفرَّغ
+  تلقائيًا في الإنتاج، حتى لا يُوقّع أي حدث بمفتاح معروف.
+
+في dev/test يبقى الوضع الافتراضي `INTEGRATIONS_DRIVER=sim` (كل شيء يُسجَّل ولا يخرج). الانتقال إلى `live`
+لا يحتاج نشراً جديداً: الشاشة `/settings` هي المصدر (صف `integration_configs` يتغلّب على متغيّر البيئة،
+ADR-016)، وبعد أي حفظ تُشغَّل `registry.prime()` — أي أن السائق يُعاد بناؤه بلا إعادة تشغيل. إن كان لديك
+أكثر من عامل API، أعد تشغيل العمال بعد الحفظ (المذكرة في `registry.py`).
+
+حالة المزوّد في الشاشة ثلاث كلمات فقط: **`Live`** (حيّ)، **«جاهز»** (مضبوط واختباره أخضر وينتظر المفتاح)،
+**«غير مُعد»** — ولا يوجد خيار «محاكاة» في واجهة الإنتاج.
 
 ### أ) واتساب — خطوات Meta بالترتيب
 
@@ -195,7 +208,7 @@ ROLLBACK;
    - `hub.mode=subscribe`، `hub.verify_token`، `hub.challenge`؛ نردّ نص الـchallenge كما هو.
    - أي فشل يُكتب في `webhook_events` كـ`event_type=verification, status=rejected` مع السبب.
 7. **الحقول في الشاشة**: Phone Number ID، WABA ID، Access Token (سري، يُخزَّن مشفّراً ولا يُعاد)، Verify
-   Token (سري)، App Secret (سري). الشهادة بجانب البطاقة: `حيّ` / `محاكاة` / `غير مُعدّ`.
+   Token (سري)، App Secret (سري). الشهادة بجانب البطاقة: `Live` / «جاهز» / «غير مُعد».
 8. **اختبار الاتصال** يضرب `graph.facebook.com/debug_token` بالتوكن المحفوظ ويقول إن كان صالحاً ولمن.
 
 اختبار سريع للرد الخارجي (بعد حفظ الأسرار، و`INTEGRATIONS_DRIVER=live`):
@@ -218,30 +231,38 @@ curl -sS -X POST "https://<نطاق-الوسيط>/api/v1/webhooks/whatsapp" \
 # إعادة نفس الأمر تعطي {"status":"duplicate"} — لا طلب ثانٍ ولا رسالة ثانية
 ```
 
-### ب) السنترال (PBX)
+### ب) مكالمات الموبايل (Mobile calls)
 
-1. في السنترال اضبط **Webhook URL** = `https://<نطاق-الوسيط>/api/v1/webhooks/telephony`، ومفتاح
+المقصود بالمكالمة هنا: **مكالمة هاتفية على رقم موبايل تملكه المنصة**، تصل من مزوّد مكالمات موبايل
+(VoIP gateway) إلى webhook. لا يوجد في هذا الوصف «سنترال مكتبي أرضي»؛ المفهوم المنتَجي هو `مكالمات الموبايل`.
+
+1. في لوحة المزوّد اضبط **Webhook URL** = `https://<نطاق-الوسيط>/api/v1/webhooks/mobile-calls`، ومفتاح
    التوقيع المشترك هو نفسه `webhook_secret` في الشاشة.
-2. الأحداث المطلوبة: `call.started`، `call.ended`، `recording_ready`. الأسماء البديلة مقبولة
-   (`CallSid`/`CallStatus`/`From`/`To`/`Duration`/`RecordingUrl`) — يُطبَّعها `parse_event`.
-3. الحقول في الشاشة: `provider_url` (جذر السنترال، ويُستخدم في فحص الوصول **وفي حصر المضيف**)، `number`،
-   `trunk`، `webhook_secret` (سري).
+   المسار القديم `/api/v1/webhooks/telephony` ما زال يعمل كمرادف (حتى لا ينقطع مزوّد ضُبط سابقًا)، لكن
+   الصق الجديد من الآن.
+2. المزوّد الموثَّق: **Twilio Programmable Voice** — الحمولة `CallSid` / `CallStatus` / `From` / `To` /
+   `CallDuration`، وحدث التسجيل `RecordingUrl` + `RecordingSid`. يُطبَّعها `parse_event` إلى
+   `call.started` / `call.ended` / `recording_ready`، ويقبل أيضًا `uuid`/`status` (Vonage) و`callId`/`type`
+   (بوابات عامة) والأسماء الصريحة (`call_id`, `event`, `from`).
+3. الحقول في الشاشة: `provider` (`twilio` أو `generic`)، `provider_url` (جذر المزوّد، ويُستخدم في فحص
+   الوصول **وفي حصر المضيف**)، `number` (رقم الموبايل الذي تستقبل عليه المنصة)، `trunk`، `webhook_secret`
+   (سري). لا يوجد خيار `sim` في نوع السائق.
 4. **مضيف التسجيل**: إن كان `provider_url` مضبوطاً فلن يُنزَّل تسجيل من مضيف آخر (422 + تحذير في السجل).
-   إن كان السنترال يقدّم التسجيلات من دومين CDN منفصل، أضف ذلك الدومين كـ`provider_url` — ولا تُفرغ الحقل.
+   إن كان المزوّد يقدّم التسجيلات من دومين CDN منفصل، أضف ذلك الدومين كـ`provider_url` — ولا تُفرغ الحقل.
 5. **اختبار الاتصال** يتحقق من شيئين ويعرض السبب: توقيع HMAC متسق محلياً + هل `provider_url` يرد الآن
-   (رفض 5xx = غير سليم). «التوقيع سليم لكن السنترال غير قابل للوصول» رسالة مقصودة.
+   (رفض 5xx = غير سليم). «التوقيع سليم لكن مزود مكالمات الموبايل غير قابل للوصول» رسالة مقصودة.
 
 توقيع يدوي للاختبار:
 
 ```bash
 SECRET="<WEBHOOK_SECRET>"; BODY='{"call_id":"CA-runbook-1","event":"call.started","from":"+201000000001","direction":"inbound"}'
 SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')"
-curl -sS -X POST "https://<نطاق-الوسيط>/api/v1/webhooks/telephony" \
+curl -sS -X POST "https://<نطاق-الوسيط>/api/v1/webhooks/mobile-calls" \
   -H "Content-Type: application/json" -H "X-Call-Signature: $SIG" -d "$BODY"
 # المتوقع: {"status":"started","request_id":"..."} — وطلب بقناة call يظهر للمدير/خدمة العملاء
 ```
 
-`recording_ready` مع `"recording_url":"https://<host-السنترال>/rec/x.wav"` يُنزّل الملف ويخزّنه بمفتاح
+`recording_ready` مع `"recording_url":"https://<host-المزوّد>/rec/x.wav"` يُنزّل الملف ويخزّنه بمفتاح
 `calls/CA-runbook-1.wav`؛ وإن تعذّر التنزيل يظهر `recording_fetch_failed` في
 `GET /api/v1/settings/integrations/events` ولا تُسقَط المكالمة.
 
@@ -255,7 +276,7 @@ curl -sS -X POST "https://<نطاق-الوسيط>/api/v1/webhooks/telephony" \
 | الثلاثة | `confirm` | «التبديل إلى الوضع الحيّ يحتاج تأكيدًا صريحًا (confirm=true)» |
 | الثلاثة | `test` | «لم ينجح أي اختبار اتصال لهذا المزوّد بعد — شغّل «اختبار الاتصال» أولًا» |
 | `whatsapp` | `fields` | «إعدادات ناقصة للوضع الحيّ: معرّف رقم واتساب (Phone Number ID)، توكين الوصول (Access Token)» |
-| `telephony` | `fields` | «إعدادات ناقصة للوضع الحيّ: عنوان السنترال (PBX URL)، سر توقيع أحداث السنترال (Webhook Secret)» |
+| `telephony` | `fields` | «إعدادات ناقصة للوضع الحيّ: رابط مزود مكالمات الموبايل، سر توقيع أحداث مكالمات الموبايل (Webhook Secret)» |
 | `email` | `fields` | «إعدادات ناقصة للوضع الحيّ: مضيف SMTP، بريد المرسل، كلمة مرور SMTP» |
 
 (الحقول المطلوبة للوضع الحيّ تُقرأ من `PROVIDER_FIELDS` و`PRIMARY_SECRET` في
@@ -273,8 +294,11 @@ curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/v1/settings
 # ready=false ⇒ لا تضغط المفتاح بعد؛ اقرأ blockers[].label وهي أسماء الحقول المطلوبة بالعربية
 ```
 
-**ما لا يُدّعى:** لا يوجد في هذه الجولة حساب Meta ولا سنترال حقيقي ولا رقم مرخّص، فالاتصال الفعلي بمزود
-خارجي **لم يُجرَّب**. المثبت أن مسار `live` كامل ومختبَر بعقد: توقيع HMAC على البايتات الخام، رفض التوقيع
+**ما لا يُدّعى:** لا يوجد في هذه الجولة حساب Meta ولا حساب مزوّد مكالمات موبايل حقيقي ولا رقم مرخّص،
+فالاتصال الفعلي بمزود خارجي **لم يُجرَّب**. ما يلزم من المشغّل قبل أول مكالمة/رسالة حقيقية:
+`WHATSAPP_ACCESS_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` + `WHATSAPP_APP_SECRET` + `WHATSAPP_VERIFY_TOKEN`،
+و`TELEPHONY_WEBHOOK_SECRET` + `TELEPHONY_WEBHOOK_URL` + رقم الموبايل. بلا هذه القيم في `ENV=prod` لا تقلع
+العملية أصلًا (R9). المثبت أن مسار `live` كامل ومختبَر بعقد: توقيع HMAC على البايتات الخام، رفض التوقيع
 الخاطئ، منع التكرار (idempotency)، وحصر مضيف التسجيل (SSRF) — `tests/test_live_channels.py` و
 `scripts/live_matrix.py`، وإعادة تشغيل الوضع الحيّ من الشاشة مرتين لا تُنتج طلبين.
 
@@ -306,7 +330,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/v1/settings
 
 1. **`sqlite` ليس `postgres`.** العرض `VARCHAR(n)` لا يُفرض محلياً ويُفرض في الإنتاج. أي عمود يُكتب فيه
    ما يصل من مزوّد خارجي (حالة، نوع حدث، معرّف) يُختبر بعرضه لا بقيمته (ADR-024). المؤشر: تحقق من
-   `INSERT` في `webhook_events` بعد أي حدث سنترال.
+   `INSERT` في `webhook_events` بعد أي حدث مكالمات موبايل.
 2. **السجل لا يمنع العملية.** `record_event` يقصّ ولا يرفع؛ أثرٌ لا يُكتب أفضل من نداء ناجح يُلغى.
 3. **قبل «تم»: الملف مفتوح.** أي PDF يُراجَع بصرياً (صفحة واحدة على الأقل) — تشكيل العربية لا يظهر في
    الاختبارات، ظهر في معاينة `pypdfium2` فقط.

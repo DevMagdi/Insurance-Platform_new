@@ -41,7 +41,7 @@ const providerState = vi.hoisted(() => (overrides: Partial<ProviderState> = {}):
     { key: "verify_token", set: false, display: "not_set" },
   ],
   is_live: false,
-  status: "sim",
+  status: "ready",
   last_tested_at: null,
   last_test_status: null,
   last_test_detail: null,
@@ -78,7 +78,9 @@ describe("secret form → payload (ADR-016 §2)", () => {
 describe("badges and tabs", () => {
   it("pins the four badge states to the approved tones — and to no sixth tone (ADR-016 §5)", () => {
     expect(statusBadge("live").tone).toBe("t");
-    expect(statusBadge("sim").tone).toBe("b");
+    expect(statusBadge("ready").tone).toBe("b");
+    // an API that still answers the pre-R9 value is read as «جاهز», never as a simulation badge
+    expect(statusBadge("sim").labelKey).toBe("settings.status.ready");
     expect(statusBadge("error").tone).toBe("r");
     expect(statusBadge("unset").tone).toBeNull(); // neutral: --kanban-col/--muted, never a new accent
     expect(statusBadge(null).tone).toBeNull();
@@ -219,7 +221,9 @@ describe("the card renders what the API said — and nothing it did not", () => 
     // live: the badge the browser suite waits for, with only the safe direction offered
     const live = mount(providerState({ status: "live", is_live: true, last_test_status: "ok" }));
     expect(live.container.textContent).toContain(ar.settings.status.live);
-    expect(screen.getByText(ar.settings.backToSim)).toBeInTheDocument();
+    // R9: the label says "leave live mode"; «الرجوع إلى المحاكاة» is offered only where a simulator exists,
+    // and the preflight below answers `sim_allowed: false` (production)
+    expect(screen.getByText(ar.settings.leaveLive)).toBeInTheDocument();
     expect(screen.queryByText(ar.settings.goLive)).not.toBeInTheDocument();
     live.unmount();
 
@@ -240,7 +244,7 @@ describe("the card renders what the API said — and nothing it did not", () => 
     unset.unmount();
 
     // ready → the dialog still asks for an explicit confirmation, and says the prerequisites are met
-    const ready = mount(providerState({ status: "sim", last_test_status: "ok", config: { phone_number_id: "123", business_account_id: "", receive_media: true } }));
+    const ready = mount(providerState({ status: "ready", last_test_status: "ok", config: { phone_number_id: "123", business_account_id: "", receive_media: true } }));
     const goLive = screen.getByTestId("live-switch-whatsapp");
     expect(goLive).toBeEnabled();
     fireEvent.click(goLive);

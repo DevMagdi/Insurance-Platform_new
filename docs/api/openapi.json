@@ -5499,6 +5499,7 @@
             "type": "array"
           },
           "mode": {
+            "description": "live | ready — `sim` no longer exists in production (R9)",
             "title": "Mode",
             "type": "string"
           },
@@ -5513,6 +5514,11 @@
           "ready": {
             "description": "true when nothing stands between this provider and live mode",
             "title": "Ready",
+            "type": "boolean"
+          },
+          "sim_allowed": {
+            "description": "false in production: the screen hides the switch back to simulation",
+            "title": "Sim Allowed",
             "type": "boolean"
           },
           "status": {
@@ -5550,6 +5556,7 @@
           "labels",
           "is_live",
           "mode",
+          "sim_allowed",
           "status",
           "next"
         ],
@@ -5612,7 +5619,7 @@
             "type": "array"
           },
           "status": {
-            "description": "live | sim | unset | error — the badge tone in the card header",
+            "description": "live | ready | unset | error — the badge tone in the card header (R9 §1.D)",
             "title": "Status",
             "type": "string"
           },
@@ -9414,9 +9421,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Simulator: inbound call → request → recording in storage",
+        "summary": "Simulator: mobile call → request → recording in storage (dev/test only)",
         "tags": [
-          "webhooks & simulator"
+          "simulator (dev/test only)"
         ]
       }
     },
@@ -9457,9 +9464,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Simulator: deliver an inbound WhatsApp message",
+        "summary": "Simulator: deliver an inbound WhatsApp message (dev/test only)",
         "tags": [
-          "webhooks & simulator"
+          "simulator (dev/test only)"
         ]
       }
     },
@@ -12895,7 +12902,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Callback URLs to paste into Meta / the PBX",
+        "summary": "Callback URLs to paste into Meta / the mobile-calls provider",
         "tags": [
           "settings"
         ]
@@ -13428,9 +13435,10 @@
         ]
       }
     },
-    "/api/v1/webhooks/telephony": {
+    "/api/v1/webhooks/mobile-calls": {
       "post": {
-        "operationId": "postApiV1WebhooksTelephony",
+        "description": "A call to the platform's mobile number: `call.started` opens/links the request, `call.ended` closes\nthe timing, `recording_ready` attaches the recording we pulled and stored ourselves.",
+        "operationId": "postApiV1WebhooksMobile-Calls",
         "parameters": [
           {
             "in": "header",
@@ -13455,7 +13463,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Postapiv1Webhookstelephony",
+                  "title": "Response Postapiv1Webhooksmobile-Calls",
                   "type": "object"
                 }
               }
@@ -13473,9 +13481,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Call-centre events (started/ended/recording_ready)",
+        "summary": "Inbound mobile-call events (signature-checked, idempotent)",
         "tags": [
-          "webhooks & simulator"
+          "webhooks"
         ]
       }
     },
@@ -13556,7 +13564,7 @@
         },
         "summary": "Meta verification handshake",
         "tags": [
-          "webhooks & simulator"
+          "webhooks"
         ]
       },
       "post": {
@@ -13577,7 +13585,7 @@
         },
         "summary": "Inbound WhatsApp (signature-checked, idempotent)",
         "tags": [
-          "webhooks & simulator"
+          "webhooks"
         ]
       }
     },

@@ -1,25 +1,31 @@
+"""The two live inbound channels (R9): WhatsApp Cloud API and **mobile phone calls**.
+
+Both are signature-checked and idempotent, and both are the only way into the platform for their channel:
+there is no simulator route in this module any more — the dev-only ones moved to `dev_sim.py`, which a
+production build never mounts. The mobile-calls route is exported under its product name
+(`/webhooks/mobile-calls`) with the old `/webhooks/telephony` path kept as a documented alias, so a gateway
+that was already pasted into a provider console keeps delivering during the rename.
+"""
+
 from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Header, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
-from pydantic import BaseModel, Field
+from fastapi.responses import PlainTextResponse
 
 from app.api.v1.deps import DbSession
-from app.core.config import get_settings
 from app.core.errors import Forbidden, ValidationFailed
 from app.integrations import registry
 from app.integrations.base import StorageProvider, WhatsAppProvider
-from app.integrations.registry import telephony_provider, whatsapp_provider
+from app.integrations.mobile_calls import parse_event as parse_call_event
+from app.integrations.registry import mobile_calls_provider, whatsapp_provider
 from app.integrations.storage import storage
-from app.integrations.telephony import parse_event as parse_call_event
 from app.services import intake, integrations_settings
 
-router = APIRouter(tags=["webhooks & simulator"])
+router = APIRouter(tags=["webhooks"])
 
 
 async def stage_inbound_media(
@@ -150,125 +156,18 @@ async def whatsapp_webhook(request: Request, session: DbSession, background: Bac
     return {"received": len(events), "results": results}
 
 
-class _SimWhatsApp(BaseModel):
-    mobile: str = Field(description="caller/employee mobile, any Egyptian format")
-    body: str | None = None
-    sender_name: str | None = None
-    media_kind: str | None = None
-    media_id: str | None = Field(default=None, description="set it to fetch (and store) a fake voice note")
-    duration_s: int | None = None
-    external_id: str | None = None
-
-
-@router.post("/dev/sim/whatsapp", summary="Simulator: deliver an inbound WhatsApp message")
-async def sim_whatsapp(body: _SimWhatsApp, session: DbSession) -> dict[str, Any]:
-    settings = get_settings()
-    if settings.INTEGRATIONS_DRIVER != "sim" and not settings.DEBUG:
-        raise Forbidden("The simulator is disabled when INTEGRATIONS_DRIVER=live")
-    external_id = body.external_id or f"wamid.sim_{datetime.now(UTC).timestamp():.6f}"
-    provider = whatsapp_provider()
-    media_key, media_mime, media_size = await stage_inbound_media(provider, storage(), external_id, body.media_id)
-    result = await intake.ingest_whatsapp_message(
-        session,
-        external_id=external_id,
-        mobile=body.mobile,
-        body=body.body,
-        sender_name=body.sender_name,
-        media_kind=body.media_kind,
-        media_object_key=media_key,
-        media_mime=media_mime,
-        media_size=media_size,
-        duration_s=body.duration_s,
-    )
-    await session.commit()
-    return result
-
-
-_PANEL_HTML_PATH = Path(__file__).with_name("sim_panel.html")
-
-
-def _panel_html() -> str:
-    """The markup sits in a sibling file so the CSS lines stay readable."""
-    return _PANEL_HTML_PATH.read_text(encoding="utf-8")
-
-
-@router.get("/dev/sim", summary="Simulator panel (only when INTEGRATIONS_DRIVER=sim)", include_in_schema=False)
-async def sim_panel() -> HTMLResponse:
-    settings = get_settings()
-    if settings.INTEGRATIONS_DRIVER != "sim" and not settings.DEBUG:
-        raise Forbidden("The simulator panel is disabled when INTEGRATIONS_DRIVER=live")
-    return HTMLResponse(_panel_html())
-
-
-class _SimCall(BaseModel):
-    provider_call_id: str | None = None
-    from_number: str
-    to_number: str | None = None
-    caller_name: str | None = None
-    duration_s: int = 45
-    with_recording: bool = True
-    recording_consent: bool = True
-
-
-@router.post("/dev/sim/call", summary="Simulator: inbound call → request → recording in storage")
-async def sim_call(body: _SimCall, session: DbSession) -> dict[str, Any]:
-    settings = get_settings()
-    if settings.INTEGRATIONS_DRIVER != "sim" and not settings.DEBUG:
-        raise Forbidden("The simulator is disabled when INTEGRATIONS_DRIVER=live")
-    call_id = body.provider_call_id or f"simcall_{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
-    started = datetime.now(UTC)
-    started_result = await intake.ingest_call_event(
-        session,
-        provider_call_id=call_id,
-        event="call.started",
-        from_number=body.from_number,
-        to_number=body.to_number,
-        caller_name=body.caller_name,
-        started_at=started,
-        recording_consent=body.recording_consent,
-    )
-    await session.commit()
-    ended = await intake.ingest_call_event(
-        session,
-        provider_call_id=call_id,
-        event="call.ended",
-        from_number=body.from_number,
-        started_at=started,
-        ended_at=datetime.now(UTC),
-        duration_s=body.duration_s,
-    )
-    await session.commit()
-
-    media_key = None
-    if body.with_recording:
-        from app.core.storage_bytes import silence_wav
-        from app.integrations.storage import storage
-
-        media_key = f"calls/{call_id}.wav"
-        payload = silence_wav(seconds=max(1.0, min(float(body.duration_s), 120.0)), tone_hz=320.0)
-        storage().put_object(media_key, payload, "audio/wav")
-        attached = await intake.ingest_call_event(
-            session,
-            provider_call_id=call_id,
-            event="recording_ready",
-            from_number=body.from_number,
-            recording_object_key=media_key,
-            recording_consent=body.recording_consent,
-            recording_size=len(payload),
-        )
-        await session.commit()
-        ended["recording"] = attached.get("status")
-    return {**started_result, **ended, "recording_object_key": media_key}
-
-
-@router.post("/webhooks/telephony", summary="Call-centre events (started/ended/recording_ready)")
-async def telephony_webhook(
+@router.post("/webhooks/mobile-calls", summary="Inbound mobile-call events (signature-checked, idempotent)")
+@router.post("/webhooks/telephony", include_in_schema=False, deprecated=True)
+async def mobile_calls_webhook(
     request: Request,
     session: DbSession,
     x_call_signature: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    """A call to the platform's mobile number: `call.started` opens/links the request, `call.ended` closes
+    the timing, `recording_ready` attaches the recording we pulled and stored ourselves."""
     raw = await request.body()
-    if not telephony_provider().verify_signature(raw, x_call_signature):
+    driver = mobile_calls_provider()
+    if not driver.verify_signature(raw, x_call_signature):
         await _log_rejected(session, "telephony", raw)
         raise Forbidden("Invalid webhook signature")
     try:
@@ -277,14 +176,14 @@ async def telephony_webhook(
         await _log_rejected(session, "telephony", raw, detail="body must be JSON")
         raise Forbidden(str(exc.message)) from exc
 
-    # A real central sends a `recording_url` that expires in minutes, not an object key. We pull it while
-    # it is alive and keep our own copy, so playback never depends on the PBX's retention (ADR-023 §2).
+    # A real mobile-calls provider sends a `recording_url` that expires in minutes, not an object key. We
+    # pull it while it is alive and keep our own copy, so playback never depends on the provider (ADR-023 §2).
     recording_key = body.get("recording_key")
     recording_url = body.get("recording_url")
     if recording_url and not recording_key:
         try:
-            payload = await telephony_provider().fetch_recording(str(recording_url))
-        except Exception as exc:  # a PBX/storage failure must never 500 the webhook and lose the call
+            payload = await driver.fetch_recording(str(recording_url))
+        except Exception as exc:  # a provider/storage failure must never 500 the webhook and lose the call
             await integrations_settings.record_event(
                 session,
                 provider="telephony",
@@ -315,6 +214,7 @@ async def telephony_webhook(
         recording_object_key=recording_key,
         recording_consent=bool(body.get("recording_consent", False)),
         recording_size=body.get("recording_size"),
+        provider_name=getattr(driver, "provider_name", None) or "mobile-calls",
     )
     await integrations_settings.record_event(
         session,

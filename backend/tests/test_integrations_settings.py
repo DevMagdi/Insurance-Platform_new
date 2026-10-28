@@ -98,7 +98,7 @@ async def test_going_live_needs_confirmation_a_green_test_and_the_required_field
 
         tested = await client.post("/api/v1/settings/integrations/whatsapp/test", headers=h)
         assert tested.status_code == 200, tested.text
-        assert tested.json()["ok"] is True and tested.json()["mode"] == "sim"
+        assert tested.json()["ok"] is True and tested.json()["mode"] == "simulated"
 
         incomplete = await client.put(
             "/api/v1/settings/integrations/whatsapp",
@@ -131,7 +131,7 @@ async def test_going_live_needs_confirmation_a_green_test_and_the_required_field
         off = await client.post("/api/v1/settings/integrations/whatsapp/live", headers=h, json={"is_live": False})
         assert off.status_code == 200
         assert off.json()["is_live"] is False
-        assert off.json()["status"] == "sim"
+        assert off.json()["status"] == "ready"
         assert registry.live_mode("whatsapp") is False
 
     entry = await _audit(session, "integration.live")
@@ -188,12 +188,12 @@ async def test_webhook_events_are_recorded_for_both_outcomes(client: Any, sessio
     from tests.helpers import login
 
     delivered = await client.post(
-        "/api/v1/webhooks/telephony",
+        "/api/v1/webhooks/mobile-calls",
         json={"call_id": "call-42", "event": "call.started", "from": "+201000000009"},
     )
     assert delivered.status_code == 200, delivered.text
 
-    refused = await client.post("/api/v1/webhooks/telephony", content=b"not json", headers={"content-type": "application/json"})
+    refused = await client.post("/api/v1/webhooks/mobile-calls", content=b"not json", headers={"content-type": "application/json"})
     assert refused.status_code == 403
 
     async with login(client, ADMIN) as h:
@@ -340,7 +340,7 @@ async def test_the_hub_exposes_the_callback_urls_it_tells_you_to_paste(client: A
     assert body["base_url"]
     pairs = {item["provider"]: item["url"] for item in body["items"]}
     assert pairs["whatsapp"].endswith("/api/v1/webhooks/whatsapp")
-    assert pairs["telephony"].endswith("/api/v1/webhooks/telephony")
+    assert pairs["telephony"].endswith("/api/v1/webhooks/mobile-calls")
     assert all("/docs" not in url for url in pairs.values())
 
 
@@ -557,9 +557,9 @@ async def test_the_409_carries_the_fields_and_the_next_step(client: Any) -> None
         assert refused.json()["code"] == "incomplete_config"
         assert details["provider"] == "telephony"
         assert details["blockers"][0]["code"] == "fields"
-        # telephony's live fields are the PBX URL and its signing secret — the screen knew neither
+        # the mobile-calls live fields are the provider URL and its signing secret — the screen knew neither
         assert "provider_url" in details["missing"]
-        assert "PBX" in details["labels"][0]
+        assert "مكالمات الموبايل" in details["labels"][0]
         assert len(details["labels"]) == len(details["missing"])
         assert details["hint"]
 

@@ -21,8 +21,10 @@ docker compose -f infra/docker-compose.yml exec backend python -m app.seed   # 3
 ```
 
 Then open <http://localhost:5173> (API on <http://localhost:8000/docs>). The stack runs with
-`INTEGRATIONS_DRIVER=sim`, so inbound WhatsApp messages and calls — including a playable voice note and a
-call recording — can be produced from <http://localhost:8000/api/v1/dev/sim> without any vendor account.
+`INTEGRATIONS_DRIVER=sim`, so inbound WhatsApp messages and mobile calls — including a playable voice note
+and a call recording — can be produced from <http://localhost:8000/api/v1/dev/sim> without any vendor
+account. That panel exists **only** in a dev/test process: `ENV=prod` runs live providers only, refuses to
+boot without their credentials, and does not mount `/dev/sim` at all (ADR-029).
 
 ### Without Docker
 

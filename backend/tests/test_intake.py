@@ -12,7 +12,7 @@ import pytest
 from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.domain.enums import ScopeType
-from app.integrations.whatsapp import WhatsAppSim
+from app.integrations.sims import WhatsAppSim
 from app.models.auth import User, UserScope
 from app.models.requests import AuditLog
 from sqlalchemy import select

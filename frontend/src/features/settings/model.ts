@@ -19,6 +19,9 @@ export type Preflight = components["schemas"]["PreflightOut"];
 
 const PROVIDER_KEYS: readonly string[] = ["whatsapp", "telephony", "email"];
 const PRIMARY_SECRET: Record<string, string> = { whatsapp: "access_token", telephony: "webhook_secret", email: "password" };
+/* R9 §1.B: WhatsApp live also needs the App Secret (it verifies every inbound delivery). Mirrors
+   `LIVE_REQUIRED_SECRETS` in `app/services/integrations_settings.py`; the server's preflight still wins. */
+const ALSO_REQUIRED_SECRETS: Record<string, readonly string[]> = { whatsapp: ["app_secret"] };
 
 export const PROVIDERS: readonly { key: ProviderKey; nameKey: string; noteKey: string }[] = [
   { key: "whatsapp", nameKey: "settings.provider.whatsapp", noteKey: "settings.provider.whatsappNote" },
@@ -56,22 +59,27 @@ export function hasSecretChanges(initial: readonly SecretField[], drafts: Record
   return Object.keys(secretPatch(initial, drafts)).length > 0;
 }
 
-export type StatusKey = "live" | "sim" | "unset" | "error";
+export type StatusKey = "live" | "ready" | "unset" | "error";
 
 /**
- * The four badge tones of the screen, pinned to the token set: `t` live, `b` simulated, `r` failing,
- * and *no* accent color for "not configured" — neutral means the `--line-2`/`--muted` pair, which is
- * why this returns `null` instead of inventing a sixth tone (ADR-016 §5).
+ * The four badge tones of the screen, pinned to the token set: `t` live, `b` ready (configured, one switch
+ * away), `r` failing, and *no* accent color for "not configured" — neutral means the `--line-2`/`--muted`
+ * pair, which is why this returns `null` instead of inventing a sixth tone (ADR-016 §5).
+ *
+ * R9 §1.D renamed the `sim` badge to `ready`: production has three states — «غير مُعد» / «جاهز» / «Live» —
+ * and "simulated" is not one of them, because a production process has no simulated driver at all.
  */
 export const STATUS_BADGE: Record<StatusKey, { tone: "t" | "b" | "r" | null; labelKey: string }> = {
   live: { tone: "t", labelKey: "settings.status.live" },
-  sim: { tone: "b", labelKey: "settings.status.sim" },
+  ready: { tone: "b", labelKey: "settings.status.ready" },
   unset: { tone: null, labelKey: "settings.status.unset" },
   error: { tone: "r", labelKey: "settings.status.error" },
 };
 
 export function statusBadge(status: string | null | undefined): { tone: "t" | "b" | "r" | null; labelKey: string } {
-  const key = status === "live" || status === "sim" || status === "error" ? status : "unset";
+  // `sim` is what an un-upgraded API still answers for a configured provider — read it as «جاهز», never
+  // as a badge that says the channel is simulated.
+  const key = status === "live" || status === "error" ? status : status === "ready" || status === "sim" ? "ready" : "unset";
   return STATUS_BADGE[key];
 }
 
@@ -100,8 +108,10 @@ export function missingLiveFields(state: ProviderState | undefined | null): stri
   if (provider === "whatsapp" && !asText(config.phone_number_id).trim()) missing.push("phone_number_id");
   if (provider === "email" && !asText(config.host).trim()) missing.push("host");
   if (provider === "telephony" && !asText(config.provider_url).trim()) missing.push("provider_url");
-  const primary = PRIMARY_SECRET[provider];
-  if (primary && !secrets.some((item) => asText(item?.key) === primary && item?.set === true)) missing.push(primary);
+  const required = [PRIMARY_SECRET[provider] ?? "", ...(ALSO_REQUIRED_SECRETS[provider] ?? [])].filter(Boolean);
+  for (const key of required) {
+    if (!secrets.some((item) => asText(item?.key) === key && item?.set === true)) missing.push(key);
+  }
   return missing;
 }
 

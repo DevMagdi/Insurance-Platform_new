@@ -33,7 +33,7 @@ test.describe("settings hub · providers", () => {
     await login(page, MANAGER);
     await page.goto("/settings");
     await expect(page.getByRole("heading", { name: "الإعدادات" })).toBeVisible();
-    for (const provider of ["واتساب للأعمال", "السنترال (Telephony)", "البريد (SMTP)"]) {
+    for (const provider of ["واتساب للأعمال", "مكالمات الموبايل (Live)", "البريد (SMTP)"]) {
       await expect(page.getByRole("heading", { name: provider })).toBeVisible();
     }
 
@@ -129,15 +129,17 @@ test.describe("settings hub · providers", () => {
 
     await whatsapp.getByRole("button", { name: "التبديل إلى الحيّ" }).click();
     await page.getByRole("dialog", { name: "تأكيد التحوّل إلى الوضع الحيّ" }).getByRole("button", { name: "تأكيد والتبديل" }).click();
-    await expect(whatsapp.getByText("حيّ", { exact: true })).toBeVisible({ timeout: 20_000 });
+    // R9 §1.D: the live badge reads `Live` in both languages
+    await expect(whatsapp.getByText("Live", { exact: true })).toBeVisible({ timeout: 20_000 });
     // the row is what the drivers read, so the badge is checked against it, not against a label alone
     const auth = await apiLogin(request, MANAGER);
     await expect
       .poll(async () => ((await (await request.get("/api/v1/settings/integrations/whatsapp", { headers: auth })).json()).is_live as boolean))
       .toBe(true);
 
-    await whatsapp.getByRole("button", { name: "الرجوع إلى المحاكاة" }).click();
-    await expect(whatsapp.getByText("محاكاة", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await whatsapp.getByRole("button", { name: "إيقاف الوضع الحيّ" }).click();
+    // R9 §1.D: the badge of a configured, not-live provider is «جاهز», never «محاكاة»
+    await expect(whatsapp.getByText("جاهز", { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("dialog")).toHaveCount(0); // the safe direction needs no confirmation
 
     await page.getByTestId(DROP_TOKEN).click();
@@ -149,7 +151,7 @@ test.describe("settings hub · providers", () => {
   test("an inbound event is readable from the screen, without opening a server log", async ({ page, request }) => {
     test.skip(test.info().project.name !== "desktop", "desktop-only — see the header");
     const auth = await apiLogin(request, ADMIN);
-    const delivered = await request.post("/api/v1/webhooks/telephony", {
+    const delivered = await request.post("/api/v1/webhooks/mobile-calls", {
       headers: auth,
       data: { call_id: "e2e-call-1", event: "call.started", from: "+201000000000" },
     });

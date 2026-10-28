@@ -58,7 +58,8 @@ describe("translation parity", () => {
         expect(bag.settings.provider[provider], `${language}.${provider}`).toBeTruthy();
         expect(bag.settings.provider[`${provider}Note`], `${language}.${provider}Note`).toBeTruthy();
       }
-      for (const status of ["live", "sim", "unset", "error"]) {
+      // R9 §1.D: the badges are Live / جاهز / غير مُعد / فشل آخر اختبار — `sim` is no longer a state
+      for (const status of ["live", "ready", "unset", "error"]) {
         expect(bag.settings.status[status], `${language}.${status}`).toBeTruthy();
       }
       for (const plan of Object.keys(bag.settings.plan)) expect(bag.settings.plan[plan]).toBeTruthy();

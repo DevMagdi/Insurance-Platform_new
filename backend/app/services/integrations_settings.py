@@ -1,4 +1,9 @@
-"""Reading, writing, testing and switching the integration providers (spec §8, ADR-016).
+"""Reading, writing, testing and switching the integration providers (spec §8, ADR-016, R9).
+
+R9 narrows what this screen is allowed to offer in production: the two channels are **live only** —
+WhatsApp Business (Meta Cloud API) and **mobile phone calls** («مكالمات الموبايل») — and a provider's badge is
+`Live` / `جاهز` / `غير مُعد` / `فشل آخر اختبار`. There is no «محاكاة» state to choose: simulation exists only
+in a dev/test process (`core/config.py`), and `set_live` refuses to switch a provider *off* when `ENV=prod`.
 
 The rules this module exists to enforce:
 
@@ -78,15 +83,20 @@ PROVIDER_FIELDS: dict[str, tuple[FieldSpec, ...]] = {
         FieldSpec("business_account_id"),
         FieldSpec("receive_media", "bool", True),
     ),
+    #: Mobile phone calls (R9 §1.C). The key stays `telephony` — it is a stored contract and every existing
+    #: row, webhook URL and test refers to it — but nothing user-facing calls it a «سنترال» any more.
     "telephony": (
-        FieldSpec("provider", "choice", "generic", choices=("generic", "sim")),
-        #: the PBX base URL. Read twice: the connection test probes it, and `fetch_recording` refuses a
-        #: recording URL on any other host (ADR-023 §4). A setting with no consumer is not offered here.
+        #: the provider dialect. `twilio` (Programmable Voice) is the documented live webhook shape;
+        #: `generic` is the plain JSON contract. `sim` is gone: it was a driver choice in data, which is
+        #: how a production row could say "simulate my customer calls" (R9 §4).
+        FieldSpec("provider", "choice", "twilio", choices=("twilio", "generic")),
+        #: the mobile-calls provider's base URL. Read twice: the connection test probes it, and
+        #: `fetch_recording` refuses a recording URL on any other host (ADR-023 §4).
         #: required for live: without it the connection test has nothing to probe and `fetch_recording`
         #: refuses every URL, so "live" would mean "silently receiving nothing" (ADR-027)
         FieldSpec("provider_url", required_for_live=True),
-        #: the number the central dials in on; printed on the settings card so the operator can compare it
-        #: with what the PBX says, and stored so a support call starts from the same value
+        #: the mobile number the platform receives calls on; printed on the card so the operator can compare
+        #: it with what the provider console says, and stored so a support call starts from the same value
         FieldSpec("number"),
         FieldSpec("trunk"),
         FieldSpec("recording_retention_days", "int", 180, minimum=1, maximum=3650),
@@ -140,6 +150,13 @@ ENV_FALLBACK: dict[str, dict[str, str]] = {
 
 #: the credential whose absence makes a provider unusable — checked when switching to live
 PRIMARY_SECRET = {"whatsapp": "access_token", "telephony": "webhook_secret", "email": "password"}
+#: R9 §1.B: WhatsApp live needs *both* halves — the token that sends and the App Secret that verifies. A
+#: live row with no App Secret answers 403 to every inbound message, which is a deaf channel, not a live one.
+LIVE_REQUIRED_SECRETS: dict[str, tuple[str, ...]] = {
+    "whatsapp": ("access_token", "app_secret"),
+    "telephony": ("webhook_secret",),
+    "email": ("password",),
+}
 
 SIM_TEMPLATES = (
     {"name": "policy_reminder_ar", "language": "ar", "status": "APPROVED"},
@@ -215,7 +232,7 @@ class State:
     config: dict[str, Any] = field(default_factory=dict)
     secrets: list[dict[str, Any]] = field(default_factory=list)
     is_live: bool = False
-    status: str = "unset"  # live | sim | unset | error — the badge in the card header
+    status: str = "unset"  # live | ready | unset | error — the badge in the card header (R9 §1.D)
     last_tested_at: str | None = None
     last_test_status: str | None = None
     last_test_detail: str | None = None
@@ -262,6 +279,10 @@ def effective_config(provider: str, row: IntegrationConfig | None) -> dict[str, 
         if env_value not in (None, ""):
             merged[key] = env_value
     merged.update(_stored_config(provider, row))
+    if provider == "telephony" and str(merged.get("provider") or "").strip().lower() == "sim":
+        # A row saved before R9 says `provider: sim`; `sim` is no longer a choice, and re-validating a legacy
+        # row must not break the boot. The value is normalized on read, and the next save writes `twilio`.
+        merged["provider"] = "twilio"
     if provider == "email":
         # The mailer dials `smtp_endpoint`; showing anything else here would be a second truth about the
         # same server, so an unset host/port is filled from it rather than left blank.
@@ -305,13 +326,18 @@ async def state(session: AsyncSession, provider: str) -> State:
 
 
 def _status_of(state: State) -> str:
-    """The badge tones come from the approved screen, so the classification is stated once, in code."""
+    """`live | ready | unset | error` — the three words the production screen shows (R9 §1.D).
+
+    R9 renamed `sim` to `ready`: a configured provider that is not live is «جاهز» (tested, credentials
+    saved, one switch away), not "simulated". Simulation is a process mode (dev/test), never a provider
+    state an operator can see in production.
+    """
     if state.last_test_status == "failed":
         return "error"
     if state.is_live:
         return "live"
     if any(item["set"] for item in state.secrets):
-        return "sim"
+        return "ready"
     return "unset"
 
 
@@ -334,9 +360,14 @@ def webhook_urls() -> dict[str, Any]:
             },
             {
                 "provider": "telephony",
-                "label": "Telephony events",
-                "url": f"{base}{prefix}/webhooks/telephony",
-                "note": "اضبط السنترال أن يرسل started / ended / recording_ready مع ترويسة X-Call-Signature.",
+                "label": "مكالمات الموبايل (Mobile calls)",
+                "url": f"{base}{prefix}/webhooks/mobile-calls",
+                #: the pre-R9 path still answers (see `endpoints/webhooks.py`), so a console that was already
+                #: configured keeps working during the rename; the new URL is the one to paste from now on
+                "note": (
+                    "اضبط مزود مكالمات الموبايل أن يرسل started / ended / recording_ready مع ترويسة "
+                    "X-Call-Signature. المسار القديم /webhooks/telephony ما زال يعمل كمرادف."
+                ),
             },
         ],
     }
@@ -456,11 +487,11 @@ FIELD_LABELS: dict[str, str] = {
     "access_token": "توكين الوصول (Access Token)",
     "app_secret": "التوقيع السري لتطبيق ميتا (App Secret)",
     "verify_token": "توكين التحقق من الـwebhook (Verify Token)",
-    "provider_url": "عنوان السنترال (PBX URL)",
-    "number": "رقم السنترال",
-    "trunk": "الخط/الترنك",
-    "webhook_secret": "سر توقيع أحداث السنترال (Webhook Secret)",
-    "api_key": "مفتاح API للسنترال",
+    "provider_url": "رابط مزود مكالمات الموبايل",
+    "number": "رقم الموبايل",
+    "trunk": "خط مكالمات الموبايل",
+    "webhook_secret": "سر توقيع أحداث مكالمات الموبايل (Webhook Secret)",
+    "api_key": "مفتاح API لمزود مكالمات الموبايل",
     "host": "مضيف SMTP",
     "port": "منفذ SMTP",
     "from_email": "بريد المرسل",
@@ -499,9 +530,9 @@ def switch_blockers(row: IntegrationConfig | None, provider: str, *, confirm: bo
     config = effective_config(provider, row)
     secrets = secrets_for(provider, row)
     missing = [spec.key for spec in PROVIDER_FIELDS[provider] if spec.required_for_live and not str(config.get(spec.key, "")).strip()]
-    primary = PRIMARY_SECRET[provider]
-    if not secrets.get(primary):
-        missing.append(primary)
+    for name in LIVE_REQUIRED_SECRETS[provider]:
+        if not secrets.get(name):
+            missing.append(name)
     if missing:
         blockers.append(
             {
@@ -515,7 +546,15 @@ def switch_blockers(row: IntegrationConfig | None, provider: str, *, confirm: bo
 
 def _assert_switch(row: IntegrationConfig, provider: str, *, to_live: bool, confirm: bool) -> None:
     if not to_live:
-        return  # back to simulation is always safe, and always allowed
+        # In dev/test, back to simulation is safe and always allowed. In production there is no simulated
+        # driver to return to (R9 §1.A), so "turn the channel off" is refused rather than pretended.
+        if get_settings().is_production:
+            raise Conflict(
+                "ENV=prod لا يوجد فيه وضع محاكاة: القنوات تعمل حيًّا فقط. "
+                "أوقف الاعتماديات من إعدادات المزوّد بدلًا من تحويل القناة إلى المحاكاة.",
+                details={"provider": provider, "blockers": [], "missing": [], "labels": []},
+            )
+        return
     blockers = switch_blockers(row, provider, confirm=confirm)
     if not blockers:
         return
@@ -549,7 +588,10 @@ async def preflight(session: AsyncSession, provider: str) -> dict[str, Any]:
         "missing": [key for blocker in blockers if blocker["code"] == "fields" for key in blocker["fields"]],
         "labels": [label(key) for blocker in blockers if blocker["code"] == "fields" for key in blocker["fields"]],
         "is_live": current.is_live,
-        "mode": "live" if current.is_live else "sim",
+        "mode": "live" if current.is_live else "ready",
+        #: false in a production process: the screen hides «الرجوع إلى المحاكاة», because there is nothing
+        #: to go back to (R9 §1.D — no simulation affordance in the production UI).
+        "sim_allowed": get_settings().simulation_allowed,
         "status": current.status,
         "test_status": row.last_test_status if row else None,
         "tested_at": current.last_tested_at,
@@ -629,9 +671,12 @@ async def resolved_for_registry(session: AsyncSession) -> dict[str, ResolvedInte
     out: dict[str, ResolvedIntegration] = {}
     for provider in PROVIDERS:
         row = await _row(session, provider)
+        # R9 §1.A: `ENV=prod` has one mode. The row cannot switch a channel off, because "off" would have to
+        # mean a simulator that does not exist in production.
+        is_live = True if settings.is_production else (bool(row.is_live) if row is not None else settings.INTEGRATIONS_DRIVER == "live")
         out[provider] = ResolvedIntegration(
             provider=provider,
-            is_live=bool(row.is_live) if row is not None else settings.INTEGRATIONS_DRIVER == "live",
+            is_live=is_live,
             config=effective_config(provider, row),
             secrets=secrets_for(provider, row),
         )
@@ -665,7 +710,7 @@ async def run_connection_test(
     elif provider == "whatsapp":
         outcome = await _test_whatsapp(resolved)
     elif provider == "telephony":
-        outcome = await _test_telephony(resolved)
+        outcome = await _test_mobile_calls(resolved)
     else:
         outcome = await _test_email(resolved, to=to or actor.email, probe_only=to is None)
     took_ms = int((time.monotonic() - started) * 1000)
@@ -688,7 +733,7 @@ async def run_connection_test(
         after={
             "provider": provider,
             "ok": outcome.ok,
-            "mode": "live" if resolved.is_live else "sim",
+            "mode": "live" if resolved.is_live else "simulated",
             "ms": took_ms,
             "detail": outcome.detail[:300],
         },
@@ -702,7 +747,9 @@ async def run_connection_test(
         "ok": outcome.ok,
         "detail": outcome.detail,
         "took_ms": took_ms,
-        "mode": "live" if resolved.is_live else "sim",
+        #: a test in a dev/test process never reaches the network — the word says so instead of "sim",
+        #: which R9 removed from the provider state vocabulary
+        "mode": "live" if resolved.is_live else "simulated",
         "tested_at": row.last_tested_at.isoformat(),
     }
 
@@ -833,27 +880,32 @@ async def _test_whatsapp(resolved: ResolvedIntegration) -> TestOutcome:
     return TestOutcome(True, f"الاتصال سليم — Number ID {phone_id}" + (f"، التطبيق {label}" if label else ""))
 
 
-async def _test_telephony(resolved: ResolvedIntegration) -> TestOutcome:
-    """Two halves, both real: the HMAC contract we sign with, and a reachability probe of the PBX itself.
+async def _test_mobile_calls(resolved: ResolvedIntegration) -> TestOutcome:
+    """Two halves, both real: the HMAC contract we verify with, and a reachability probe of the provider.
 
-    The signature self-test alone answered "green" for a PBX URL that nobody could reach — which is the
-    failure an operator most needs to see before switching to live (ADR-023 §3).
+    The signature self-test alone answered "green" for a URL that nobody could reach — which is the failure
+    an operator most needs to see before going live (ADR-023 §3). The copies never say «سنترال»: the channel
+    is a mobile number served by a mobile-calls provider (R9 §1.C).
     """
     from app.core.security import verify_webhook_signature
-    from app.integrations.telephony import TelephonyGeneric
+    from app.integrations.mobile_calls import MobileCallsProvider
 
     secret = resolved.secret("webhook_secret")
     if not secret:
-        return TestOutcome(False, "ناقص: webhook_secret غير مضبوط، فكل حدث وارد سيُرفض بالتوقيع")
+        return TestOutcome(False, "ناقص: webhook_secret غير مضبوط، فكل مكالمة موبايل واردة ستُرفض بالتوقيع")
     sample = b'{"event":"call.started","from":"+201000000000"}'
     signature = "sha256=" + hmac.new(secret.encode(), sample, hashlib.sha256).hexdigest()
     if not verify_webhook_signature(sample, signature, secret):
         return TestOutcome(False, "تحقّق التوقيع فشل محليًا — تهيئة الخادم غير متسقة")
-    driver = TelephonyGeneric(webhook_secret=secret, provider_url=str(resolved.value("provider_url") or ""))
+    driver = MobileCallsProvider(
+        webhook_secret=secret,
+        provider_url=str(resolved.value("provider_url") or ""),
+        provider_name=str(resolved.config.get("provider") or "twilio"),
+    )
     ok, detail = await driver.probe()
     if not ok:
-        return TestOutcome(False, f"التوقيع سليم، لكن السنترال غير قابل للوصول: {detail}")
-    return TestOutcome(True, f"التوقيع يعمل (sha256) و{detail}. ضع عنوان الاستدعاء أسفل البطاقة في السنترال.")
+        return TestOutcome(False, f"التوقيع سليم، لكن مزود مكالمات الموبايل غير قابل للوصول: {detail}")
+    return TestOutcome(True, f"التوقيع يعمل (sha256) و{detail}. ضع عنوان الاستدعاء أسفل البطاقة في لوحة المزود.")
 
 
 async def _test_email(resolved: ResolvedIntegration, *, to: str, probe_only: bool) -> TestOutcome:

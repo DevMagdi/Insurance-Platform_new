@@ -1,13 +1,16 @@
-"""WhatsApp Cloud API driver + simulated driver.
+"""WhatsApp **live** driver: Meta WhatsApp Business Cloud API.
 
-Inbound handling is shared (services/intake.py); this module only speaks the provider dialect.
+This module speaks the provider dialect only; inbound handling is shared (`services/intake.py`). The
+simulated driver lives in `integrations/sims.py` and cannot be constructed outside dev/test (R9 §1.A), so
+there is no code path here that quietly records a message instead of sending it.
+
+Going live needs all three of: `access_token`, `phone_number_id`, `app_secret`. The first two send, the
+third verifies — and an empty `app_secret` refuses every webhook rather than signing with the empty key.
 """
 
 from __future__ import annotations
 
 import json
-import time
-import uuid
 from typing import Any
 
 import httpx
@@ -32,33 +35,6 @@ def use_transport(transport: httpx.AsyncBaseTransport | None) -> None:
 
 def _client(timeout: float = 15.0) -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=timeout, transport=_transport)
-
-
-class WhatsAppSim:
-    """Records outbound sends in memory so E2E tests can assert on them."""
-
-    name = "sim"
-    sent: list[dict[str, Any]] = []
-
-    def verify_signature(self, payload: bytes, signature_header: str | None) -> bool:
-        return True  # the simulator signs nothing; the dev endpoint is local-only
-
-    async def send_text(self, *, to: str, body: str) -> dict[str, Any]:
-        result = ProviderResult(ok=True, external_id=f"wamid.sim_{uuid.uuid4().hex[:16]}").as_dict()
-        WhatsAppSim.sent.append({"to": to, "body": body, "at": time.time(), **result})
-        return result
-
-    async def send_template(self, *, to: str, template: str, variables: list[str]) -> dict[str, Any]:
-        result = ProviderResult(ok=True, external_id=f"wamid.sim_{uuid.uuid4().hex[:16]}").as_dict()
-        WhatsAppSim.sent.append({"to": to, "template": template, "variables": variables, **result})
-        return result
-
-    async def fetch_media(self, media_id: str) -> tuple[bytes, str]:
-        return b"SIM-AUDIO", "audio/ogg"
-
-    @classmethod
-    def reset(cls) -> None:
-        cls.sent = []
 
 
 class WhatsAppMeta:

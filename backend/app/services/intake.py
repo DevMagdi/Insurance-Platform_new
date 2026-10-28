@@ -225,8 +225,15 @@ async def ingest_call_event(
     recording_object_key: str | None = None,
     recording_consent: bool = False,
     recording_size: int | None = None,
+    provider_name: str = "mobile-calls",
 ) -> dict[str, Any]:
-    """`call.started` opens/links the row, `call.ended` closes timing, `recording_ready` attaches media."""
+    """A call to the platform's mobile number (R9 §1.C).
+
+    `call.started` opens/links the request by the caller's mobile number, `call.ended` closes the timing,
+    `recording_ready` attaches the recording. `provider_name` is the configured mobile-calls provider
+    (`twilio` | `generic`), stored on the row — the old hardcoded `"sim"` made every production call claim
+    to be simulated.
+    """
     existing = (await session.execute(select(CallRecord).where(CallRecord.provider_call_id == provider_call_id))).scalar_one_or_none()
 
     match = await match_caller(session, from_number if direction == "inbound" else to_number)
@@ -243,7 +250,7 @@ async def ingest_call_event(
                     session,
                     client_id=client_id,
                     insured_person_id=insured_id,
-                    subject="مكالمة واردة",
+                    subject="مكالمة موبايل واردة",
                     channel=Channel.CALL,
                     contact_name=name,
                     contact_mobile=normalize_mobile(from_number),
@@ -258,7 +265,7 @@ async def ingest_call_event(
                 session,
                 client_id=None,
                 insured_person_id=None,
-                subject="مكالمة واردة — رقم غير معروف",
+                subject="مكالمة موبايل واردة — رقم غير معروف",
                 channel=Channel.CALL,
                 contact_name=caller_name or name,
                 contact_mobile=normalize_mobile(from_number),
@@ -268,7 +275,7 @@ async def ingest_call_event(
         call = CallRecord(
             request_id=request.id if request else None,
             provider_call_id=provider_call_id,
-            provider="sim",
+            provider=provider_name,
             direction=CallDirection(direction),
             from_number=normalize_mobile(from_number),
             to_number=normalize_mobile(to_number),
@@ -295,7 +302,7 @@ async def ingest_call_event(
         await audit.write(
             session,
             actor=None,
-            action="telephony.call_started",
+            action="mobile_calls.call_started",
             entity_type="call_record",
             entity_id=call.id,
             after={"matched": kind, "from": _mask(call.from_number)},
@@ -321,7 +328,7 @@ async def ingest_call_event(
             await audit.write(
                 session,
                 actor=None,
-                action="telephony.recording_ready",
+                action="mobile_calls.recording_ready",
                 entity_type="call_record",
                 entity_id=existing.id,
                 after={"object_key": recording_object_key},

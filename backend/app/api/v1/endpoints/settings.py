@@ -38,7 +38,7 @@ class ProviderStateOut(BaseModel):
     config: dict[str, Any]
     secrets: list[SecretFieldOut]
     is_live: bool
-    status: str = Field(description="live | sim | unset | error — the badge tone in the card header")
+    status: str = Field(description="live | ready | unset | error — the badge tone in the card header (R9 §1.D)")
     last_tested_at: str | None = None
     last_test_status: str | None = None
     last_test_detail: str | None = None
@@ -76,7 +76,8 @@ class PreflightOut(BaseModel):
     missing: list[str] = Field(description="machine keys of the fields the live switch requires")
     labels: list[str] = Field(description="Arabic labels for `missing`, for the message the operator reads")
     is_live: bool
-    mode: str
+    mode: str = Field(description="live | ready — `sim` no longer exists in production (R9)")
+    sim_allowed: bool = Field(description="false in production: the screen hides the switch back to simulation")
     status: str
     test_status: str | None = None
     tested_at: str | None = None
@@ -144,7 +145,11 @@ async def list_integrations(session: DbSession, _actor: SettingsManage) -> list[
     return await integrations.all_states(session)
 
 
-@router.get("/settings/integrations/webhook-urls", summary="Callback URLs to paste into Meta / the PBX", response_model=WebhookUrlsOut)
+@router.get(
+    "/settings/integrations/webhook-urls",
+    summary="Callback URLs to paste into Meta / the mobile-calls provider",
+    response_model=WebhookUrlsOut,
+)
 async def webhook_urls(_actor: SettingsManage) -> dict[str, Any]:
     return integrations.webhook_urls()
 
