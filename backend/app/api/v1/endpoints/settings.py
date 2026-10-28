@@ -38,7 +38,11 @@ class ProviderStateOut(BaseModel):
     config: dict[str, Any]
     secrets: list[SecretFieldOut]
     is_live: bool
-    status: str = Field(description="live | ready | unset | error — the badge tone in the card header (R9 §1.D)")
+    status: str = Field(description="live | ready | unset | error — legacy badge tone (R9 §1.D)")
+    connection_status: str = Field(default="not_connected", description="connected | not_connected | error (R12 §A)")
+    missing_fields: list[str] = Field(default_factory=list, description="named credentials still missing")
+    last_webhook_at: str | None = None
+    last_error: str | None = None
     last_tested_at: str | None = None
     last_test_status: str | None = None
     last_test_detail: str | None = None

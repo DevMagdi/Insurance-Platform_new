@@ -10,7 +10,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ProviderCard } from "@/features/settings/ProviderCard";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { MemoryRouter } from "react-router-dom";
@@ -42,6 +42,10 @@ const providerState = vi.hoisted(() => (overrides: Partial<ProviderState> = {}):
   ],
   is_live: false,
   status: "ready",
+  connection_status: "not_connected",
+  missing_fields: [],
+  last_webhook_at: null,
+  last_error: null,
   last_tested_at: null,
   last_test_status: null,
   last_test_detail: null,
@@ -135,7 +139,7 @@ describe("drift gates against the backend", () => {
     const block = source.slice(source.indexOf("PROVIDER_SECRETS"), source.indexOf("ENV_FALLBACK"));
     const quoted = [...block.matchAll(/"([a-z_]+)"/g)].map((match) => match[1] as string);
     const keys = [...new Set(quoted.filter((name) => !["whatsapp", "telephony", "email"].includes(name)))];
-    expect(keys.slice().sort()).toEqual(["access_token", "api_key", "app_secret", "password", "verify_token", "webhook_secret"]);
+    expect(keys.slice().sort()).toEqual(["access_token", "api_key", "app_secret", "inbound_secret", "password", "verify_token", "webhook_secret"]);
     const labels = ar.settings.secret as unknown as Record<string, string>;
     for (const key of keys) expect(labels[key], key).toBeTruthy();
   });
@@ -207,7 +211,7 @@ describe("the card renders what the API said — and nothing it did not", () => 
     expect(screen.getByText(ar.settings.testConnection)).toBeInTheDocument();
   });
 
-  it("shows the state the row reports — and offers the risky direction through a warning", () => {
+  it("shows connection semantics only — connected / not connected (named) / error, never a live switch (R12 §A)", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: 0 }, mutations: { retry: 0 } } });
     const mount = (state: ProviderState) =>
       render(
@@ -218,39 +222,23 @@ describe("the card renders what the API said — and nothing it did not", () => 
         </QueryClientProvider>,
       );
 
-    // live: the badge the browser suite waits for, with only the safe direction offered
-    const live = mount(providerState({ status: "live", is_live: true, last_test_status: "ok" }));
-    expect(live.container.textContent).toContain(ar.settings.status.live);
-    // R9: the label says "leave live mode"; «الرجوع إلى المحاكاة» is offered only where a simulator exists,
-    // and the preflight below answers `sim_allowed: false` (production)
-    expect(screen.getByText(ar.settings.leaveLive)).toBeInTheDocument();
-    expect(screen.queryByText(ar.settings.goLive)).not.toBeInTheDocument();
-    live.unmount();
+    const connected = mount(providerState({ connection_status: "connected", missing_fields: [], last_test_status: "ok" }));
+    expect(connected.container.textContent).toContain(ar.settings.connection.connected);
+    expect(screen.queryByTestId("live-switch-whatsapp")).not.toBeInTheDocument();
+    connected.unmount();
 
-    // an error is reported with the provider's own words, kept verbatim from the row (no server logs needed)
-    const failed = mount(providerState({ status: "error", last_test_status: "error", last_test_detail: "(100) invalid credentials" }));
-    expect(failed.container.textContent).toContain(ar.settings.status.error);
+    const failed = mount(
+      providerState({ connection_status: "error", last_test_status: "error", last_test_detail: "(100) invalid credentials" }),
+    );
+    expect(failed.container.textContent).toContain(ar.settings.connection.error);
     expect(screen.getByTestId("test-result-whatsapp")).toHaveTextContent("(100) invalid credentials");
     failed.unmount();
 
-    // untested: the switch is *disabled* and the card says why, with a shortcut to the test.
-    // Before R6 the button was enabled, opened the dialog, and the only thing that ever happened next was a
-    // 409 — the operator's "it does not work" started exactly here.
-    const unset = mount(providerState({ status: "unset", last_test_status: null }));
-    expect(unset.container.textContent).toContain(ar.settings.status.unset);
-    expect(screen.getByTestId("live-switch-whatsapp")).toBeDisabled();
-    expect(screen.getByTestId("live-blockers-whatsapp")).toHaveTextContent(ar.settings.liveBlockedTest);
-    expect(screen.getByRole("button", { name: ar.settings.runTestNow })).toBeInTheDocument();
-    unset.unmount();
-
-    // ready → the dialog still asks for an explicit confirmation, and says the prerequisites are met
-    const ready = mount(providerState({ status: "ready", last_test_status: "ok", config: { phone_number_id: "123", business_account_id: "", receive_media: true } }));
-    const goLive = screen.getByTestId("live-switch-whatsapp");
-    expect(goLive).toBeEnabled();
-    fireEvent.click(goLive);
-    expect(screen.getByRole("dialog", { name: ar.settings.confirmLiveTitle })).toBeInTheDocument();
-    expect(screen.getByTestId("live-ready")).toHaveTextContent(ar.settings.liveReady);
-    expect(screen.getByRole("button", { name: ar.settings.confirmLive })).toBeEnabled();
-    ready.unmount();
+    // not connected: the missing credentials are named on the card — no switch to be refused by a 409
+    const missing = mount(providerState({ connection_status: "not_connected", missing_fields: ["access_token", "app_secret"], last_test_status: null }));
+    expect(missing.container.textContent).toContain(ar.settings.connection.notConnected);
+    expect(screen.getByTestId("connection-missing-whatsapp")).toHaveTextContent("Access Token");
+    expect(screen.queryByTestId("live-switch-whatsapp")).not.toBeInTheDocument();
+    missing.unmount();
   });
 });

@@ -1,16 +1,16 @@
 /**
- * One provider card: the values, the write-only secrets, the live switch, and the two things an operator
+ * One provider card: the values, the write-only secrets, the connection state (R12 §A: connected /
+ * not connected / error — saving valid credentials is what connects), and the two things an operator
  * actually comes here for — «اختبار الاتصال» and the callback URL to paste into the vendor's console.
  *
  * The form is built from the fields the API returns, not from a list copied into the frontend: a setting
  * the backend stops offering would otherwise keep rendering here as a dead input forever.
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, PlugZap, RefreshCw, ShieldAlert } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Copy, PlugZap, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Modal } from "@/components/Modal";
 import { Badge, Button, Card } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
@@ -18,7 +18,7 @@ import { relativeTime } from "@/lib/format";
 
 import { asText } from "@/lib/text";
 
-import { liveBlockersOf, liveSwitchError, MASK, secretPatch, statusBadge, type Preflight, type ProviderState, type SecretDraft } from "./model";
+import { connectionBadge, MASK, secretPatch, type ProviderState, type SecretDraft } from "./model";
 
 /** The dialects the API accepts in a text field. `sim` is deliberately not one of them (R9 §1.D). */
 const CHOICES: Record<string, readonly string[]> = {
@@ -38,7 +38,6 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
   const queryClient = useQueryClient();
   const [config, setConfig] = useState<Record<string, unknown>>({});
   const [secrets, setSecrets] = useState<Record<string, SecretDraft>>({});
-  const [confirming, setConfirming] = useState(false);
   const [lastTest, setLastTest] = useState<{ ok: boolean; detail: string } | null>(null);
   const [templates, setTemplates] = useState<TemplateRow[] | null>(null);
 
@@ -50,33 +49,11 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
     setLastTest(state.last_test_detail ? { ok: state.last_test_status === "ok", detail: state.last_test_detail } : null);
   }, [state]);
 
-  /* The server is the only thing that knows every provider's live requirements (and the environment
-     fallbacks), so the card asks it instead of guessing. `enabled` is guarded: an unconfigured row has no
-     provider key, and firing `/settings/integrations/undefined/preflight` is a 422 in the console. */
   const providerKey = asText(state?.provider);
-  const preflight = useQuery({
-    queryKey: ["settings", "preflight", providerKey],
-    queryFn: () => api.get<Preflight>(`/settings/integrations/${providerKey}/preflight`),
-    enabled: Boolean(providerKey),
-    staleTime: 5_000,
-    retry: 0,
-  });
-  const badge = statusBadge(state?.status);
-  /* R9 §1.D: «إيقاف الوضع الحيّ» is offered only where a simulator exists. A production process answers
-     `sim_allowed: false`, and the control is not rendered at all instead of failing with a 409. While the
-     preflight is still loading the answer is unknown, and the dev default (a simulator exists) stands. */
-  const simAllowed = preflight.data?.sim_allowed !== false;
-  const blockers = liveBlockersOf(state, preflight.data);
-  const ready = blockers.length === 0;
-  const blockerText = blockers
-    .map((blocker) =>
-      blocker.code === "fields"
-        ? t("settings.liveBlockedFields", { fields: blocker.fields.map((field) => t(`settings.field.${field}`, { defaultValue: t(`settings.secret.${field}`, { defaultValue: field }) })).join("، ") })
-        : blocker.code === "test"
-          ? t("settings.liveBlockedTest")
-          : blocker.message,
-    )
-    .join(" · ");
+  // Connection semantics only (R12 §A): the badge is connected / not connected / error, derived by the
+  // server from the credentials it holds — there is no operator "switch to live" action any more.
+  const badge = connectionBadge(state);
+  const missing = state.missing_fields ?? [];
   const patch = useMemo(() => secretPatch(state.secrets ?? [], secrets), [state.secrets, secrets]);
   const dirty = useMemo(() => {
     const changed = Object.keys(config).some((key) => String(config[key] ?? "") !== String(state.config?.[key as keyof ProviderState["config"]] ?? ""));
@@ -86,7 +63,6 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: ["settings", "integrations"] });
     await queryClient.invalidateQueries({ queryKey: ["settings", "events"] });
-    // the preflight is derived from the row: a green test or a saved field changes the answer
     await queryClient.invalidateQueries({ queryKey: ["settings", "preflight"] });
   }
 
@@ -112,25 +88,6 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
       const details = (error as { details?: { retry_after_seconds?: number } } | undefined)?.details;
       const seconds = details?.retry_after_seconds;
       toast(seconds ? t("settings.testThrottled", { seconds }) : (error as Error).message, "error");
-      await refresh();
-    },
-  });
-
-  const live = useMutation({
-    mutationFn: (isLive: boolean) => api.post<ProviderState>(`/settings/integrations/${state.provider}/live`, { is_live: isLive, confirm: isLive }),
-    onSuccess: async (next) => {
-      setConfirming(false);
-      toast(next.is_live ? t("settings.nowLive") : t("settings.leftLive"));
-      await refresh();
-    },
-    onError: async (error: unknown) => {
-      // A 409 here means the screen's picture of the row was stale (a second tab, an env change). Say
-      // exactly what the server said — the fields, in Arabic — and re-read the row so the card is correct
-      // the moment the box closes rather than leaving a button that keeps failing.
-      const { message, fields } = liveSwitchError(error);
-      const detail = fields.length ? t("settings.missingFields", { fields: fields.join("، ") }) : asText(message) || t("common.errorBody");
-      toast(detail, "error");
-      setConfirming(false);
       await refresh();
     },
   });
@@ -173,6 +130,8 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
         <div className="text-end text-[12px] text-muted">
           <div>{state.last_tested_at ? t("settings.lastTest", { when: relativeTime(state.last_tested_at) }) : t("settings.neverTested")}</div>
           {state.updated_at ? <div>{t("settings.updated", { when: relativeTime(state.updated_at) })}</div> : null}
+          {state.last_webhook_at ? <div>{t("settings.lastWebhook", { when: relativeTime(state.last_webhook_at) })}</div> : null}
+          {state.last_error ? <div style={{ color: "var(--r-ink)" }}>{t("settings.lastError", { detail: state.last_error })}</div> : null}
         </div>
       </header>
 
@@ -262,34 +221,15 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
         </div>
       ) : null}
 
-      {!state.is_live && !ready ? (
+      {badge.key !== "connected" && missing.length ? (
         <div
           className="mt-3 rounded-btn px-3 py-2 text-[12px]"
           style={{ background: "var(--a-bg)", color: "var(--a-ink)" }}
-          data-testid={`live-blockers-${providerKey}`}
+          data-testid={`connection-missing-${providerKey}`}
           role="status"
         >
-          <div className="font-semibold">{t("settings.liveBlockedTitle")}</div>
-          <ul className="mt-1 list-inside list-disc space-y-0.5">
-            {blockers.map((blocker) => (
-              <li key={blocker.code}>
-                {blocker.code === "fields"
-                  ? t("settings.liveBlockedFields", {
-                      fields: blocker.fields
-                        .map((field) => t(`settings.field.${field}`, { defaultValue: t(`settings.secret.${field}`, { defaultValue: field }) }))
-                        .join("، "),
-                    })
-                  : blocker.code === "test"
-                    ? t("settings.liveBlockedTest")
-                    : blocker.message}
-              </li>
-            ))}
-          </ul>
-          {blockers.some((blocker) => blocker.code === "test") ? (
-            <button type="button" className="mt-1 font-semibold text-primary hover:underline" onClick={() => test.mutate()}>
-              {t("settings.runTestNow")}
-            </button>
-          ) : null}
+          <span className="font-semibold">{t("settings.notConnectedMissing")}</span>{" "}
+          {missing.map((field) => t(`settings.field.${field}`, { defaultValue: t(`settings.secret.${field}`, { defaultValue: field }) })).join("، ")}
         </div>
       ) : null}
 
@@ -337,48 +277,7 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
         <Button variant="ghost" busy={save.isPending} disabled={!dirty} onClick={() => save.mutate()}>
           {t("common.save")}
         </Button>
-        {/* render the off-switch only where a simulator exists (dev/test) */}
-        {(!state.is_live || simAllowed) && (
-          <Button
-            variant={state.is_live ? "danger" : "primary"}
-            icon={<ShieldAlert size={15} strokeWidth={1.9} />}
-            onClick={() => (state.is_live ? live.mutate(false) : setConfirming(true))}
-            disabled={live.isPending || (!state.is_live && !ready)}
-            title={state.is_live || ready ? undefined : blockerText}
-            data-testid={`live-switch-${providerKey}`}
-          >
-            {state.is_live ? t("settings.leaveLive") : t("settings.goLive")}
-          </Button>
-        )}
       </footer>
-
-      {confirming ? (
-        <Modal
-          title={t("settings.confirmLiveTitle")}
-          onClose={() => setConfirming(false)}
-          actions={
-            <>
-              <Button variant="ghost" onClick={() => setConfirming(false)}>
-                {t("common.cancel")}
-              </Button>
-              <Button variant="primary" busy={live.isPending} disabled={!ready} onClick={() => live.mutate(true)}>
-                {t("settings.confirmLive")}
-              </Button>
-            </>
-          }
-        >
-          <p className="text-[13px] text-ink">{t("settings.confirmLiveBody", { provider: t(`settings.provider.${providerKey}`) })}</p>
-          {ready ? (
-            <p className="mt-2 text-[12px] font-semibold" style={{ color: "var(--g-ink)" }} data-testid="live-ready">
-              {t("settings.liveReady")}
-            </p>
-          ) : (
-            <p className="mt-2 text-[12px] text-[var(--a-ink)]" data-testid="live-not-ready">
-              {blockerText}
-            </p>
-          )}
-        </Modal>
-      ) : null}
     </Card>
   );
 }

@@ -38,7 +38,7 @@ test.describe("R6 evidence", () => {
     await page.screenshot({ path: path.join(OUT, "17-overdue-queue.png"), fullPage: true });
   });
 
-  test("18-live-switch-blocked.png", async ({ page, request }, testInfo) => {
+  test("18-not-connected.png", async ({ page, request }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop", "the settings cards sit under the mobile bar at 390px");
     // a provider with no green test is exactly what an operator sees before they can go live
     const auth = await apiLogin(request, MANAGER);
@@ -50,9 +50,9 @@ test.describe("R6 evidence", () => {
 
     await login(page, MANAGER);
     await page.goto("/settings");
-    await expect(page.getByTestId("live-blockers-telephony")).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId("live-switch-telephony")).toBeDisabled();
+    await expect(page.getByTestId("connection-missing-telephony")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("live-switch-telephony")).toHaveCount(0);
     await page.waitForTimeout(500);
-    await page.screenshot({ path: path.join(OUT, "18-live-switch-blocked.png"), fullPage: true });
+    await page.screenshot({ path: path.join(OUT, "18-not-connected.png"), fullPage: true });
   });
 });

@@ -1661,10 +1661,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** All attachments on a request (thread + uploads) */
+        get: operations["getApiV1RequestsRequestIdAttachments"];
         put?: never;
         /** Upload an attachment (size+type+extension checked) */
         post: operations["postApiV1RequestsRequestIdAttachments"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/requests/{request_id}/attachments/{attachment_id}/download-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Signed, audited download/play URL for one attachment */
+        get: operations["getApiV1RequestsRequestIdAttachmentsAttachmentIdDownload-Url"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2045,6 +2063,30 @@ export interface paths {
         /** Put Scopes */
         put: operations["putApiV1UsersUserIdScopes"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/webhooks/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inbound email (HMAC-signed provider webhook, idempotent)
+         * @description Email intake (R12 §D, ADR-032): the provider-neutral signed JSON contract documented in the runbook.
+         *
+         *     Signature: `x-email-signature: sha256=<hmac(secret, raw body)>` with the `inbound_secret` credential.
+         *     With no secret configured the route refuses (403) outside dev/test — an unsigned mail firehose into
+         *     the inbox is not a default anyone should inherit.
+         */
+        post: operations["postApiV1WebhooksEmail"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4734,21 +4776,36 @@ export interface components {
             config: {
                 [key: string]: unknown;
             };
+            /**
+             * Connection Status
+             * @description connected | not_connected | error (R12 §A)
+             * @default not_connected
+             */
+            connection_status: string;
             /** Is Live */
             is_live: boolean;
+            /** Last Error */
+            last_error?: string | null;
             /** Last Test Detail */
             last_test_detail?: string | null;
             /** Last Test Status */
             last_test_status?: string | null;
             /** Last Tested At */
             last_tested_at?: string | null;
+            /** Last Webhook At */
+            last_webhook_at?: string | null;
+            /**
+             * Missing Fields
+             * @description named credentials still missing
+             */
+            missing_fields?: string[];
             /** Provider */
             provider: string;
             /** Secrets */
             secrets: components["schemas"]["SecretFieldOut"][];
             /**
              * Status
-             * @description live | ready | unset | error — the badge tone in the card header (R9 §1.D)
+             * @description live | ready | unset | error — legacy badge tone (R9 §1.D)
              */
             status: string;
             /** Updated At */
@@ -8911,6 +8968,39 @@ export interface operations {
             };
         };
     };
+    getApiV1RequestsRequestIdAttachments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     postApiV1RequestsRequestIdAttachments: {
         parameters: {
             query?: never;
@@ -8935,6 +9025,38 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "getApiV1RequestsRequestIdAttachmentsAttachmentIdDownload-Url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordingUrlOut"];
                 };
             };
             /** @description Validation Error */
@@ -9773,6 +9895,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1WebhooksEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

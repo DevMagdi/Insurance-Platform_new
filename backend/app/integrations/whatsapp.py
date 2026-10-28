@@ -89,6 +89,33 @@ class WhatsAppMeta:
         external = response.json().get("messages", [{}])[0].get("id") if ok else None
         return ProviderResult(ok=bool(ok), external_id=external, detail=None if ok else response.text[:300]).as_dict()
 
+    async def send_document(self, *, to: str, content: bytes, filename: str, mime: str, caption: str | None = None) -> dict[str, Any]:
+        """Upload-then-send a document (Graph media upload → messages/document). Failure is returned, never raised silently."""
+        async with _client(timeout=30) as client:
+            upload = await client.post(
+                f"{self.BASE}/{self.phone_number_id}/media",
+                headers={"Authorization": f"Bearer {self.token}"},
+                data={"messaging_product": "whatsapp", "type": mime},
+                files={"file": (filename, content, mime)},
+            )
+            if upload.status_code >= 400:
+                return ProviderResult(ok=False, detail=f"media upload: {upload.text[:200]}").as_dict()
+            media_id = upload.json().get("id")
+            response = await client.post(
+                f"{self.BASE}/{self.phone_number_id}/messages",
+                headers={"Authorization": f"Bearer {self.token}"},
+                json={
+                    "messaging_product": "whatsapp",
+                    "to": to.lstrip("+"),
+                    "type": "document",
+                    "document": {"id": media_id, "filename": filename, **({"caption": caption} if caption else {})},
+                },
+            )
+        if response.status_code >= 400:
+            return ProviderResult(ok=False, detail=response.text[:300]).as_dict()
+        data = response.json()
+        return ProviderResult(ok=True, external_id=data.get("messages", [{}])[0].get("id")).as_dict()
+
     async def fetch_media(self, media_id: str) -> tuple[bytes, str]:
         async with _client(timeout=30) as client:
             meta = (await client.get(f"{self.BASE}/{media_id}", headers={"Authorization": f"Bearer {self.token}"})).json()
@@ -126,6 +153,8 @@ def parse_inbound(raw: bytes) -> list[dict[str, Any]]:
                         "body": _body_of(message.get("type"), payload),
                         "media_kind": None if kind == "text" else kind,
                         "media_id": payload.get("id") if kind != "text" else None,
+                        "filename": payload.get("filename"),
+                        "mime_type": payload.get("mime_type"),
                         "duration_s": int(payload["duration"]) if str(payload.get("duration", "")).isdigit() else None,
                         "status": None,
                     }

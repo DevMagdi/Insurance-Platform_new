@@ -139,6 +139,18 @@ async def assign(request_id: UUID, body: _AssignIn, session: DbSession, scope: S
 async def get_messages(request_id: UUID, session: DbSession, scope: ScopeDep, actor: RequestsView) -> list[dict[str, Any]]:
     request = await requests_svc.get(session, request_id, scope)
     rows = await repo.messages(session, request.id)
+    # Attachments belong to a message (owner_id = message id) and to the request (request_id):
+    # one query for the whole thread, grouped in memory — never one query per message.
+    from sqlalchemy import select
+
+    att_rows = (
+        (await session.execute(select(Attachment).where(Attachment.request_id == request.id).order_by(Attachment.created_at)))
+        .scalars()
+        .all()
+    )
+    by_message: dict[str, list[dict[str, Any]]] = {}
+    for att in att_rows:
+        by_message.setdefault(str(att.owner_id), []).append(_attachment_brief(att))
     return [
         {
             "id": str(m.id),
@@ -152,10 +164,71 @@ async def get_messages(request_id: UUID, session: DbSession, scope: ScopeDep, ac
             "external_id": m.external_id,
             "delivery_status": m.delivery_status.value,
             "created_at": m.created_at.isoformat(),
-            "attachments": [],
+            "attachments": by_message.get(str(m.id), []),
         }
         for m in rows
     ]
+
+
+def _attachment_brief(att: Attachment) -> dict[str, Any]:
+    return {
+        "id": str(att.id),
+        "filename": att.filename,
+        "mime": att.mime,
+        "size": att.size,
+        "created_at": att.created_at.isoformat() if att.created_at else None,
+        "url": None,  # signed URLs are issued (and audited) by the download-url endpoint, never by a list
+    }
+
+
+@router.get("/requests/{request_id}/attachments", summary="All attachments on a request (thread + uploads)")
+async def list_attachments(request_id: UUID, session: DbSession, scope: ScopeDep, actor: RequestsView) -> list[dict[str, Any]]:
+    from sqlalchemy import select
+
+    request = await requests_svc.get(session, request_id, scope)
+    rows = (
+        (await session.execute(select(Attachment).where(Attachment.request_id == request.id).order_by(Attachment.created_at)))
+        .scalars()
+        .all()
+    )
+    return [_attachment_brief(att) for att in rows]
+
+
+@router.get(
+    "/requests/{request_id}/attachments/{attachment_id}/download-url",
+    summary="Signed, audited download/play URL for one attachment",
+    response_model=RecordingUrlOut,
+)
+async def attachment_download_url(
+    request_id: UUID, attachment_id: UUID, session: DbSession, scope: ScopeDep, actor: RequestsView
+) -> dict[str, Any]:
+    from sqlalchemy import select
+
+    from app.core.config import get_settings
+    from app.core.security import make_signed_media_url
+    from app.middleware_ip import ip_of
+    from app.services import audit
+
+    request = await requests_svc.get(session, request_id, scope)
+    att = (
+        await session.execute(select(Attachment).where(Attachment.id == attachment_id, Attachment.request_id == request.id))
+    ).scalar_one_or_none()
+    if att is None:
+        raise NotFound("Attachment not found")
+    url, expires_at = make_signed_media_url(att.object_key, get_settings().RECORDING_SIGNED_URL_TTL_SECONDS)
+    await audit.write(
+        session,
+        actor=actor,
+        action="attachment.accessed",
+        entity_type="attachment",
+        entity_id=att.id,
+        after={"request_id": str(request.id), "filename": att.filename, "mime": att.mime},
+        ip=ip_of(),
+    )
+    await session.commit()
+    from datetime import UTC, datetime
+
+    return {"url": url, "expires_at": datetime.fromtimestamp(expires_at, UTC).isoformat(), "duration_s": None, "recording_consent": False}
 
 
 @router.post("/requests/{request_id}/messages", status_code=201, summary="Reply (sends via the channel provider)")

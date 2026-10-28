@@ -60,6 +60,11 @@ class WhatsAppSim:
         WhatsAppSim.sent.append({"to": to, "template": template, "variables": variables, **result})
         return result
 
+    async def send_document(self, *, to: str, content: bytes, filename: str, mime: str, caption: str | None = None) -> dict[str, Any]:
+        result = ProviderResult(ok=True, external_id=f"wamid.sim_{uuid.uuid4().hex[:16]}").as_dict()
+        WhatsAppSim.sent.append({"to": to, "document": filename, "bytes": len(content), **result})
+        return result
+
     async def fetch_media(self, media_id: str) -> tuple[bytes, str]:
         return b"SIM-AUDIO", "audio/ogg"
 

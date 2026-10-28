@@ -296,6 +296,27 @@ export default function InboxPage() {
               {detail.data.description ? (
                 <p className="rounded-btn bg-[#F2F4FB] px-3 py-2 text-[13px] text-muted">{detail.data.description}</p>
               ) : null}
+              {(detail.data.attachments ?? []).length ? (
+                <div className="rounded-btn border border-line bg-white px-3 py-2">
+                  <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-muted">{t("inbox.attachments")}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(detail.data.attachments ?? []).map((file) =>
+                      file.url ? (
+                        <a
+                          key={file.id}
+                          href={file.url}
+                          download={file.filename}
+                          className="inline-flex items-center gap-1.5 rounded-pill border border-line px-2.5 py-1 text-[12px] font-semibold text-ink"
+                        >
+                          <Paperclip size={12} strokeWidth={1.8} />
+                          <span className="max-w-[180px] truncate">{file.filename}</span>
+                          <Download size={12} strokeWidth={1.8} className="text-muted" />
+                        </a>
+                      ) : null,
+                    )}
+                  </div>
+                </div>
+              ) : null}
               {(detail.data?.messages ?? []).map((message) => (
                 <Bubble key={message.id} message={message} />
               ))}
@@ -472,6 +493,28 @@ function Bubble({ message }: { message: MessageRow }) {
           />
         ) : null}
         {message.body ? <p>{message.body}</p> : null}
+        {(message.attachments ?? [])
+          .filter((file) => !file.mime.startsWith("audio/"))
+          .map((file) =>
+            file.mime.startsWith("image/") && file.url ? (
+              <a key={file.id} href={file.url} target="_blank" rel="noreferrer" className="mt-2 block">
+                <img src={file.url} alt={file.filename} className="max-h-[220px] rounded-btn border border-line object-contain" />
+              </a>
+            ) : file.mime.startsWith("video/") && file.url ? (
+              <video key={file.id} src={file.url} controls className="mt-2 max-h-[240px] w-full rounded-btn border border-line" />
+            ) : file.url ? (
+              <a
+                key={file.id}
+                href={file.url}
+                download={file.filename}
+                className="mt-2 flex items-center gap-2 rounded-btn border border-line bg-white px-2.5 py-2 text-[12px] font-semibold text-ink"
+              >
+                <Paperclip size={14} strokeWidth={1.8} />
+                <span className="min-w-0 flex-1 truncate">{file.filename}</span>
+                <Download size={14} strokeWidth={1.8} className="text-muted" />
+              </a>
+            ) : null,
+          )}
         <div className={`mt-1 flex items-center gap-1 text-[10.5px] ${outbound ? "text-white/70" : "text-muted"}`}>
           {relativeTime(message.created_at)}
           {outbound ? (message.delivery_status === "delivered" ? <Check size={12} strokeWidth={2.4} /> : <Clock3 size={11} strokeWidth={1.8} />) : null}

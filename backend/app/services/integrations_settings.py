@@ -118,7 +118,7 @@ PROVIDER_FIELDS: dict[str, tuple[FieldSpec, ...]] = {
 PROVIDER_SECRETS: dict[str, tuple[str, ...]] = {
     "whatsapp": ("access_token", "app_secret", "verify_token"),
     "telephony": ("webhook_secret", "api_key"),
-    "email": ("password",),
+    "email": ("password", "inbound_secret"),
 }
 
 #: which environment variable each field falls back to (ADR-016 §4)
@@ -145,6 +145,7 @@ ENV_FALLBACK: dict[str, dict[str, str]] = {
         "from_name": "SMTP_FROM_NAME",
         "from_email": "EMAIL_FROM",
         "reply_to": "SMTP_REPLY_TO",
+        "inbound_secret": "EMAIL_INBOUND_SECRET",
     },
 }
 
@@ -155,6 +156,8 @@ PRIMARY_SECRET = {"whatsapp": "access_token", "telephony": "webhook_secret", "em
 LIVE_REQUIRED_SECRETS: dict[str, tuple[str, ...]] = {
     "whatsapp": ("access_token", "app_secret"),
     "telephony": ("webhook_secret",),
+    # inbound_secret is deliberately not required here: an outbound-only SMTP setup is connected
+    # for replies; the inbound webhook refuses unsigned deliveries until its own secret is set (R12 §D)
     "email": ("password",),
 }
 
@@ -237,6 +240,12 @@ class State:
     last_test_status: str | None = None
     last_test_detail: str | None = None
     updated_at: str | None = None
+    # Connection semantics (R12 §A): the only states an operator acts on. Saving valid credentials
+    # connects; missing/invalid credentials are named, never silently simulated.
+    connection_status: str = "not_connected"  # connected | not_connected | error
+    missing_fields: list[str] = field(default_factory=list)
+    last_webhook_at: str | None = None
+    last_error: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -245,6 +254,10 @@ class State:
             "secrets": self.secrets,
             "is_live": self.is_live,
             "status": self.status,
+            "connection_status": self.connection_status,
+            "missing_fields": self.missing_fields,
+            "last_webhook_at": self.last_webhook_at,
+            "last_error": self.last_error,
             "last_tested_at": self.last_tested_at,
             "last_test_status": self.last_test_status,
             "last_test_detail": self.last_test_detail,
@@ -322,6 +335,44 @@ async def state(session: AsyncSession, provider: str) -> State:
         updated_at=row.updated_at.astimezone(UTC).isoformat() if row and row.updated_at else None,
     )
     out.status = _status_of(out)
+    # connection semantics (R12 §A): missing credentials are named, a failed test is an error,
+    # and a fully credentialed provider is connected — there is no operator "go live" step any more.
+    missing: list[str] = []
+    for spec in PROVIDER_FIELDS[provider]:
+        if spec.required_for_live and str(out.config.get(spec.key) or "").strip() in ("", "0"):
+            missing.append(spec.key)
+    set_secrets = {item["key"] for item in out.secrets if item["set"]}
+    missing.extend(key for key in LIVE_REQUIRED_SECRETS.get(provider, ()) if key not in set_secrets)
+    out.missing_fields = missing
+    from app.models.integrations import WebhookEvent
+
+    latest_ok = (
+        (
+            await session.execute(
+                select(WebhookEvent)
+                .where(WebhookEvent.provider == provider, WebhookEvent.status == "ok")
+                .order_by(WebhookEvent.occurred_at.desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    latest_err = (
+        (
+            await session.execute(
+                select(WebhookEvent)
+                .where(WebhookEvent.provider == provider, WebhookEvent.status.in_(["error", "rejected"]))
+                .order_by(WebhookEvent.occurred_at.desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    out.last_webhook_at = latest_ok.occurred_at.astimezone(UTC).isoformat() if latest_ok else None
+    out.last_error = (latest_err.detail or latest_err.status) if latest_err else None
+    out.connection_status = "error" if out.last_test_status == "failed" else ("connected" if not missing else "not_connected")
     return out
 
 
@@ -367,6 +418,15 @@ def webhook_urls() -> dict[str, Any]:
                 "note": (
                     "اضبط مزود مكالمات الموبايل أن يرسل started / ended / recording_ready مع ترويسة "
                     "X-Call-Signature. المسار القديم /webhooks/telephony ما زال يعمل كمرادف."
+                ),
+            },
+            {
+                "provider": "email",
+                "label": "البريد الوارد (Email inbound)",
+                "url": f"{base}{prefix}/webhooks/email",
+                "note": (
+                    "مزوّد بريد وارد (webhook) يرسل JSON موقّعًا بـ X-Email-Signature: "
+                    "sha256=HMAC(inbound_secret, body) — العقد في docs/runbook.md."
                 ),
             },
         ],
