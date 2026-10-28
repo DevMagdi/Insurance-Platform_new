@@ -266,6 +266,23 @@ curl -sS -X POST "https://<نطاق-الوسيط>/api/v1/webhooks/mobile-calls" 
 `calls/CA-runbook-1.wav`؛ وإن تعذّر التنزيل يظهر `recording_fetch_failed` في
 `GET /api/v1/settings/integrations/events` ولا تُسقَط المكالمة.
 
+### ج) البريد الوارد (R12، ADR-032) — ويبهوك موقّع، لا صندوق IMAP
+
+لا يوجد «وضع حيّ» يُشغَّل: احفظ بيانات الاعتماد في الشاشة فتصبح القناة «متصل»، ودليل العمل أن
+`آخر ويبهوك ناجح` يتحرك. البريد يدخل عبر مزوّد بريد وارد (SendGrid Inbound Parse / Mailgun Routes /
+SES→SNS أو أي جسر) يرسل JSON إلى الـ Webhook URL الظاهر في كرت البريد:
+
+```bash
+SECRET=\"<INBOUND_SECRET>\"; BODY='{"external_id":"msg-1","from":"client@example.com","from_name":"عميل","subject":"تجديد وثيقة","body":"النص","attachments":[]}'
+SIG=\"sha256=$(printf '%s' \"$BODY\" | openssl dgst -sha256 -hmac \"$SECRET\" -hex | sed 's/^.* //')\ncurl -sS -X POST \"https://<نطاق-الوسيط>/api/v1/webhooks/email\" \
+  -H \"Content-Type: application/json\" -H \"X-Email-Signature: $SIG\" -d \"$BODY\"
+# جديد: {"status":"created",...} · إعادة نفس external_id: {"status":"duplicate"} · مرسل معروف برسالة جديدة: {"status":"appended"}
+```
+
+- المرفقات `{filename, mime, content_base64}` تمرّ بقائمة MIME والحجم نفسها؛ نوع مرفوض = **422** لا إسقاط صامت.
+- توقيع خاطئ/غائب (مع ضبط `inbound_secret`) = 401 ولا يُكتب أي صف.
+- إعادة إرسال المزوّد بعد 5xx آمنة: `external_id` يمنع التكرار (مُثبت تحت الحمل: صفر مضاعفات).
+
 ### ب.١) قبل تشغيل الوضع الحيّ: ما يفحصه النظام، وما يقوله بالعربي (R7)
 
 `live` لا يُشغَّل بمجرّد النقر: `GET /api/v1/settings/integrations/{provider}/preflight` يعيد **قائمة

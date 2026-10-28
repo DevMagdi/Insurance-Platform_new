@@ -17,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Header, Query, Request
 from fastapi.responses import PlainTextResponse
 
 from app.api.v1.deps import DbSession
+from app.core.config import get_settings
 from app.core.errors import Forbidden, ValidationFailed
 from app.integrations import registry
 from app.integrations.base import StorageProvider, WhatsAppProvider
@@ -140,6 +141,7 @@ async def whatsapp_webhook(request: Request, session: DbSession, background: Bac
                 media_object_key=media_key,
                 media_mime=media_mime,
                 media_size=media_size,
+                media_filename=event.get("filename"),
                 duration_s=event.get("duration_s"),
             )
         )
@@ -223,6 +225,92 @@ async def mobile_calls_webhook(
         external_id=str(body.get("provider_call_id") or "") or None,
         status=str(result.get("status") or "ok"),
         detail=None if result.get("status") != "ignored" else "duplicate/unknown — no state change",
+    )
+    await session.commit()
+    return result
+
+
+_EMAIL_MIME = {
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "text/plain",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "audio/ogg",
+    "audio/mpeg",
+}
+_EMAIL_MAX_BYTES = 12 * 1024 * 1024
+
+
+@router.post("/webhooks/email", summary="Inbound email (HMAC-signed provider webhook, idempotent)")
+async def email_webhook(request: Request, session: DbSession) -> dict[str, Any]:
+    """Email intake (R12 §D, ADR-032): the provider-neutral signed JSON contract documented in the runbook.
+
+    Signature: `x-email-signature: sha256=<hmac(secret, raw body)>` with the `inbound_secret` credential.
+    With no secret configured the route refuses (403) outside dev/test — an unsigned mail firehose into
+    the inbox is not a default anyone should inherit.
+    """
+    import base64
+    import binascii
+    import hashlib
+    import hmac as hmac_mod
+    import json as json_mod
+
+    raw = await request.body()
+    secret = registry.resolved("email").secret("inbound_secret")
+    if secret:
+        expected = "sha256=" + hmac_mod.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+        provided = request.headers.get("x-email-signature") or ""
+        if not hmac_mod.compare_digest(expected, provided):
+            await _log_rejected(session, "email", raw)
+            raise Forbidden("Invalid webhook signature")
+    elif not get_settings().simulation_allowed:
+        await _log_rejected(session, "email", raw, detail="inbound_secret not configured")
+        raise Forbidden("Email inbound is not configured")
+    try:
+        body = json_mod.loads(raw or b"{}")
+    except json_mod.JSONDecodeError:
+        raise ValidationFailed("Body must be JSON") from None
+    external_id = str(body.get("external_id") or body.get("message_id") or "")
+    from_email = str(body.get("from") or "")
+    if not external_id or "@" not in from_email:
+        raise ValidationFailed("external_id and a valid from address are required")
+
+    staged: list[dict[str, Any]] = []
+    storage_backend = storage()
+    for att in body.get("attachments") or []:
+        mime = str(att.get("mime") or "application/octet-stream")
+        if mime not in _EMAIL_MIME:
+            raise ValidationFailed("Unsupported attachment type", details={"mime": mime})
+        try:
+            content = base64.b64decode(str(att.get("content_base64") or ""), validate=True)
+        except (binascii.Error, ValueError):
+            raise ValidationFailed("Attachment content_base64 is invalid") from None
+        if len(content) > _EMAIL_MAX_BYTES:
+            raise ValidationFailed("Attachment too large", details={"max_bytes": _EMAIL_MAX_BYTES})
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(att.get("filename") or "attachment"))[:120]
+        safe_ext = re.sub(r"[^A-Za-z0-9_.-]", "_", external_id)[:60]
+        key = f"email/{safe_ext}/{safe_name}"
+        storage_backend.put_object(key, content, mime)
+        staged.append({"filename": att.get("filename") or safe_name, "mime": mime, "size": len(content), "object_key": key})
+
+    result = await intake.ingest_email_message(
+        session,
+        external_id=external_id,
+        from_email=from_email,
+        from_name=body.get("from_name"),
+        subject=body.get("subject"),
+        body=body.get("body_text") or body.get("body"),
+        attachments=staged,
+    )
+    await integrations_settings.record_event(
+        session,
+        provider="email",
+        event_type="message",
+        external_id=external_id,
+        status="ok",
+        detail=f"attachments={len(staged)}",
     )
     await session.commit()
     return result

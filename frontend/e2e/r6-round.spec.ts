@@ -293,20 +293,12 @@ test.describe("R6 · the live switch", () => {
       await login(page, MANAGER);
       await page.goto("/settings");
 
-      const switchButton = page.getByTestId("live-switch-whatsapp");
-      // the button is offered only because the server said so — the screen asks before it draws it
-      await expect(switchButton).toBeEnabled({ timeout: 20_000 });
-      await expect(page.getByTestId("live-blockers-whatsapp")).toHaveCount(0);
-      await switchButton.click();
-
-      // the dialog names the readiness, and only then is confirm pressable
-      await expect(page.getByTestId("live-ready")).toBeVisible();
-      await page.getByRole("button", { name: "تأكيد والتبديل", exact: true }).click();
-
-      await expect(page.getByTestId("live-switch-whatsapp")).toHaveText(/إيقاف الوضع الحيّ/, { timeout: 20_000 });
+      // R12 §A: no switch exists — saved credentials + green test read as Connected on the card and the row
+      await expect(page.getByTestId("live-switch-whatsapp")).toHaveCount(0);
+      await expect(page.getByText("متصل", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
       const stored = await request.get("/api/v1/settings/integrations/whatsapp", { headers: auth });
       expect(stored.status(), await stored.text()).toBe(200);
-      expect((await stored.json()).is_live).toBe(true);
+      expect((await stored.json()).connection_status).toBe("connected");
 
       // the promise of this round: not one refused switch, not one 5xx, not one console error
       expect(watched.badResponses, `refused or broken API calls: ${watched.badResponses.join(" | ")}`).toEqual([]);
@@ -335,13 +327,9 @@ test.describe("R6 · the live switch", () => {
     await login(page, MANAGER);
     await page.goto("/settings");
 
-    const switchButton = page.getByTestId("live-switch-telephony");
-    await expect(switchButton).toBeDisabled({ timeout: 20_000 });
-    await expect(switchButton).toHaveAttribute("title", /مكالمات الموبايل/);
-    await expect(page.getByTestId("live-blockers-telephony")).toContainText(/مكالمات الموبايل/);
-
-    // pressing it anyway does nothing — and, above all, sends nothing
-    await switchButton.click({ force: true });
+    // R12 §A: no switch to press — the card names the missing field and nothing is sent
+    await expect(page.getByTestId("live-switch-telephony")).toHaveCount(0);
+    await expect(page.getByTestId("connection-missing-telephony")).toContainText(/مكالمات الموبايل/);
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(watched.badResponses, `the screen called a refused endpoint: ${watched.badResponses.join(" | ")}`).toEqual([]);
     expect(watched.errors, `console errors: ${watched.errors.join(" | ")}`).toEqual([]);

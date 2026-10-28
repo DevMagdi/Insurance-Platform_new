@@ -285,8 +285,36 @@ async def add_outbound_message(
         target = request.contact_mobile
         if provider is not None and target:
             result = await provider.send_text(to=target, body=body)
-            message.external_id = result.get("message_id")
+            message.external_id = result.get("external_id") or result.get("message_id")
             message.delivery_status = DeliveryStatus.SENT if result.get("ok") else DeliveryStatus.FAILED
+            # Optional document on the same reply: upload-then-send each attached file; any failure
+            # marks the row FAILED so the operator sees it on the message, not in a log (R12 §B.6).
+            if message.delivery_status is DeliveryStatus.SENT and attachment_ids and hasattr(provider, "send_document"):
+                from app.integrations.storage import storage
+
+                rows = (await session.execute(sa.select(Attachment).where(Attachment.id.in_(attachment_ids)))).scalars().all()
+                for att in rows:
+                    try:
+                        doc = await provider.send_document(
+                            to=target, content=storage().get_object(att.object_key), filename=att.filename, mime=att.mime
+                        )
+                    except Exception as exc:  # provider/network failure must surface on the row, not 500 the reply
+                        doc = {"ok": False, "detail": f"{type(exc).__name__}: {str(exc)[:160]}"}
+                    if not doc.get("ok"):
+                        message.delivery_status = DeliveryStatus.FAILED
+    elif used_channel is Channel.EMAIL:
+        # Outbound email reply (R12 §D.3): SMTP when connected; otherwise the row is FAILED, visibly.
+        from app.integrations.registry import email_notifier
+
+        target_email = request.external_thread_id if request.external_thread_id and "@" in request.external_thread_id else None
+        notifier = email_notifier()
+        sent_ok = False
+        if target_email is not None and hasattr(notifier, "send_email"):
+            try:
+                sent_ok = bool(await notifier.send_email(to=target_email, subject=f"Re: {request.subject}", body=body))
+            except Exception:
+                sent_ok = False
+        message.delivery_status = DeliveryStatus.SENT if sent_ok else DeliveryStatus.FAILED
     await audit.write(
         session,
         actor=actor,

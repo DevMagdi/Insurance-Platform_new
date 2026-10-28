@@ -76,6 +76,20 @@ export const STATUS_BADGE: Record<StatusKey, { tone: "t" | "b" | "r" | null; lab
   error: { tone: "r", labelKey: "settings.status.error" },
 };
 
+export type ConnectionKey = "connected" | "not_connected" | "error";
+
+/**
+ * Connection semantics (R12 §A): the only badge an operator acts on. `connected` when the server holds
+ * every required credential, `error` when the last connection test failed, otherwise `not_connected`
+ * with the missing credentials named by the server (`missing_fields`). There is no "live" switch.
+ */
+export function connectionBadge(state: ProviderState | null | undefined): { key: ConnectionKey; tone: "t" | "b" | "r" | null; labelKey: string } {
+  const status = asText(state?.connection_status);
+  if (status === "connected") return { key: "connected", tone: "t", labelKey: "settings.connection.connected" };
+  if (status === "error" || state?.last_test_status === "failed") return { key: "error", tone: "r", labelKey: "settings.connection.error" };
+  return { key: "not_connected", tone: null, labelKey: "settings.connection.notConnected" };
+}
+
 export function statusBadge(status: string | null | undefined): { tone: "t" | "b" | "r" | null; labelKey: string } {
   // `sim` is what an un-upgraded API still answers for a configured provider — read it as «جاهز», never
   // as a badge that says the channel is simulated.

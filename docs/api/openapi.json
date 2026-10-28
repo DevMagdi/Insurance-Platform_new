@@ -6719,9 +6719,26 @@
             "title": "Config",
             "type": "object"
           },
+          "connection_status": {
+            "default": "not_connected",
+            "description": "connected | not_connected | error (R12 §A)",
+            "title": "Connection Status",
+            "type": "string"
+          },
           "is_live": {
             "title": "Is Live",
             "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
           },
           "last_test_detail": {
             "anyOf": [
@@ -6756,6 +6773,25 @@
             ],
             "title": "Last Tested At"
           },
+          "last_webhook_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Webhook At"
+          },
+          "missing_fields": {
+            "description": "named credentials still missing",
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Fields",
+            "type": "array"
+          },
           "provider": {
             "title": "Provider",
             "type": "string"
@@ -6768,7 +6804,7 @@
             "type": "array"
           },
           "status": {
-            "description": "live | ready | unset | error — the badge tone in the card header (R9 §1.D)",
+            "description": "live | ready | unset | error — legacy badge tone (R9 §1.D)",
             "title": "Status",
             "type": "string"
           },
@@ -14651,6 +14687,52 @@
       }
     },
     "/api/v1/requests/{request_id}/attachments": {
+      "get": {
+        "operationId": "getApiV1RequestsRequestIdAttachments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Getapiv1Requestsrequestidattachments",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "All attachments on a request (thread + uploads)",
+        "tags": [
+          "requests (service desk)"
+        ]
+      },
       "post": {
         "operationId": "postApiV1RequestsRequestIdAttachments",
         "parameters": [
@@ -14700,6 +14782,59 @@
           }
         },
         "summary": "Upload an attachment (size+type+extension checked)",
+        "tags": [
+          "requests (service desk)"
+        ]
+      }
+    },
+    "/api/v1/requests/{request_id}/attachments/{attachment_id}/download-url": {
+      "get": {
+        "operationId": "getApiV1RequestsRequestIdAttachmentsAttachmentIdDownload-Url",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordingUrlOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Signed, audited download/play URL for one attachment",
         "tags": [
           "requests (service desk)"
         ]
@@ -15862,6 +15997,30 @@
         "summary": "Put Scopes",
         "tags": [
           "users & roles"
+        ]
+      }
+    },
+    "/api/v1/webhooks/email": {
+      "post": {
+        "description": "Email intake (R12 §D, ADR-032): the provider-neutral signed JSON contract documented in the runbook.\n\nSignature: `x-email-signature: sha256=<hmac(secret, raw body)>` with the `inbound_secret` credential.\nWith no secret configured the route refuses (403) outside dev/test — an unsigned mail firehose into\nthe inbox is not a default anyone should inherit.",
+        "operationId": "postApiV1WebhooksEmail",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Postapiv1Webhooksemail",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Inbound email (HMAC-signed provider webhook, idempotent)",
+        "tags": [
+          "webhooks"
         ]
       }
     },

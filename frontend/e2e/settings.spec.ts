@@ -97,23 +97,16 @@ test.describe("settings hub · providers", () => {
 
     await login(page, MANAGER);
     await page.goto("/settings");
-    const switchButton = page.getByTestId("live-switch-telephony");
-    await expect(switchButton).toBeDisabled({ timeout: 20_000 });
-    await expect(switchButton).toHaveText("التبديل إلى الحيّ"); // still the way in, just not yet
-    // the blocker panel names the missing test, and offers the one action that fixes it
-    const blockers = page.getByTestId("live-blockers-telephony");
-    await expect(blockers).toBeVisible();
-    await expect(blockers).toContainText("لم ينجح اختبار اتصال بعد");
-    await expect(blockers.getByRole("button", { name: "شغّل الاختبار الآن" })).toBeVisible();
-
-    // a disabled button that is pressed anyway opens nothing and sends nothing
-    await switchButton.click({ force: true });
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // R12 §A: there is no live switch any more — the card states the connection and names what is missing
+    await expect(page.getByTestId("live-switch-telephony")).toHaveCount(0);
+    await expect(page.getByText("غير متصل", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+    const missing = page.getByTestId("connection-missing-telephony");
+    await expect(missing).toBeVisible();
     const after = await request.get("/api/v1/settings/integrations/telephony", { headers: auth });
-    expect((await after.json()).is_live, "a refused switch must not have reached the row").toBe(false);
+    expect((await after.json()).connection_status, "an uncredentialed row must not read connected").toBe("not_connected");
   });
 
-  test("test → live really flips the badge, and going back asks for nothing", async ({ page, request }) => {
+  test("saving credentials and a green test shows Connected — no switch is pressed (R12)", async ({ page, request }) => {
     test.skip(test.info().project.name !== "desktop", "desktop-only — see the header");
     await login(page, MANAGER);
     await page.goto("/settings");
@@ -127,20 +120,13 @@ test.describe("settings hub · providers", () => {
     await page.getByRole("button", { name: "اختبار الاتصال" }).first().click();
     await expect(page.getByTestId("test-result-whatsapp")).toContainText("وضع المحاكاة", { timeout: 20_000 });
 
-    await whatsapp.getByRole("button", { name: "التبديل إلى الحيّ" }).click();
-    await page.getByRole("dialog", { name: "تأكيد التحوّل إلى الوضع الحيّ" }).getByRole("button", { name: "تأكيد والتبديل" }).click();
-    // R9 §1.D: the live badge reads `Live` in both languages
-    await expect(whatsapp.getByText("Live", { exact: true })).toBeVisible({ timeout: 20_000 });
-    // the row is what the drivers read, so the badge is checked against it, not against a label alone
+    // R12 §A: credentials + a green test are the connection — the badge flips with no switch pressed
+    await expect(whatsapp.getByText("متصل", { exact: true })).toBeVisible({ timeout: 20_000 });
     const auth = await apiLogin(request, MANAGER);
     await expect
-      .poll(async () => ((await (await request.get("/api/v1/settings/integrations/whatsapp", { headers: auth })).json()).is_live as boolean))
-      .toBe(true);
-
-    await whatsapp.getByRole("button", { name: "إيقاف الوضع الحيّ" }).click();
-    // R9 §1.D: the badge of a configured, not-live provider is «جاهز», never «محاكاة»
-    await expect(whatsapp.getByText("جاهز", { exact: true })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByRole("dialog")).toHaveCount(0); // the safe direction needs no confirmation
+      .poll(async () => ((await (await request.get("/api/v1/settings/integrations/whatsapp", { headers: auth })).json()).connection_status as string))
+      .toBe("connected");
+    await expect(page.getByTestId("live-switch-whatsapp")).toHaveCount(0);
 
     await page.getByTestId(DROP_TOKEN).click();
     await page.getByTestId(PHONE).fill("");
