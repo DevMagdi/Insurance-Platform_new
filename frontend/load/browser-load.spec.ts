@@ -67,11 +67,37 @@ async function signIn(page: Page, email: string): Promise<void> {
 }
 
 /** One navigation, timed and judged: the assertion is that the screen rendered, not that HTML came back. */
-async function step(page: Page, role: Role, name: string, pathname: string, marker: RegExp): Promise<StepStat> {
+/**
+ * One screen of one flow.
+ *
+ * A person moves between screens by clicking the sidebar, not by reloading the whole bundle every two
+ * seconds; the first version of this spec used `page.goto` for every step, which throws the in-memory access
+ * token away each time and makes every step call `POST /auth/refresh` — with several contexts signed in as
+ * the same seeded account (5 managers share one, 5 portal clients share one) that is a refresh-token
+ * collision, not a load measurement. Clicking the real `href` keeps the session like a human does, and
+ * `page.goto` stays as the fallback for screens with no sidebar entry (`/leads/new`, the portal).
+ */
+async function step(
+  page: Page,
+  role: Role,
+  name: string,
+  pathname: string,
+  marker: RegExp,
+  { heading = true }: { heading?: boolean } = {},
+): Promise<StepStat> {
   const started = Date.now();
   try {
-    await page.goto(`${BASE}${pathname}`, { waitUntil: "domcontentloaded", timeout: 45_000 });
-    await expect(page.getByText(marker).first()).toBeVisible({ timeout: 30_000 });
+    const link = page.locator(`nav[aria-label] a[href="${pathname}"]`).first();
+    const inApp = (await link.count()) > 0 && (await link.isVisible().catch(() => false));
+    if (inApp) {
+      await link.click({ timeout: 15_000 });
+    } else {
+      await page.goto(`${BASE}${pathname}`, { waitUntil: "domcontentloaded", timeout: 45_000 });
+    }
+    // the screen's own `h1` (PageHeader) — not "somewhere on the page": the sidebar prints the same words,
+    // so a text match would pass even when the screen itself never rendered
+    const target = heading ? page.locator("h1").filter({ hasText: marker }).first() : page.getByText(marker).first();
+    await expect(target).toBeVisible({ timeout: 20_000 });
     return { role, step: name, ms: Date.now() - started, ok: true };
   } catch (error) {
     return { role, step: name, ms: Date.now() - started, ok: false, detail: (error as Error).message.split("\n")[0] };
@@ -114,7 +140,7 @@ async function runUser(browser: Browser, role: Role, index: number, stopAt: numb
                 ]
               : [
                   // the portal greets the client by name and lists their request/policy tabs
-                  await step(page, role, "portal", "/portal", /أهلاً بك|وثائقي|الأقساط/),
+                  await step(page, role, "portal", "/portal", /أهلاً بك|وثائقي|الأقساط/, { heading: false }),
                 ];
       result.steps.push(...steps);
       if (steps.every((s) => s.ok)) result.flows_ok += 1;
