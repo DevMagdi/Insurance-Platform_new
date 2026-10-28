@@ -525,6 +525,40 @@ PR #5. الفشل المتبقّي له ثلاثة أصول، كلُّها مُ�
 أثر `screenshots`: `17a-dashboard-overdue-card.png` و`17-overdue-queue.png` و`18-live-switch-blocked.png`
 · وأثر `playwright-report` يحمل فيديو التدفقين.
 
+## جولة R7 — «التحصين للإنتاج»: مسار الفاز‑2، وصقل البوابة، وقفل القنوات الحيّة
+
+النطاق: (١) مسودة → إصدار → PDF → أقساط → دفع من الواجهة، (٢) البوابة، (٣) القنوات الحيّة، (٤) انحدار
+طلبات المالك. التقرير الكامل: [qa/r7-production-hardening-2026-10-28.md](qa/r7-production-hardening-2026-10-28.md).
+
+| # | البند | الحالة قبل R7 | ما نُفِّذ | الدليل |
+|---|---|---|---|---|
+| 1 | مسودة من الشاشة | لا باب في الواجهة إطلاقًا | `NewPolicyDialog` ببابين (رأس `/policies` + مستندات ملف العميل)، الحفظ معطّل حتى تكتمل الحقول | `frontend/tests/phase2Ops.test.tsx` (6) · `e2e/r7-round.spec.ts` |
+| 2 | رسالة النقص | 500/رسالة عامة | `422` + `details[{field,message}]` عربية بجانب الحقل | `tests/test_phase2_ops.py` |
+| 3 | اسم العميل على الصفّ | `—` (لا علاقة `client` في الموديل) | `Policy.client` + `ClientRefOut` + عمود في الجدول | `test_phase2_ops.py` |
+| 4 | شارة الحالة | كانت تقرأ جملة توست كاملة (`phase2.issued`) | `phase2.policyStatus.*` (مسودة/بانتظار شركة/صادرة/منتهية/ملغاة) | `phase2Ops.test.tsx` |
+| 5 | الأقساط | `status` يبقى `upcoming` أبدًا، و«متأخر» يُحسب في المتصفح | `services/installments.py`: `refresh_late` (مخزَّن، idempotent) + `totals` + حزمة `{policy, items, totals, commission}` | `test_phase2_ops.py` |
+| 6 | تسجيل دفع | لا مسار | `POST /policies/{id}/installments/{iid}/pay` (+ سجل تدقيق)، والثانية `409` | `SMOKE`: `paid, once` ثم `409, not a second receipt` |
+| 7 | العمولة | `0.00` كاذبة | `computed` / `not_computed` و«غير محسوبة» في الواجهة | `phase2Ops.test.tsx` |
+| 8 | تسليم بيانات البوابة | حقلان يجمّعهما الموظف | رسالة جاهزة + «نسخ الرسالة» + تحذير الإرسال | `e2e/live-round.spec.ts` |
+| 9 | **P1 أمني** | توقيع webhook على مفتاح فارغ = **قابل للتزوير** | المفتاح الفارغ يرفض | `test_intake.py` + `test_live_channels.py` |
+| 10 | فلتر المدير | بلا اختبار يثبت أن النتيجة من الخادم | `tests/test_manager_filters.py` (3): ممثل + مرحلة + القائمة، والممثل لا يقرأ كتاب زميله | 3 خضراء |
+| 11 | اختبار كان يحمي عيبًا | `status == "upcoming"` لتواريخ ماضية | يشتقّ المتوقّع من `due_date` مقابل اليوم | `test_integrations_settings.py` |
+| 12 | `smoke_api.py` | لا يغطّي الأقساط ولا الدفع | يغطيهما، ويحلّ `installment_id` من خطة السياسة نفسها | `SMOKE OK — 126/129` |
+| 13 | `runbook.md` | لا قسم «قبل الوضع الحيّ» | قسم ب.١: جدول الحواجز **منقول حرفيًا** من `switch_blockers()`/`FIELD_LABELS` + أمر `preflight` + نصّ «لم يُجرَّب اتصال بمزوّد حقيقي» | `docs/runbook.md` |
+
+**بوابات R7 (مخرجات حرفية):** `ruff check .` ⇒ `All checks passed!` · `ruff format --check .` ⇒
+`165 files already formatted` · `mypy app` ⇒ `Success: no issues found in 113 source files` ·
+`pytest -q` ⇒ **279** مجموعة · **0** فشل · exit 0 (10 مُتخطَّاة `postgres_only`) · `smoke_api.py` ⇒
+`SMOKE OK — 126/129 documented calls answered` · `live_matrix.py` ⇒
+`checks: 231 · passed: 231 · P0 failed: 0 · warnings: 0` · `check_openapi_fresh.py` ⇒
+`openapi.json is fresh (110 paths)` · الواجهة: `eslint` نظيف · `tsc` (app + e2e) نظيف ·
+`vitest` ⇒ **121/121 في 17 ملفًا** · `build` ⇒ `✓ built in 7.76s` · `codegen:api` ⇒ 146 مخططًا ·
+**e2e في CI فقط** (لا متصفح هنا): `frontend/e2e/r7-round.spec.ts` (2) يُصرَّف محليًا ويُنفَّذ في CI.
+
+**ما لم يُدَّع:** لا اتصال فعلي بـMeta ولا بسنترال حقيقي (لا حساب ولا رقم مرخّص في هذه البيئة)؛ المثبت
+عقد موقَّع ومختبَر (توقيع/تكرار/تسريب/SSRF) + خطوات المشغّل السبعة في الـrunbook. راجع
+[التقرير](qa/r7-production-hardening-2026-10-28.md) §3.
+
 ## قرارات اتُّخذت نيابة عن المالك (لأن الأسئلة غير مسموحة)
 
 | قرار | ملف |
