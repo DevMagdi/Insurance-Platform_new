@@ -8,6 +8,7 @@ gated on a green test and an explicit confirmation, and the event log shows what
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -300,7 +301,11 @@ async def test_underwriting_defaults_round_trip_and_seed_a_new_policy(client: An
     assert [i["sequence_no"] for i in items] == [1, 2, 3, 4]
     assert [i["due_date"] for i in items] == ["2026-01-31", "2026-04-30", "2026-07-31", "2026-10-31"]
     assert [i["amount"] for i in items] == [250.0, 250.0, 250.0, 250.01]
-    assert all(i["status"] == "upcoming" for i in items)
+    # R7: the status is no longer frozen at `upcoming` — a row whose due date has passed reads `late`, and
+    # the server is the one that says so (the screen used to derive it in the browser, ADR-028 §3).
+    today = date.today()
+    expected = ["late" if date.fromisoformat(i["due_date"]) < today else "upcoming" for i in items]
+    assert [i["status"] for i in items] == expected
 
 
 async def test_policy_creation_is_gated_on_the_phase2_flag_and_the_permission(client: Any, ids: dict) -> None:

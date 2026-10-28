@@ -133,6 +133,10 @@ def _params_for(client: Any, headers: dict[str, str], known: dict[str, str]) -> 
     request_id = table["request_id"]
     if request_id:
         table["call_id"] = _first_id(client, headers, f"/api/v1/requests/{request_id}/calls")
+    # an installment lives under one policy, so it cannot come from a global list — take it from the plan of
+    # the first policy the seed knows (the curated block overwrites `policy_id` with a fresh issued one)
+    if table["policy_id"]:
+        table["installment_id"] = _first_id(client, headers, f"/api/v1/policies/{table['policy_id']}/installments")
     for row in _items(client, headers, "/api/v1/clients"):
         insured = _first_id(client, headers, f"/api/v1/clients/{row['id']}/insured")
         if insured:
@@ -541,6 +545,28 @@ def main() -> int:
                         print("ok   GET /api/v1/portal/policies/{id}/document -> the same file, one company only")
                     else:
                         failures.append(f"portal policy document -> {portal_file.status_code}")
+                    # — the money half (R7): the schedule the issue produced, then one real payment —
+                    plan = client.get(f"/api/v1/policies/{policy_id}/installments", headers=admin)
+                    if plan.status_code == 200 and plan.json().get("items"):
+                        rows = plan.json()["items"]
+                        unpaid = [row for row in rows if row["status"] != "paid"]
+                        print(f"ok   GET /api/v1/policies/{{id}}/installments -> {len(rows)} rows, {len(unpaid)} unpaid")
+                        if unpaid:
+                            paid = client.post(f"/api/v1/policies/{policy_id}/installments/{unpaid[0]['id']}/pay", headers=admin, json={})
+                            paid_status = (paid.json().get("installment") or {}).get("status") if paid.status_code == 200 else None
+                            if paid_status == "paid":
+                                print("ok   POST /api/v1/policies/{id}/installments/{iid}/pay -> paid, once")
+                                twice = client.post(
+                                    f"/api/v1/policies/{policy_id}/installments/{unpaid[0]['id']}/pay", headers=admin, json={}
+                                )
+                                if twice.status_code == 409:
+                                    print("ok   POST …/pay twice -> 409, not a second receipt")
+                                else:
+                                    failures.append(f"double pay -> {twice.status_code} (409 expected)")
+                            else:
+                                failures.append(f"pay -> {paid.status_code} {paid.text[:160]}")
+                    else:
+                        failures.append(f"installments -> {plan.status_code} {plan.text[:160]}")
                     reissued = client.post(f"/api/v1/policies/{policy_id}/issue", headers=admin)
                     if reissued.status_code == 409:
                         print("ok   POST /api/v1/policies/{id}/issue twice -> 409, not a second document")

@@ -116,8 +116,13 @@ def verify_signed_media_url(object_key: str, expires: int, signature: str) -> bo
 
 
 def verify_webhook_signature(payload: bytes, signature_header: str | None, secret: str) -> bool:
-    """`sha256=<hex>` style signature over the raw body (WhatsApp Cloud API compatible)."""
-    if not signature_header:
+    """`sha256=<hex>` style signature over the raw body (WhatsApp Cloud API compatible).
+
+    An unset secret **refuses**, it does not sign with the empty key: `hmac.new(b"", ...)` is perfectly
+    computable, so a live deployment that lost its App Secret would have accepted any body whose
+    `X-Hub-Signature-256` was the HMAC of the empty string — a forgeable webhook, not a rejected one (R7).
+    """
+    if not secret or not signature_header:
         return False
     provided = signature_header.split("=", 1)[-1].strip()
     expected = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()

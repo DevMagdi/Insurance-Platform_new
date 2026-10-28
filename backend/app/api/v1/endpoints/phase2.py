@@ -101,7 +101,7 @@ async def policy_kpis(session: DbSession, scope: ScopeDep, actor: PoliciesView) 
         raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     from datetime import date, timedelta
 
-    from app.domain.enums import PolicyStatus
+    from app.domain.enums import InstallmentStatus, PolicyStatus
 
     today = date.today()
     horizon = today + timedelta(days=90)
@@ -114,6 +114,12 @@ async def policy_kpis(session: DbSession, scope: ScopeDep, actor: PoliciesView) 
     ids = [row.id for row in policies]
     installments: list[Installment] = []
     if ids:
+        # the KPI and the plan must agree about which rows are late, so the derived write happens before the
+        # count instead of twice with two different definitions
+        from app.services import installments as installments_svc
+
+        if await installments_svc.refresh_late(session, ids):
+            await session.commit()
         installments = list(
             (
                 await session.execute(
@@ -124,7 +130,7 @@ async def policy_kpis(session: DbSession, scope: ScopeDep, actor: PoliciesView) 
             .all()
         )
     month = sum(1 for row in installments if row.due_date == month_start or (month_start <= row.due_date <= today))
-    late = sum(1 for row in installments if row.due_date < today and row.paid_at is None)
+    late = sum(1 for row in installments if row.status == InstallmentStatus.LATE and row.paid_at is None)
 
     commission = 0.0
     for row in policies:
@@ -144,32 +150,49 @@ async def policy_kpis(session: DbSession, scope: ScopeDep, actor: PoliciesView) 
 
 @router.get("/policies/{policy_id}/installments", response_model=InstallmentPlanOut)
 async def installments(policy_id: UUID, session: DbSession, scope: ScopeDep, actor: PoliciesView) -> Any:
+    """The plan, with lateness applied and the commission in words (R7).
+
+    The commit is deliberate: `plan()` moves overdue rows to `late`, and a derived write that is rolled back
+    at the end of the request would leave the next reader disagreeing with this one.
+    """
     if not await _flag(session):
         raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
-    policy = (await session.execute(with_scope(select(Policy).where(Policy.id == policy_id), scope, "policy"))).scalar_one_or_none()
-    if policy is None:
-        from app.core.errors import NotFound
+    from app.services import installments as installments_svc
 
-        raise NotFound("Policy not found")
-    rows = (
-        (await session.execute(select(Installment).where(Installment.policy_id == policy.id).order_by(Installment.due_date)))
-        .scalars()
-        .all()
+    result = await installments_svc.plan(session, scope, policy_id)
+    await session.commit()
+    return result
+
+
+@router.post("/policies/{policy_id}/installments/{installment_id}/pay", summary="Record a payment on one installment")
+async def pay_installment(
+    policy_id: UUID,
+    installment_id: UUID,
+    request: Request,
+    session: DbSession,
+    scope: ScopeDep,
+    actor: PoliciesView,
+) -> dict[str, Any]:
+    """`unpaid → paid` once, with an audit row. A second call is a `409` (see `services.installments`)."""
+    from app.core.errors import Forbidden
+
+    if P.POLICIES_MANAGE not in scope.perms:
+        raise Forbidden("Not allowed", details={"missing": [P.POLICIES_MANAGE]})
+    if not await _flag(session):
+        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
+    from app.services import installments as installments_svc
+
+    result = await installments_svc.pay(
+        session,
+        actor,
+        scope,
+        policy_id,
+        installment_id,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
     )
-    return {
-        "policy": policy_brief(policy),
-        "items": [
-            {
-                "id": str(r.id),
-                "sequence_no": r.sequence_no,
-                "due_date": r.due_date.isoformat(),
-                "amount": float(r.amount),
-                "status": r.status.value,
-                "paid_at": r.paid_at.isoformat() if r.paid_at else None,
-            }
-            for r in rows
-        ],
-    }
+    await session.commit()
+    return result
 
 
 @router.post("/policies/{policy_id}/issue", summary="Issue a policy → number + PDF document (Phase 2)")

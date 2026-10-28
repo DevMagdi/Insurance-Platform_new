@@ -3,7 +3,7 @@
  * (overview / requests / staff / documents / calls). One card per section, 18×20 padding.
  */
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, Clock3, Inbox, PhoneCall, Users } from "lucide-react";
+import { CalendarClock, Clock3, Inbox, PhoneCall, Plus, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
@@ -13,6 +13,8 @@ import { api } from "@/lib/api/client";
 import { formatDuration, formatMoney, formatNumber, relativeTime } from "@/lib/format";
 import type { ClientOverview, InsuredList, RequestPage } from "@/lib/api/views";
 import type { components } from "@/lib/api/schema";
+import { NewPolicyDialog } from "@/features/phase2/NewPolicyDialog";
+import { usePhase2 } from "@/features/phase2/usePhase2";
 import { PortalAccountsCard } from "./PortalAccountsCard";
 
 type Tab = "overview" | "requests" | "staff" | "documents" | "calls";
@@ -306,13 +308,31 @@ function StaffTab({ clientId, onOpenAll }: { clientId: string; onOpenAll: () => 
 
 function DocumentsTab({ clientId }: { clientId: string }) {
   const { t } = useTranslation();
+  const { enabled: phase2 } = usePhase2();
+  const [creating, setCreating] = useState(false);
   const docs = useQuery({
     queryKey: ["clients", clientId, "documents"],
     queryFn: () => api.get<ClientDocument[]>(`/clients/${clientId}/documents`),
   });
   return (
     <Card padded={false}>
+      <div className="px-[20px] pt-[18px]">
+        <SectionTitle
+          action={
+            // the second door to the same dialog: a policy is booked where the client is (R7). It only
+            // appears when the flag is on, because POST /policies answers 503 while Phase 2 is closed.
+            phase2 ? (
+              <Button size="sm" icon={<Plus size={14} strokeWidth={1.8} />} onClick={() => setCreating(true)}>
+                {t("phase2.newPolicy")}
+              </Button>
+            ) : undefined
+          }
+        >
+          {t("portal.documents")}
+        </SectionTitle>
+      </div>
       <div className="px-[20px] py-[18px]">
+        {creating ? <NewPolicyDialog clientId={clientId} onClose={() => setCreating(false)} /> : null}
         <DataTable
           loading={docs.isPending}
           rows={docs.data ?? []}

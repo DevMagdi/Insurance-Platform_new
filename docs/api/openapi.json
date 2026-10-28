@@ -751,6 +751,27 @@
         "title": "ClientPageOut",
         "type": "object"
       },
+      "ClientRefOut": {
+        "additionalProperties": true,
+        "description": "Enough to name a client on a policy row — no contacts, no notes, nothing to leak.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ClientRefOut",
+        "type": "object"
+      },
       "ClientStatus": {
         "enum": [
           "active",
@@ -842,6 +863,63 @@
           }
         },
         "title": "ClientUpdate",
+        "type": "object"
+      },
+      "CommissionSummaryOut": {
+        "additionalProperties": true,
+        "description": "`state` is the honest part: `not_computed` means no commission row exists (premium/rate zero or unset).",
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settled At"
+          },
+          "state": {
+            "default": "not_computed",
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "CommissionSummaryOut",
         "type": "object"
       },
       "ConnectionTestIn": {
@@ -1449,6 +1527,16 @@
       "InstallmentPlanOut": {
         "additionalProperties": true,
         "properties": {
+          "commission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommissionSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/InstallmentOut"
@@ -1458,12 +1546,69 @@
           },
           "policy": {
             "$ref": "#/components/schemas/PolicyOut"
+          },
+          "totals": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstallmentTotalsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "policy"
         ],
         "title": "InstallmentPlanOut",
+        "type": "object"
+      },
+      "InstallmentTotalsOut": {
+        "additionalProperties": true,
+        "properties": {
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "due_amount": {
+            "default": 0.0,
+            "title": "Due Amount",
+            "type": "number"
+          },
+          "due_count": {
+            "default": 0,
+            "title": "Due Count",
+            "type": "integer"
+          },
+          "late_amount": {
+            "default": 0.0,
+            "title": "Late Amount",
+            "type": "number"
+          },
+          "late_count": {
+            "default": 0,
+            "title": "Late Count",
+            "type": "integer"
+          },
+          "outstanding_amount": {
+            "default": 0.0,
+            "title": "Outstanding Amount",
+            "type": "number"
+          },
+          "paid_amount": {
+            "default": 0.0,
+            "title": "Paid Amount",
+            "type": "number"
+          },
+          "paid_count": {
+            "default": 0,
+            "title": "Paid Count",
+            "type": "integer"
+          }
+        },
+        "title": "InstallmentTotalsOut",
         "type": "object"
       },
       "InsuranceTypeOut": {
@@ -4355,6 +4500,16 @@
         "additionalProperties": true,
         "description": "A policy as the screens read it.\n\n`policy_no` is nullable here *and* in the model and the create body (`PolicyCreate.policy_no` defaults to\n`None`): a draft booked before the insurer answers carries no number yet. Declaring it `str` made FastAPI\nrefuse to serialise the whole payload — the client file answered 500 for every client holding a draft\npolicy, which is what took the `screens`, `screenshots` and therefore three e2e tests down (R3).",
         "properties": {
+          "client": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientRefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "client_id": {
             "anyOf": [
               {
@@ -11191,6 +11346,7 @@
     },
     "/api/v1/policies/{policy_id}/installments": {
       "get": {
+        "description": "The plan, with lateness applied and the commission in words (R7).\n\nThe commit is deliberate: `plan()` moves overdue rows to `late`, and a derived write that is rolled back\nat the end of the request would leave the next reader disagreeing with this one.",
         "operationId": "getApiV1PoliciesPolicyIdInstallments",
         "parameters": [
           {
@@ -11227,6 +11383,62 @@
           }
         },
         "summary": "Installments",
+        "tags": [
+          "phase 2 (flagged)"
+        ]
+      }
+    },
+    "/api/v1/policies/{policy_id}/installments/{installment_id}/pay": {
+      "post": {
+        "description": "`unpaid → paid` once, with an audit row. A second call is a `409` (see `services.installments`).",
+        "operationId": "postApiV1PoliciesPolicyIdInstallmentsInstallmentIdPay",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "installment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Installment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Postapiv1Policiespolicyidinstallmentsinstallmentidpay",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record a payment on one installment",
         "tags": [
           "phase 2 (flagged)"
         ]
