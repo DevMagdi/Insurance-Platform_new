@@ -23,6 +23,12 @@ const SettingsHub = lazy(() => import("@/features/settings/SettingsHub"));
 const PoliciesPage = lazy(() => import("@/features/phase2/PoliciesPage"));
 const IssuingPage = lazy(() => import("@/features/phase2/IssuingPage"));
 const ReportsPage = lazy(() => import("@/features/phase2/ReportsPage"));
+// R10 (ADR-030): the executive screen and the four money screens
+const ExecutiveDashboardPage = lazy(() => import("@/features/executive/ExecutiveDashboardPage"));
+const LedgerPage = lazy(() => import("@/features/finance/LedgerPage"));
+const ArPage = lazy(() => import("@/features/finance/ArPage"));
+const CommissionsPage = lazy(() => import("@/features/finance/CommissionsPage"));
+const CashboxPage = lazy(() => import("@/features/finance/CashboxPage"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   override state: { error: Error | null } = { error: null };
@@ -208,6 +214,46 @@ export default function App() {
                 element={
                   <StaffRoute permit={["reports.view"]}>
                     <ReportsPage />
+                  </StaffRoute>
+                }
+              />
+              <Route
+                path="/executive"
+                element={
+                  <StaffRoute permit={["reports.executive"]}>
+                    <ExecutiveDashboardPage />
+                  </StaffRoute>
+                }
+              />
+              <Route
+                path="/finance/ledger"
+                element={
+                  <StaffRoute permit={["finance.view"]}>
+                    <LedgerPage />
+                  </StaffRoute>
+                }
+              />
+              <Route
+                path="/finance/ar"
+                element={
+                  <StaffRoute permit={["finance.view"]}>
+                    <ArPage />
+                  </StaffRoute>
+                }
+              />
+              <Route
+                path="/finance/commissions"
+                element={
+                  <StaffRoute permit={["finance.view"]}>
+                    <CommissionsPage />
+                  </StaffRoute>
+                }
+              />
+              <Route
+                path="/finance/cashbox"
+                element={
+                  <StaffRoute permit={["finance.view"]}>
+                    <CashboxPage />
                   </StaffRoute>
                 }
               />

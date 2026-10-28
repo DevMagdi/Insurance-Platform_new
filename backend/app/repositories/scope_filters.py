@@ -121,6 +121,44 @@ def issuing_case_predicate(scope: Scope) -> Any:
     return _NONE_MATCH
 
 
+def _visible_policy_ids(scope: Scope) -> Any:
+    """The policies a scope may see — commissions and settlements hang off them, not off a client column."""
+    from app.models.phase2 import Policy
+
+    if scope.mode == "owner":
+        return select(Policy.id).where(Policy.client_id.in_(_visible_client_ids(scope)))
+    if scope.mode == "seeded":
+        return select(Policy.id).where(Policy.client_id.in_(scope.client_ids)) if scope.client_ids else select(Policy.id)
+    return select(Policy.id).where(_NONE_MATCH)
+
+
+def ledger_predicate(scope: Scope) -> Any:
+    """A ledger row is visible when the *client* it belongs to is (ADR-030 §6).
+
+    Office-level rows (an expense with no client) are therefore manager-only: a rep's scope has no client
+    to match them on, and "half the office's expenses" is not a thing a rep should ever see.
+    """
+    from app.models.finance import LedgerEntry
+
+    if scope.mode == "all":
+        return sa.true()
+    if scope.mode in {"owner", "seeded"}:
+        return LedgerEntry.client_id.in_(_visible_client_ids(scope))
+    if scope.mode == "portal_client":
+        return LedgerEntry.client_id == scope.portal_client_id
+    return _NONE_MATCH
+
+
+def commission_predicate(scope: Scope) -> Any:
+    from app.models.phase2 import Commission
+
+    if scope.mode == "all":
+        return sa.true()
+    if scope.mode in {"owner", "seeded"}:
+        return Commission.policy_id.in_(_visible_policy_ids(scope))
+    return _NONE_MATCH
+
+
 PREDICATES: dict[str, Any] = {
     "lead": lead_predicate,
     "issuing_case": issuing_case_predicate,
@@ -128,6 +166,8 @@ PREDICATES: dict[str, Any] = {
     "request": request_predicate,
     "insured": insured_predicate,
     "policy": policy_predicate,
+    "ledger": ledger_predicate,
+    "commission": commission_predicate,
 }
 
 _SOFT_DELETE_TABLES: dict[str, Any] = {"lead": Lead, "client": Client}

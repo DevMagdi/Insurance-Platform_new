@@ -193,3 +193,48 @@ class IssuingDocumentStatus(StrEnum):
     UPLOADED = "uploaded"
     UNDER_REVIEW = "under_review"
     APPROVED = "approved"
+
+
+class LedgerEntryType(StrEnum):
+    """What a ledger row *is* (R10, ADR-030). The five types the four modules actually post."""
+
+    PREMIUM_RECEIVABLE = "premium_receivable"
+    COMMISSION_RECEIVABLE = "commission_receivable"
+    COMMISSION_PAYABLE = "commission_payable"
+    EXPENSE = "expense"
+    ADJUSTMENT = "adjustment"
+
+    @classmethod
+    def money_in(cls) -> list[LedgerEntryType]:
+        """Types that can only move money *into* the office (a receipt, never a payment)."""
+        return [cls.PREMIUM_RECEIVABLE, cls.COMMISSION_RECEIVABLE]
+
+    @classmethod
+    def money_out(cls) -> list[LedgerEntryType]:
+        return [cls.COMMISSION_PAYABLE, cls.EXPENSE]
+
+
+class LedgerDirection(StrEnum):
+    IN = "in"
+    OUT = "out"
+
+
+class LedgerStatus(StrEnum):
+    POSTED = "posted"
+    VOID = "void"
+
+
+class PaymentMethod(StrEnum):
+    CASH = "cash"
+    BANK = "bank"
+    WALLET = "wallet"
+    OTHER = "other"
+
+
+class SettlementStatus(StrEnum):
+    """The lifecycle of one commission *payout* (distinct from `CommissionStatus` accrual)."""
+
+    ACCRUED = "accrued"
+    APPROVED = "approved"
+    PAID = "paid"
+    CANCELLED = "cancelled"

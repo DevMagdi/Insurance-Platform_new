@@ -21,6 +21,14 @@ POLICIES_MANAGE: Final = "policies.manage"
 COMMISSIONS_VIEW: Final = "commissions.view"
 REPORTS_VIEW: Final = "reports.view"
 REPORTS_EXPORT: Final = "reports.export"
+# R10 (ADR-030): the money layer has its own gate. There is deliberately no `finance.manage`: posting and
+# voiding are *different* powers (one writes history, the other takes it back), and the office wanted the
+# second one to be the rarer one.
+FINANCE_VIEW: Final = "finance.view"
+FINANCE_POST: Final = "finance.post"
+FINANCE_VOID: Final = "finance.void"
+COMMISSIONS_MANAGE: Final = "commissions.manage"
+REPORTS_EXECUTIVE: Final = "reports.executive"
 USERS_MANAGE: Final = "users.manage"
 SETTINGS_MANAGE: Final = "settings.manage"
 # Derived, never stored in `role_permissions`: granted implicitly to portal accounts
@@ -44,6 +52,11 @@ ALL_PERMISSIONS: Final[tuple[str, ...]] = (
     COMMISSIONS_VIEW,
     REPORTS_VIEW,
     REPORTS_EXPORT,
+    FINANCE_VIEW,
+    FINANCE_POST,
+    FINANCE_VOID,
+    COMMISSIONS_MANAGE,
+    REPORTS_EXECUTIVE,
     USERS_MANAGE,
     SETTINGS_MANAGE,
 )  # NOTE: PORTAL_ACCESS is derived (see services/auth.issue_tokens)
@@ -65,6 +78,11 @@ ROLE_PERMISSIONS: Final[dict[str, tuple[str, ...]]] = {
         COMMISSIONS_VIEW,
         REPORTS_VIEW,
         REPORTS_EXPORT,
+        FINANCE_VIEW,
+        FINANCE_POST,
+        FINANCE_VOID,
+        COMMISSIONS_MANAGE,
+        REPORTS_EXECUTIVE,
         SETTINGS_MANAGE,
     ),
     "sales_rep": (LEADS_VIEW_OWN, LEADS_CONVERT, CLIENTS_VIEW_OWN, CLIENTS_MANAGE, INSURED_MANAGE),
@@ -78,6 +96,7 @@ ROLE_PERMISSIONS: Final[dict[str, tuple[str, ...]]] = {
         POLICIES_VIEW,
         COMMISSIONS_VIEW,
         REPORTS_VIEW,
+        FINANCE_VIEW,
     ),
     # Portal roles carry no staff permissions; their access is scoped by client id (see Scope).
     "client_owner": (),

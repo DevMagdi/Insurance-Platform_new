@@ -137,6 +137,9 @@ def _params_for(client: Any, headers: dict[str, str], known: dict[str, str]) -> 
     # the first policy the seed knows (the curated block overwrites `policy_id` with a fresh issued one)
     if table["policy_id"]:
         table["installment_id"] = _first_id(client, headers, f"/api/v1/policies/{table['policy_id']}/installments")
+    # the money layer's two instance ids (R10): a commission to approve/pay and a ledger row to void
+    table["commission_id"] = _first_id(client, headers, "/api/v1/finance/commissions")
+    table["entry_id"] = _first_id(client, headers, "/api/v1/finance/ledger")
     for row in _items(client, headers, "/api/v1/clients"):
         insured = _first_id(client, headers, f"/api/v1/clients/{row['id']}/insured")
         if insured:
@@ -624,6 +627,124 @@ def main() -> int:
                     print("ok   GET /leads/board?unassigned=true as a rep -> an empty board, not the pool")
                 else:
                     failures.append(f"rep unassigned board -> {filtered.status_code} rows={rows}")
+
+    # — the money layer (R10, ADR-030): a receipt, a void that reverses it, a payout paid once, and an
+    #   executive screen whose numbers come from the same queries as the modules they summarise —
+    ledger = get("/api/v1/finance/ledger?page_size=5", admin_token)
+    if ledger is not None:
+        receipts = [row for row in ledger["items"] if row["entry_type"] == "premium_receivable"]
+        if receipts:
+            print(f"ok   GET /api/v1/finance/ledger -> {ledger['total']} rows, newest {ledger['items'][0]['entry_no']}")
+            SMOKE_IDS["ledger_entry_id"] = str(receipts[0]["id"])
+        else:
+            failures.append("GET /finance/ledger -> no premium receipt for the installment paid above")
+    cash = get("/api/v1/finance/cashbox", admin_token)
+    if cash is not None and not isinstance(cash.get("balance"), (int, float)):
+        failures.append("GET /finance/cashbox -> no numeric balance")
+    get("/api/v1/finance/ar/summary", admin_token)
+    ar_clients_payload = get("/api/v1/finance/ar/clients?page_size=5", admin_token)
+    if ar_clients_payload is not None:
+        buckets = {row["bucket"] for row in (ar_clients_payload["items"][0]["buckets"] if ar_clients_payload["items"] else [])}
+        if ar_clients_payload["items"] and not {"current", "d0_30", "d31_60", "d61_90", "d90_plus"} <= buckets:
+            failures.append(f"GET /finance/ar/clients -> aging buckets {sorted(buckets)}")
+
+    # a manual receipt, then the void that takes it back — the cashbox has to move both times
+    before_balance = (cash or {}).get("balance")
+    manual = client.post(
+        "/api/v1/finance/ledger",
+        headers=admin,
+        json={"entry_type": "adjustment", "direction": "in", "amount": 1234, "method": "cash", "note": "smoke receipt"},
+    )
+    if manual.status_code == 201:
+        entry_id = str(manual.json()["id"])
+        SMOKE_IDS["ledger_entry_id"] = entry_id
+        moved = client.get("/api/v1/finance/cashbox", headers=admin).json()["balance"]
+        if before_balance is not None and round(moved - before_balance, 2) != 1234:
+            failures.append(f"cashbox did not move by the posted amount: {before_balance} -> {moved}")
+        else:
+            print("ok   POST /api/v1/finance/ledger -> the cashbox balance moved by the amount")
+        voided = client.post(f"/api/v1/finance/ledger/{entry_id}/void", headers=admin, json={"reason": "smoke void"})
+        if voided.status_code == 200 and round(voided.json()["cashbox_balance"], 2) == round(before_balance or 0, 2):
+            print("ok   POST /api/v1/finance/ledger/{id}/void -> the balance went back exactly")
+        else:
+            failures.append(
+                f"void -> {voided.status_code} balance={voided.json().get('cashbox_balance') if voided.status_code == 200 else voided.text[:120]}"
+            )
+        twice = client.post(f"/api/v1/finance/ledger/{entry_id}/void", headers=admin, json={"reason": "again"})
+        if twice.status_code != 409:
+            failures.append(f"void twice -> {twice.status_code} (409 expected)")
+    else:
+        failures.append(f"POST /finance/ledger -> {manual.status_code} {manual.text[:160]}")
+    for amount in (0, -5):
+        refused = client.post(
+            "/api/v1/finance/ledger",
+            headers=admin,
+            json={"entry_type": "expense", "direction": "out", "amount": amount, "method": "cash"},
+        )
+        if refused.status_code != 422:
+            failures.append(f"ledger amount {amount} -> {refused.status_code} (422 expected)")
+
+    commissions = get("/api/v1/finance/commissions?page_size=50", admin_token)
+    if commissions is not None:
+        pending = next((row for row in commissions["items"] if row["status"] == "accrued"), None)
+        if pending:
+            approved = client.post(f"/api/v1/finance/commissions/{pending['id']}/approve", headers=admin, json={})
+            if approved.status_code == 200:
+                paid = client.post(f"/api/v1/finance/commissions/{pending['id']}/pay", headers=admin, json={"method": "bank"})
+                if paid.status_code == 200 and paid.json()["ledger_entry_no"]:
+                    print(f"ok   POST /finance/commissions/{{id}}/pay -> {paid.json()['ledger_entry_no']}")
+                    again = client.post(f"/api/v1/finance/commissions/{pending['id']}/pay", headers=admin, json={"method": "bank"})
+                    if again.status_code != 409:
+                        failures.append(f"double commission pay -> {again.status_code} (409 expected)")
+                else:
+                    failures.append(f"commission pay -> {paid.status_code} {paid.text[:160]}")
+            else:
+                failures.append(f"commission approve -> {approved.status_code} {approved.text[:160]}")
+        else:
+            failures.append("GET /finance/commissions -> no accrued commission to pay")
+
+    dashboard = get("/api/v1/executive/dashboard", admin_token)
+    if dashboard is not None:
+        expected = {
+            "collections_mtd",
+            "collections_target",
+            "outstanding_ar",
+            "overdue_ar",
+            "commissions_accrued",
+            "commissions_paid_mtd",
+            "open_requests",
+            "overdue_requests",
+            "new_leads_mtd",
+            "converted_leads_mtd",
+            "policies_issued_mtd",
+            "cashbox_balance",
+        }
+        missing = expected - set(dashboard.get("kpis", {}))
+        if missing:
+            failures.append(f"GET /executive/dashboard -> missing kpis {sorted(missing)}")
+        elif set(dashboard) != {
+            "period",
+            "kpis",
+            "sales_performance",
+            "ar_aging",
+            "channel_mix",
+            "renewals_next_30d",
+            "alerts",
+        }:
+            failures.append(f"GET /executive/dashboard -> unexpected shape {sorted(dashboard)}")
+        elif dashboard["kpis"]["collections_target"] is not None:
+            failures.append("GET /executive/dashboard -> collections_target must stay null until targets exist")
+        else:
+            print("ok   GET /api/v1/executive/dashboard -> the fixed shape, and no invented target")
+
+    # a rep holds no finance permission: the office cash position is refused, not blanked
+    rep_cash = (
+        client.get("/api/v1/finance/cashbox", headers={"authorization": f"Bearer {rep_token_smoke.json()['access_token']}"})
+        if rep_token_smoke.status_code == 200
+        else None
+    )
+    if rep_cash is not None and rep_cash.status_code != 403:
+        failures.append(f"rep GET /finance/cashbox -> {rep_cash.status_code} (403 expected)")
 
     portal = {"authorization": f"Bearer {portal_token}"} if portal_login.status_code == 200 else admin
     smoke_failures, exercised_summary = exhaustive_pass(client, admin, admin, portal)

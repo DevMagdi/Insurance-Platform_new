@@ -178,6 +178,21 @@
 
 ---
 
+## شاشات R10 الخمس (ليست في ورقة التصميم الست عشرة — أُضيفت بطلب المالك)
+
+كلها عربية RTL بنفس التوكنات، وكل رقم فيها من الـAPI (لا بيانات تجريبية في الواجهة). الترتيب في الشريط
+الجانبي بعد «التقارير»، ومحميّة بالصلاحية نفسها التي يحميها الـAPI.
+
+| الشاشة | المسار | الملف | الصلاحية | ما تقرأه |
+|---|---|---|---|---|
+| لوحة الإدارة التنفيذية | `/executive` | `frontend/src/features/executive/ExecutiveDashboardPage.tsx` | `reports.executive` | `GET /executive/dashboard` فقط |
+| دفتر الحركات | `/finance/ledger` | `frontend/src/features/finance/LedgerPage.tsx` | `finance.view` (+`finance.post` للنموذج، +`finance.void` للإلغاء) | `GET/POST /finance/ledger`، `POST /finance/ledger/{id}/void` |
+| مستحقات العملاء | `/finance/ar` | `frontend/src/features/finance/ArPage.tsx` | `finance.view` | `/finance/ar/summary` + `/finance/ar/clients` + `/finance/ar/clients/{id}` |
+| العمولات | `/finance/commissions` | `frontend/src/features/finance/CommissionsPage.tsx` | `finance.view` (+`commissions.manage` للاعتماد/الصرف) | `/finance/commissions` + approve/pay |
+| الصندوق | `/finance/cashbox` | `frontend/src/features/finance/CashboxPage.tsx` | `finance.view` | `GET /finance/cashbox` |
+
+---
+
 ## قائمة الفوارق المجمّعة (تحتاج قرار صاحب المنتج)
 
 | # | الشاشة | الفارق | النوع |

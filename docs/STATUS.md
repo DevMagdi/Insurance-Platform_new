@@ -1,6 +1,15 @@
 # STATUS — منصة إدارة الوساطة التأمينية (Broker Hub)
 
-آخر تحديث: 2026-10-28 · الفرع: `arena/0fa05dfd-insurance-platform-new`.
+آخر تحديث: 2026-10-28 · الفرع: `arena/4bf03e2e-insurance-platform-new`.
+جولة R10 (**ERP أساسي + لوحة إدارة تنفيذية**): المال صار صفًّا في دفتر لا رقمًا مشتقًّا — `ledger_entries`
+تُكتب مع كل حركة (دفع قسط، مصروف، تسوية، صرف عمولة)، والإلغاء حالة تبقى بأثرها وسببها ولا تحذف صفًّا،
+و`amount > 0` قيدٌ في القاعدة و`direction` هو ما يحمل الإشارة. الفهارس الفريدة الجزئية تمنع إيصالين لنفس
+القسط ودفعة عمولة ثانية. أربع وحدات فقط (دفتر، مستحقات بأعمار 0–30/31–60/61–90/90+، عمولات
+اعتماد→صرف، صندوق نقدي) + شاشة «لوحة الإدارة التنفيذية» التي كل رقم فيها استعلام حيّ، و`collections_target`
+تظل `null` لأن لا نموذج أهداف موجود (لا نسبة بمقام مخترع). العزل: `finance.view` غير موجودة للمندوب ⇒ 403
+على الدفتر والصندوق والمستحقات ولوحة الإدارة. التفاصيل في
+[`qa/r10-basic-erp-2026-10-28.md`](qa/r10-basic-erp-2026-10-28.md) و[ADR-030](decisions/030-basic-erp-ledger.md).
+
 جولة R9 (الإنتاج حيّ فقط + مكالمات الموبايل): التكاملات في الإنتاج لا تعمل بالمحاكاة إطلاقًا — `ENV=prod`
 يفرض `live`، والسائقان المحاكيان غير قابلين للبناء خارج dev/test، ومسارات `/api/v1/dev/sim*` غير موجودة في
 بناء الإنتاج، ومزوّد حيّ ناقص الأسرار يُفشل الإقلاع برسالة تسمّي المفتاح (لا سقوط صامت على sim). قناة
@@ -46,6 +55,7 @@
 | R1 مركز الإعدادات: تكاملات حقيقية + إنشاء وثيقة | ✅ منتهية (محلياً) | `/settings` بثلاث بطاقات + حيّ/محاكاة بتأكيد + سجلّ `webhook_events` + `POST /policies` بجدول أقساط وعمولة · `tests/test_integrations_settings.py` (16) · `frontend/tests/settingsView.test.tsx` (14) · ADR-016 |
 | R2 مكتب المبيعات: مقاعد + استيراد Excel/CSV + إعادة توزيع الحوض | ✅ منتهية (محلياً؛ e2e تُقاس في CI) | `POST /leads/import` ⇒ `lead_import_jobs` + `POST /leads/assign-bulk` + `/sales-team/members` · `tests/test_lead_import.py` (10) `tests/test_team_members.py` (6) `tests/test_lead_redistribute.py` (11) · `frontend/tests/teamRound.test.tsx` (8) · `frontend/e2e/team-round.spec.ts` (4) · ADR-017 · جدول Proof حيّ في هذا الملف |
 | R9 الإنتاج حيّ فقط: واتساب + مكالمات الموبايل بلا محاكاة | ✅ منتهية (اتصال ميداني ⬜ يحتاج أسرار المشغّل) | `ENV=prod` يفرض live و`sim` صريحة تفشل الإقلاع · `integrations/sims.py` يرفض البناء خارج dev/test · `registry.assert_production_ready()` يُفشل الإقلاع بلا أسرار · `/webhooks/mobile-calls` (Twilio + بدائل) يفتح طلبًا بقناة `call` · `dev_sim.py` يُركّب في dev/test فقط · `tests/test_production_live_only.py` (11) · `live_matrix` §4.9b (7 فحوص production) · ADR-029 |
+| R10 ERP أساسي: دفتر حركات + مستحقات (أعمار) + عمولات + صندوق + لوحة إدارة تنفيذية | ✅ منتهية (محلياً؛ e2e تقيسها CI) | `models/finance.py` + `0009_finance_ledger` · `services/{finance,executive}.py` · `endpoints/{finance,executive}.py` (11 مساراً) · `tests/test_finance.py` (9) · `frontend/tests/financeRound.test.tsx` (5) + 5 شاشات · ADR-030 |
 | مزوّد AI (§11 M10): واجهة واحدة خلف `ai.enabled` + مراجعة بشرية | ✅ السطح كامل بسائق محاكاة · ⬜ بلا مزوّد حقيقي | `integrations/ai_sim.py` (حتمي، استخلاصي) · `endpoints/ai.py`: `GET /ai/status` · `POST /ai/calls/{id}/transcribe` · `POST /ai/requests/{id}/summarize` · `POST /ai/classify` · `tests/test_ai.py` (7) · زر «تلخيص آلي» في `InboxPage` يظهر فقط عند تشغيل الراية · ADR-013 |
 
 ## جولة R3 — ما كان أحمر، ولماذا، وما أُصلح
@@ -599,6 +609,27 @@ session.commit()` قبل الـhash + `tests/test_auth_pool.py` (يفشل على
 تتطلّب أولًا نقل البثّ الحيّ من `asyncio.Queue` داخل العملية إلى `LISTEN/NOTIFY`، ورمز تحديث لكل جلسة
 (اليوم `refresh_token_version` واحد للمستخدم ⇒ جلسة ثانية تُبطل الأولى: 32 ثم 16 حالة في S6).
 ولذلك: `SAFE_CAPACITY = {browser: 25, api_vu: 25} — measured` (وما فوق 25 يستحق التوسّع الأفقي أولًا).
+
+## جولة R10 — «ERP أساسي»: الدفتر، والمستحقات، والعمولات، والصندوق، ولوحة الإدارة
+
+التقرير الكامل بالأوامر ومخارجها: [qa/r10-basic-erp-2026-10-28.md](qa/r10-basic-erp-2026-10-28.md).
+
+| # | الوعد | الإثبات الحرفي |
+|---|---|---|
+| 1 | دفع القسط يكتب قيدًا واحدًا في الدفتر **في نفس المعاملة** | `test_paying_an_installment_creates_ledger_entry` · smoke: «the cashbox balance moved by the amount» |
+| 2 | الإلغاء يعكس الرصيد ولا يحذف الصف (سبب + مستخدم + وقت + تدقيق) | `test_void_ledger_entry_reverses_cashbox_balance` · live_matrix: «the void reverses the balance exactly» |
+| 3 | لا دفع عمولة مرتين (`commission_id` فريد + 409) | `test_commission_cannot_be_paid_twice` · live_matrix: «paying twice → 409» |
+| 4 | الأعمار من تاريخ الاستحقاق، و«غير المستحق» ليس متأخرًا | `test_ar_aging_buckets` (10/45/75/120 يومًا) · live_matrix: «five aging buckets, not four-and-a-guess» |
+| 5 | كل رقم في لوحة الإدارة يطابق استعلامه | `test_executive_dashboard_numbers_match_source_queries` + 4 فحوص تطابق بين المسارات في live_matrix |
+| 6 | مندوب بلا `finance.view` ⇒ 403 على كل مسار مالي | `test_rep_without_finance_view_gets_403` · live_matrix (مندوب/CS/بوابة) |
+| 7 | مبلغ غير موجب ⇒ 422، واتجاه مخالف للنوع ⇒ 422 | `test_ledger_rejects_non_positive_amount` · live_matrix |
+| 8 | الشاشات تعرض أرقام الـAPI ولا تخترع هدفًا | `frontend/tests/financeRound.test.tsx` |
+
+البوابات على هذا الفرع: `ruff` نظيف · `mypy` (120 ملفًا) نظيف · `pytest` **293 passed, 9 skipped** ·
+`smoke_api` **137/140** · `live_matrix` **274/274 بلا P0** · `openapi` طازج (120 مسارًا) · الواجهة
+`lint`+`typecheck`+`build` ✓ · `vitest` **126/126 في 18 ملفًا**.
+**ما لم يُشغَّل:** Playwright/لقطات الشاشة (لا متصفح في هذه البيئة — تُقاس في CI)، و`check_core_coverage`
+(أداة `coverage` غير مثبَّتة)، و`postgres_only` (9) تُقاس في CI على PostgreSQL 16.
 
 ## قرارات اتُّخذت نيابة عن المالك (لأن الأسئلة غير مسموحة)
 

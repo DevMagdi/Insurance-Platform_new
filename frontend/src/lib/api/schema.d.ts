@@ -542,6 +542,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/executive/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Executive control dashboard (every figure is a live query) */
+        get: operations["getApiV1ExecutiveDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/exports": {
         parameters: {
             query?: never;
@@ -608,6 +625,163 @@ export interface paths {
         head?: never;
         /** Toggle a feature flag (admins only, audited) */
         patch: operations["patchApiV1Feature-FlagsKey"];
+        trace?: never;
+    };
+    "/api/v1/finance/ar/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Customer AR per client (aging 0-30 / 31-60 / 61-90 / 90+) */
+        get: operations["getApiV1FinanceArClients"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/finance/ar/clients/{client_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One client's open installments and receipts */
+        get: operations["getApiV1FinanceArClientsClientId"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/finance/ar/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Customer AR: totals and aging buckets */
+        get: operations["getApiV1FinanceArSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/finance/cashbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The office cashbox (posted cash rows only) */
+        get: operations["getApiV1FinanceCashbox"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/finance/commissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Commissions and their payout state */
+        get: operations["getApiV1FinanceCommissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/finance/commissions/{commission_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve an accrued commission */
+        post: operations["postApiV1FinanceCommissionsCommissionIdApprove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/finance/commissions/{commission_id}/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pay a commission (writes the ledger once) */
+        post: operations["postApiV1FinanceCommissionsCommissionIdPay"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/finance/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The ledger (append-only money movements) */
+        get: operations["getApiV1FinanceLedger"];
+        put?: never;
+        /**
+         * Post a ledger entry
+         * @description Manual posting (an expense, an adjustment, a receivable). Out-of-scope clients are a `404`.
+         */
+        post: operations["postApiV1FinanceLedger"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/finance/ledger/{entry_id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Void a posted entry (reverses every total) */
+        post: operations["postApiV1FinanceLedgerEntryIdVoid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/import-jobs/{job_id}": {
@@ -1217,7 +1391,7 @@ export interface paths {
         put?: never;
         /**
          * Record a payment on one installment
-         * @description `unpaid → paid` once, with an audit row. A second call is a `409` (see `services.installments`).
+         * @description `unpaid → paid` once, with an audit row **and the ledger receipt** (R10). A second call is a `409`.
          */
         post: operations["postApiV1PoliciesPolicyIdInstallmentsInstallmentIdPay"];
         delete?: never;
@@ -2029,6 +2203,166 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** AgingBucketOut */
+        AgingBucketOut: {
+            /** Amount */
+            amount: number;
+            /** Bucket */
+            bucket: string;
+            /** Count */
+            count: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ArClientDetailOut */
+        ArClientDetailOut: {
+            /** Buckets */
+            buckets?: components["schemas"]["AgingBucketOut"][];
+            /**
+             * Client Id
+             * Format: uuid
+             */
+            client_id: string;
+            /** Client Name */
+            client_name: string;
+            /** Current Total */
+            current_total: number;
+            /** Installments */
+            installments?: components["schemas"]["ArInstallmentOut"][];
+            /**
+             * Installments Count
+             * @default 0
+             */
+            installments_count: number;
+            /** Last Payment At */
+            last_payment_at?: string | null;
+            /** Oldest Due Date */
+            oldest_due_date?: string | null;
+            /** Outstanding Total */
+            outstanding_total: number;
+            /** Overdue Total */
+            overdue_total: number;
+            /** Owner Name */
+            owner_name?: string | null;
+            /** Payments */
+            payments?: components["schemas"]["LedgerEntryOut"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /** ArClientPageOut */
+        ArClientPageOut: {
+            /** Items */
+            items?: components["schemas"]["ArClientRowOut"][];
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 20
+             */
+            page_size: number;
+            /** Pages */
+            pages?: number | null;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ArClientRowOut */
+        ArClientRowOut: {
+            /** Buckets */
+            buckets?: components["schemas"]["AgingBucketOut"][];
+            /**
+             * Client Id
+             * Format: uuid
+             */
+            client_id: string;
+            /** Client Name */
+            client_name: string;
+            /** Current Total */
+            current_total: number;
+            /**
+             * Installments Count
+             * @default 0
+             */
+            installments_count: number;
+            /** Last Payment At */
+            last_payment_at?: string | null;
+            /** Oldest Due Date */
+            oldest_due_date?: string | null;
+            /** Outstanding Total */
+            outstanding_total: number;
+            /** Overdue Total */
+            overdue_total: number;
+            /** Owner Name */
+            owner_name?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ArInstallmentOut */
+        ArInstallmentOut: {
+            /** Amount */
+            amount: number;
+            /** Bucket */
+            bucket: string;
+            /** Days Overdue */
+            days_overdue: number;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /**
+             * Installment Id
+             * Format: uuid
+             */
+            installment_id: string;
+            /**
+             * Policy Id
+             * Format: uuid
+             */
+            policy_id: string;
+            /** Policy No */
+            policy_no?: string | null;
+            /** Sequence No */
+            sequence_no: number;
+            /** Status */
+            status: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ArSummaryOut */
+        ArSummaryOut: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Buckets */
+            buckets?: components["schemas"]["AgingBucketOut"][];
+            /** Clients Count */
+            clients_count: number;
+            /**
+             * Currency
+             * @default EGP
+             */
+            currency: string;
+            /** Current Total */
+            current_total: number;
+            /** Outstanding Total */
+            outstanding_total: number;
+            /** Overdue Clients Count */
+            overdue_clients_count: number;
+            /** Overdue Total */
+            overdue_total: number;
+        } & {
+            [key: string]: unknown;
+        };
         /** AttachmentOut */
         AttachmentOut: {
             /** Created At */
@@ -2119,11 +2453,53 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** CashboxOut */
+        CashboxOut: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Balance */
+            balance: number;
+            /** By Method */
+            by_method?: components["schemas"]["MoneyByMethodOut"][];
+            /** Cash In Total */
+            cash_in_total: number;
+            /** Cash Out Total */
+            cash_out_total: number;
+            /**
+             * Currency
+             * @default EGP
+             */
+            currency: string;
+            /** Month In */
+            month_in: number;
+            /** Month Out */
+            month_out: number;
+            /** Movements */
+            movements?: components["schemas"]["LedgerEntryOut"][];
+            /** Today In */
+            today_in: number;
+            /** Today Out */
+            today_out: number;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * Channel
          * @enum {string}
          */
         Channel: "whatsapp" | "call" | "email" | "manual";
+        /** ChannelMixOut */
+        ChannelMixOut: {
+            /** Channel */
+            channel: string;
+            /** Count */
+            count: number;
+        } & {
+            [key: string]: unknown;
+        };
         /** ClientCreate */
         ClientCreate: {
             /** Account Owner Id */
@@ -2311,6 +2687,22 @@ export interface components {
             /** Tax Number */
             tax_number?: string | null;
         };
+        /** CommissionApproveIn */
+        CommissionApproveIn: {
+            /** Note */
+            note?: string | null;
+        };
+        /** CommissionPayIn */
+        CommissionPayIn: {
+            /**
+             * Method
+             * @default bank
+             * @enum {string}
+             */
+            method: "cash" | "bank" | "wallet" | "other";
+            /** Note */
+            note?: string | null;
+        };
         /**
          * CommissionSummaryOut
          * @description `state` is the honest part: `not_computed` means no commission row exists (premium/rate zero or unset).
@@ -2491,6 +2883,82 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** ExecutiveAlertOut */
+        ExecutiveAlertOut: {
+            /** Code */
+            code: string;
+            /** Count */
+            count: number;
+            /** Message */
+            message: string;
+            /** Severity */
+            severity: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ExecutiveDashboardOut */
+        ExecutiveDashboardOut: {
+            /** Alerts */
+            alerts?: components["schemas"]["ExecutiveAlertOut"][];
+            /** Ar Aging */
+            ar_aging?: components["schemas"]["AgingBucketOut"][];
+            /** Channel Mix */
+            channel_mix?: components["schemas"]["ChannelMixOut"][];
+            kpis: components["schemas"]["ExecutiveKpisOut"];
+            period: components["schemas"]["ExecutivePeriodOut"];
+            /** Renewals Next 30D */
+            renewals_next_30d?: components["schemas"]["RenewalOut"][];
+            /** Sales Performance */
+            sales_performance?: components["schemas"]["SalesPerformanceOut"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /** ExecutiveKpisOut */
+        ExecutiveKpisOut: {
+            /** Cashbox Balance */
+            cashbox_balance: number;
+            /** Collections Mtd */
+            collections_mtd: number;
+            /** Collections Target */
+            collections_target?: number | null;
+            /** Commissions Accrued */
+            commissions_accrued: number;
+            /** Commissions Paid Mtd */
+            commissions_paid_mtd: number;
+            /** Converted Leads Mtd */
+            converted_leads_mtd: number;
+            /** New Leads Mtd */
+            new_leads_mtd: number;
+            /** Open Requests */
+            open_requests: number;
+            /** Outstanding Ar */
+            outstanding_ar: number;
+            /** Overdue Ar */
+            overdue_ar: number;
+            /** Overdue Requests */
+            overdue_requests: number;
+            /** Policies Issued Mtd */
+            policies_issued_mtd: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ExecutivePeriodOut */
+        ExecutivePeriodOut: {
+            /**
+             * From Date
+             * Format: date
+             */
+            from_date: string;
+            /** Label */
+            label: string;
+            /**
+             * To Date
+             * Format: date
+             */
+            to_date: string;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * ExportKind
          * @enum {string}
@@ -2614,6 +3082,14 @@ export interface components {
             status: string;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * InstallmentPayIn
+         * @description How the money arrived. Optional so an existing client that posts no body keeps working (cash).
+         */
+        InstallmentPayIn: {
+            /** Method */
+            method?: string | null;
         };
         /** InstallmentPlanOut */
         InstallmentPlanOut: {
@@ -3398,6 +3874,140 @@ export interface components {
             /** Type */
             type?: ("company" | "individual") | null;
         };
+        /**
+         * LedgerEntryCreateIn
+         * @description A manual movement. `amount` is rejected at the schema for `<= 0`, and again in the service.
+         */
+        LedgerEntryCreateIn: {
+            /**
+             * Amount
+             * @description Always positive — `direction` carries the sign
+             */
+            amount: number;
+            /** Client Id */
+            client_id?: string | null;
+            /**
+             * Currency
+             * @default EGP
+             */
+            currency: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "in" | "out";
+            /**
+             * Entry Type
+             * @enum {string}
+             */
+            entry_type: "premium_receivable" | "commission_receivable" | "commission_payable" | "expense" | "adjustment";
+            /** Installment Id */
+            installment_id?: string | null;
+            /** Method */
+            method?: ("cash" | "bank" | "wallet" | "other") | null;
+            /** Note */
+            note?: string | null;
+            /** Policy Id */
+            policy_id?: string | null;
+            /** User Id */
+            user_id?: string | null;
+        };
+        /** LedgerEntryOut */
+        LedgerEntryOut: {
+            /** Amount */
+            amount: number;
+            /** Client Id */
+            client_id?: string | null;
+            /** Client Name */
+            client_name?: string | null;
+            /**
+             * Currency
+             * @default EGP
+             */
+            currency: string;
+            /** Direction */
+            direction: string;
+            /** Entry No */
+            entry_no: string;
+            /** Entry Type */
+            entry_type: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Installment Id */
+            installment_id?: string | null;
+            /** Installment Sequence */
+            installment_sequence?: number | null;
+            /** Method */
+            method?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Policy Id */
+            policy_id?: string | null;
+            /** Policy No */
+            policy_no?: string | null;
+            /**
+             * Posted At
+             * Format: date-time
+             */
+            posted_at: string;
+            /** Posted By Name */
+            posted_by_name?: string | null;
+            /** Status */
+            status: string;
+            /** User Id */
+            user_id?: string | null;
+            /** User Name */
+            user_name?: string | null;
+            /** Void Reason */
+            void_reason?: string | null;
+            /** Voided At */
+            voided_at?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** LedgerPageOut */
+        LedgerPageOut: {
+            /** Items */
+            items?: components["schemas"]["LedgerEntryOut"][];
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 20
+             */
+            page_size: number;
+            /** Pages */
+            pages?: number | null;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** LedgerVoidIn */
+        LedgerVoidIn: {
+            /**
+             * Reason
+             * @description Why the row is being taken back — kept forever
+             */
+            reason: string;
+        };
+        /** LedgerVoidOut */
+        LedgerVoidOut: {
+            /** Cashbox Balance */
+            cashbox_balance: number;
+            entry: components["schemas"]["LedgerEntryOut"];
+        } & {
+            [key: string]: unknown;
+        };
         /** LiveSwitchIn */
         LiveSwitchIn: {
             /**
@@ -3531,6 +4141,19 @@ export interface components {
             password?: string | null;
             /** Role Code */
             role_code?: string | null;
+        };
+        /** MoneyByMethodOut */
+        MoneyByMethodOut: {
+            /** Balance */
+            balance: number;
+            /** In Total */
+            in_total: number;
+            /** Method */
+            method: string;
+            /** Out Total */
+            out_total: number;
+        } & {
+            [key: string]: unknown;
         };
         /** NoteCreate */
         NoteCreate: {
@@ -4127,6 +4750,31 @@ export interface components {
             token_type: string;
             user: components["schemas"]["MeOut"];
         };
+        /** RenewalOut */
+        RenewalOut: {
+            /** Client Name */
+            client_name?: string | null;
+            /** Days Left */
+            days_left: number;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /** Insurer Name */
+            insurer_name?: string | null;
+            /**
+             * Policy Id
+             * Format: uuid
+             */
+            policy_id: string;
+            /** Policy No */
+            policy_no?: string | null;
+            /** Premium Amount */
+            premium_amount: number;
+        } & {
+            [key: string]: unknown;
+        };
         /** RepWorkloadOut */
         RepWorkloadOut: {
             /** Conversion Rate */
@@ -4470,6 +5118,21 @@ export interface components {
             /** Permissions */
             permissions: string[];
         };
+        /** SalesPerformanceOut */
+        SalesPerformanceOut: {
+            /** Collected Mtd */
+            collected_mtd: number;
+            /** Name */
+            name: string;
+            /** Policies Issued Mtd */
+            policies_issued_mtd: number;
+            /** Premium Mtd */
+            premium_mtd: number;
+            /** User Id */
+            user_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
         /** ScopesIn */
         ScopesIn: {
             /**
@@ -4494,6 +5157,90 @@ export interface components {
              * @description whether a value is stored — the only fact a GET may reveal
              */
             set: boolean;
+        };
+        /**
+         * SettlementOut
+         * @description One commission and its payout state. `id` is the *commission* id the pay route takes.
+         */
+        SettlementOut: {
+            /** Accrued At */
+            accrued_at?: string | null;
+            /** Amount */
+            amount: number;
+            /** Approved At */
+            approved_at?: string | null;
+            /** Client Id */
+            client_id?: string | null;
+            /** Client Name */
+            client_name?: string | null;
+            /**
+             * Commission Id
+             * Format: uuid
+             */
+            commission_id: string;
+            /**
+             * Currency
+             * @default EGP
+             */
+            currency: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Installment Id */
+            installment_id?: string | null;
+            /** Ledger Entry Id */
+            ledger_entry_id?: string | null;
+            /** Ledger Entry No */
+            ledger_entry_no?: string | null;
+            /** Method */
+            method?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Paid At */
+            paid_at?: string | null;
+            /** Payee Name */
+            payee_name?: string | null;
+            /** Payee User Id */
+            payee_user_id?: string | null;
+            /**
+             * Policy Id
+             * Format: uuid
+             */
+            policy_id: string;
+            /** Policy No */
+            policy_no?: string | null;
+            /** Settlement Id */
+            settlement_id?: string | null;
+            /** Status */
+            status: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SettlementPageOut */
+        SettlementPageOut: {
+            /** Items */
+            items?: components["schemas"]["SettlementOut"][];
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 20
+             */
+            page_size: number;
+            /** Pages */
+            pages?: number | null;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        } & {
+            [key: string]: unknown;
         };
         /** SlaPolicyOut */
         SlaPolicyOut: {
@@ -5939,6 +6686,26 @@ export interface operations {
             };
         };
     };
+    getApiV1ExecutiveDashboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutiveDashboardOut"];
+                };
+            };
+        };
+    };
     getApiV1Exports: {
         parameters: {
             query?: never;
@@ -6039,6 +6806,328 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeatureFlagOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiV1FinanceArClients: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                bucket?: ("current" | "d0_30" | "d31_60" | "d61_90" | "d90_plus") | null;
+                page?: number;
+                page_size?: number;
+                sort?: string | null;
+                order?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArClientPageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiV1FinanceArClientsClientId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArClientDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiV1FinanceArSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArSummaryOut"];
+                };
+            };
+        };
+    };
+    getApiV1FinanceCashbox: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashboxOut"];
+                };
+            };
+        };
+    };
+    getApiV1FinanceCommissions: {
+        parameters: {
+            query?: {
+                status?: ("accrued" | "approved" | "paid" | "cancelled") | null;
+                q?: string | null;
+                page?: number;
+                page_size?: number;
+                sort?: string | null;
+                order?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettlementPageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1FinanceCommissionsCommissionIdApprove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                commission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CommissionApproveIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettlementOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1FinanceCommissionsCommissionIdPay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                commission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CommissionPayIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettlementOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiV1FinanceLedger: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                status?: ("posted" | "void") | null;
+                entry_type?: ("premium_receivable" | "commission_receivable" | "commission_payable" | "expense" | "adjustment") | null;
+                direction?: ("in" | "out") | null;
+                client_id?: string | null;
+                date_from?: string | null;
+                date_to?: string | null;
+                page?: number;
+                page_size?: number;
+                sort?: string | null;
+                order?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerPageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1FinanceLedger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerEntryCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerEntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    postApiV1FinanceLedgerEntryIdVoid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerVoidIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerVoidOut"];
                 };
             };
             /** @description Validation Error */
@@ -7209,7 +8298,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["InstallmentPayIn"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

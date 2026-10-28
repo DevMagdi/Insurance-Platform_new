@@ -29,17 +29,23 @@ from app.domain.enums import (
     IssuingDocumentStatus,
     IssuingStage,
     LeadStatus,
+    LedgerDirection,
+    LedgerEntryType,
+    LedgerStatus,
     MessageDirection,
+    PaymentMethod,
     PaymentPlan,
     PolicyStatus,
     PortalRole,
     RequestPriority,
     RequestStatus,
     ScopeType,
+    SettlementStatus,
 )
 from app.domain.phone import normalize_mobile
 from app.models.auth import ClientPortalUser, Permission, Role, User, UserScope
 from app.models.clients import Client, ClientContact, ImportJob, InsuredPerson
+from app.models.finance import CommissionSettlement, LedgerEntry
 from app.models.leads import Lead, LeadActivity, LeadMeeting
 from app.models.masters import (
     BusinessHoursRow,
@@ -272,13 +278,121 @@ async def seed(session: AsyncSession, *, reset: bool = False) -> dict[str, int]:
             session.add(installment)
             if paid:
                 session.add(
+                    # accrued, not settled: a commission on a paid installment is *owed* until finance
+                    # pays it, and R10's settlement rows below are what records that (ADR-030 §4)
                     Commission(
                         policy_id=policy.id,
                         amount=round(each * Decimal("0.05"), 2),
-                        status=CommissionStatus.SETTLED,
-                        settled_at=datetime.now(UTC),
+                        status=CommissionStatus.ACCRUED,
                     )
                 )
+    await session.flush()
+
+    # --- R10: the ledger the finance screens read (ADR-030) --------------------------
+    # Seeded money is not invented: every posted entry below is the receipt of an installment the seed
+    # already marked paid, or the payout of a commission the policy accrual already wrote. The pattern
+    # (paid / approved / accrued) gives the commissions screen all three states to render.
+    cashier = users["manager"]
+    ledger_seq = 0
+    receipts = (
+        await session.execute(
+            select(Installment, Policy.client_id, Policy.policy_no)
+            .join(Policy, Installment.policy_id == Policy.id)
+            .where(Installment.paid_at.is_not(None))
+        )
+    ).all()
+    for installment, client_id, _policy_no in receipts:
+        ledger_seq += 1
+        # most of the office's money arrives as cash; a third of it as a transfer, so `by_method` is real
+        method = PaymentMethod.CASH if ledger_seq % 3 else PaymentMethod.BANK
+        session.add(
+            LedgerEntry(
+                entry_no=f"LE-{ledger_seq:06d}",
+                entry_type=LedgerEntryType.PREMIUM_RECEIVABLE,
+                direction=LedgerDirection.IN,
+                amount=installment.amount,
+                currency="EGP",
+                status=LedgerStatus.POSTED,
+                client_id=client_id,
+                policy_id=installment.policy_id,
+                installment_id=installment.id,
+                method=method,
+                note=f"تحصيل قسط {installment.sequence_no}",
+                posted_at=installment.paid_at or datetime.now(UTC),
+                posted_by=cashier.id,
+            )
+        )
+
+    # two real office expenses: the cashbox must not equal "everything ever collected"
+    for idx, (label, amount) in enumerate((("إيجار المكتب", 18000), ("مصاريف تشغيل", 4250))):
+        ledger_seq += 1
+        session.add(
+            LedgerEntry(
+                entry_no=f"LE-{ledger_seq:06d}",
+                entry_type=LedgerEntryType.EXPENSE,
+                direction=LedgerDirection.OUT,
+                amount=Decimal(amount),
+                currency="EGP",
+                status=LedgerStatus.POSTED,
+                method=PaymentMethod.CASH,
+                note=label,
+                posted_at=datetime.now(UTC) - timedelta(days=idx + 1),
+                posted_by=cashier.id,
+            )
+        )
+
+    accrued_commissions = (
+        await session.execute(select(Commission, Policy).join(Policy, Commission.policy_id == Policy.id).order_by(Commission.created_at))
+    ).all()
+    for idx, (commission, policy) in enumerate(accrued_commissions):
+        payee = policy.client.account_owner_id if policy.client is not None else None
+        settlement = CommissionSettlement(
+            commission_id=commission.id,
+            status=SettlementStatus.ACCRUED,
+            amount=commission.amount,
+            currency="EGP",
+            payee_user_id=payee,
+            approved_at=datetime.now(UTC) - timedelta(days=4) if idx % 3 == 1 else None,
+            paid_at=None,
+            method=None,
+        )
+        if idx % 3 == 1:
+            settlement.status = SettlementStatus.APPROVED
+            settlement.approved_by = cashier.id
+        if idx % 3 == 2:
+            # paid last month-to-now, through the bank, with its own outgoing ledger row
+            paid_at = datetime.now(UTC) - timedelta(days=2)
+            ledger_seq += 1
+            entry = LedgerEntry(
+                entry_no=f"LE-{ledger_seq:06d}",
+                entry_type=LedgerEntryType.COMMISSION_PAYABLE,
+                direction=LedgerDirection.OUT,
+                amount=commission.amount,
+                currency="EGP",
+                status=LedgerStatus.POSTED,
+                client_id=policy.client_id,
+                policy_id=policy.id,
+                user_id=payee,
+                method=PaymentMethod.BANK,
+                note=f"عمولة {policy.policy_no or ''}".strip(),
+                posted_at=paid_at,
+                posted_by=cashier.id,
+            )
+            session.add(entry)
+            await session.flush()
+            settlement.status = SettlementStatus.PAID
+            settlement.approved_at = paid_at - timedelta(days=3)
+            settlement.approved_by = cashier.id
+            settlement.paid_at = paid_at
+            settlement.paid_by = cashier.id
+            settlement.method = PaymentMethod.BANK
+            settlement.ledger_entry_id = entry.id
+            commission.status = CommissionStatus.SETTLED
+            commission.settled_at = paid_at
+        session.add(settlement)
+
+    # the counter continues after the seeded numbers, so a manual posting cannot collide with `entry_no`
+    session.add(RequestNumberCounter(key="ledger", last_value=ledger_seq))
     await session.flush()
 
     # --- portal accounts --------------------------------------------------------------

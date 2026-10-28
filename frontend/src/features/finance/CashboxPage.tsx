@@ -1,0 +1,82 @@
+/**
+ * R10 — the office cashbox. `balance` counts **posted cash rows only**: a bank transfer is real money but it
+ * is not in the drawer at closing time, and a cashbox total that silently includes it cannot be counted.
+ * Every other method is reported next to it, so nothing is hidden — it is just not called cash (ADR-030 §5).
+ */
+import { useQuery } from "@tanstack/react-query";
+import { Vault } from "lucide-react";
+import { useTranslation } from "react-i18next";
+
+import { Badge, Button, Card, DataTable, Kpi, PageHeader, SectionTitle, StateBlock } from "@/components/ui";
+import { api } from "@/lib/api/client";
+import { formatDate, formatMoney } from "@/lib/format";
+import type { components } from "@/lib/api/schema";
+
+type Cashbox = components["schemas"]["CashboxOut"];
+
+export default function CashboxPage() {
+  const { t } = useTranslation();
+  const cashbox = useQuery({ queryKey: ["finance", "cashbox"], queryFn: () => api.get<Cashbox>("/finance/cashbox") });
+
+  if (cashbox.isPending) return <StateBlock kind="loading" />;
+  if (cashbox.isError)
+    return <StateBlock kind="error" action={<Button onClick={() => void cashbox.refetch()}>{t("common.retry")}</Button>} />;
+
+  const data = cashbox.data;
+
+  return (
+    <>
+      <PageHeader
+        title={t("finance.cashbox")}
+        subtitle={t("finance.cashboxSubtitle")}
+        actions={
+          <Badge tone={data.balance >= 0 ? "g" : "r"}>
+            <span className="inline-flex items-center gap-1.5">
+              <Vault size={13} strokeWidth={1.8} />
+              {formatMoney(data.balance)}
+            </span>
+          </Badge>
+        }
+      />
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi label={t("finance.cashBalance")} value={formatMoney(data.balance)} delta={t("finance.asOf", { date: formatDate(data.as_of) })} tone="b" />
+        <Kpi label={t("finance.inToday")} value={formatMoney(data.today_in)} delta={t("finance.outToday", { amount: formatMoney(data.today_out) })} tone="g" />
+        <Kpi label={t("finance.inMonth")} value={formatMoney(data.month_in)} delta={t("finance.outMonth", { amount: formatMoney(data.month_out) })} tone="t" />
+        <Kpi label={t("finance.cashInTotal")} value={formatMoney(data.cash_in_total)} delta={t("finance.cashOutTotal", { amount: formatMoney(data.cash_out_total) })} tone="a" />
+      </div>
+
+      <Card className="mt-4">
+        <SectionTitle>{t("finance.byMethod")}</SectionTitle>
+        <DataTable
+          columns={[
+            { id: "method", head: t("finance.method"), render: (row) => <span className="font-semibold text-ink">{t(`finance.methodValue.${row.method}`)}</span> },
+            { id: "in", head: t("finance.moneyIn"), align: "end", render: (row) => formatMoney(row.in_total) },
+            { id: "out", head: t("finance.moneyOut"), align: "end", render: (row) => formatMoney(row.out_total) },
+            { id: "balance", head: t("finance.balance"), align: "end", render: (row) => formatMoney(row.balance) },
+          ]}
+          rows={data.by_method ?? []}
+          keyOf={(row) => row.method}
+        />
+      </Card>
+
+      <Card className="mt-4">
+        <SectionTitle>{t("finance.movements")}</SectionTitle>
+        <DataTable
+          columns={[
+            { id: "no", head: t("finance.entryNo"), render: (row) => <span className="font-semibold text-ink">{row.entry_no}</span> },
+            { id: "type", head: t("finance.type"), render: (row) => t(`finance.entryType.${row.entry_type}`) },
+            { id: "direction", head: t("finance.direction"), render: (row) => <Badge tone={row.direction === "in" ? "g" : "a"}>{t(`finance.directionValue.${row.direction}`)}</Badge> },
+            { id: "amount", head: t("finance.amount"), align: "end", render: (row) => formatMoney(row.amount) },
+            { id: "client", head: t("finance.client"), render: (row) => row.client_name ?? "—" },
+            { id: "posted", head: t("finance.postedAt"), render: (row) => formatDate(row.posted_at) },
+            { id: "status", head: t("finance.status"), render: (row) => <Badge tone={row.status === "posted" ? "g" : "r"}>{t(`finance.statusValue.${row.status}`)}</Badge> },
+          ]}
+          rows={data.movements ?? []}
+          keyOf={(row) => String(row.id)}
+          empty={<StateBlock kind="empty" title={t("finance.noMovements")} />}
+        />
+      </Card>
+    </>
+  );
+}

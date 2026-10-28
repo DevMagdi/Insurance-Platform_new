@@ -7,7 +7,9 @@ from app.api.v1.endpoints import (
     auth,
     clients,
     dashboard,
+    executive,
     exports,
+    finance,
     leads,
     masters,
     phase2,
@@ -38,3 +40,5 @@ api_router.include_router(ai.router)
 api_router.include_router(realtime.router)
 api_router.include_router(settings.router)
 api_router.include_router(team.router)
+api_router.include_router(finance.router)
+api_router.include_router(executive.router)

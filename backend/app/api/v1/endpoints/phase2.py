@@ -164,6 +164,12 @@ async def installments(policy_id: UUID, session: DbSession, scope: ScopeDep, act
     return result
 
 
+class InstallmentPayIn(BaseModel):
+    """How the money arrived. Optional so an existing client that posts no body keeps working (cash)."""
+
+    method: str | None = None
+
+
 @router.post("/policies/{policy_id}/installments/{installment_id}/pay", summary="Record a payment on one installment")
 async def pay_installment(
     policy_id: UUID,
@@ -172,22 +178,26 @@ async def pay_installment(
     session: DbSession,
     scope: ScopeDep,
     actor: PoliciesView,
+    body: InstallmentPayIn | None = None,
 ) -> dict[str, Any]:
-    """`unpaid → paid` once, with an audit row. A second call is a `409` (see `services.installments`)."""
+    """`unpaid → paid` once, with an audit row **and the ledger receipt** (R10). A second call is a `409`."""
     from app.core.errors import Forbidden
 
     if P.POLICIES_MANAGE not in scope.perms:
         raise Forbidden("Not allowed", details={"missing": [P.POLICIES_MANAGE]})
     if not await _flag(session):
         raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
+    from app.domain.enums import PaymentMethod
     from app.services import installments as installments_svc
 
+    method = PaymentMethod(body.method) if body is not None and body.method else PaymentMethod.CASH
     result = await installments_svc.pay(
         session,
         actor,
         scope,
         policy_id,
         installment_id,
+        method=method,
         ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )

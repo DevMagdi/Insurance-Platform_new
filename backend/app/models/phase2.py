@@ -45,6 +45,10 @@ class Policy(UUIDPkMixin, TimestampMixin, Base):
     payment_plan: Mapped[PaymentPlan] = mapped_column(enum_col(PaymentPlan), default=PaymentPlan.MONTHLY, nullable=False)
     commission_rate: Mapped[Decimal | None] = mapped_column(sa.Numeric(5, 2), default=Decimal("5.00"))
     status: Mapped[PolicyStatus] = mapped_column(enum_col(PolicyStatus), default=PolicyStatus.DRAFT, nullable=False)
+    #: when the office actually issued it (R10). `created_at` is when the draft was booked, which is a
+    #: different month whenever a policy sits in `pending_insurer` across a month boundary — and the
+    #: executive dashboard counts *issued this month*.
+    issued_at: Mapped[datetime | None] = mapped_column(TZDateTime())
     headcount: Mapped[int | None] = mapped_column(sa.Integer)
     notes: Mapped[str | None] = mapped_column(sa.Text)
 
