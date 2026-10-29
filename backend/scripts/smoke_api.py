@@ -365,25 +365,21 @@ def main() -> int:
         get("/api/v1/portal/documents", portal_token)
         get("/api/v1/portal/requests", portal_token)
 
-    # Phase-2 endpoints are flag-gated: 503 while `phase2.enabled` is off, then enabled for shape checks
+    # ADR-034: policies/commissions/issuing/reports are live modules — a permitted reader gets
+    # their real shape immediately, with no flag toggled anywhere in this run.
     for path in ["/api/v1/policies", "/api/v1/commissions", "/api/v1/issuing-cases", "/api/v1/reports/insurer-performance"]:
-        gated = client.get(path, headers={"authorization": f"Bearer {token}"})
-        if gated.status_code == 503 and gated.json().get("code") == "feature_disabled":
-            print(f"ok   GET {path} is feature-flagged off (503 feature_disabled)")
+        live = client.get(path, headers={"authorization": f"Bearer {token}"})
+        if live.status_code == 200:
+            print(f"ok   GET {path} is live (200, no phase gate)")
         else:
-            failures.append(f"{path} should be flag-gated, got {gated.status_code}")
+            failures.append(f"{path} should be live without any flag, got {live.status_code}")
 
     admin_token = client.post("/api/v1/auth/login", json={"email": "admin@brokerhub.test", "password": "Br0kerHub!2026"}).json()[
         "access_token"
     ]
     admin = {"authorization": f"Bearer {admin_token}"}
-    toggled = client.patch("/api/v1/feature-flags/phase2.enabled", json={"enabled": True}, headers=admin)
-    if toggled.status_code == 200:
-        for path in ["/api/v1/policies", "/api/v1/commissions", "/api/v1/issuing-cases", "/api/v1/reports/insurer-performance"]:
-            get(path, admin_token)
-        client.patch("/api/v1/feature-flags/phase2.enabled", json={"enabled": False}, headers=admin)
-    else:
-        failures.append(f"PATCH /api/v1/feature-flags/phase2.enabled -> {toggled.status_code}")
+    for path in ["/api/v1/policies", "/api/v1/commissions", "/api/v1/issuing-cases", "/api/v1/reports/insurer-performance"]:
+        get(path, admin_token)
     for path in ["/api/v1/users", "/api/v1/roles", "/api/v1/permissions"]:
         get(path, admin_token)
 
@@ -518,12 +514,12 @@ def main() -> int:
     else:
         failures.append(f"handshake with a wrong token -> {refused.status_code} (403 expected)")
 
-    # every route is asked, not only the ones this file curated by hand — with Phase 2 open so the gated
-    # half of the surface is answered for its real shape instead of a 503
+    # every route is asked, not only the ones this file curated by hand — all modules are live
+    # (ADR-034); only the ai provider switch is opened so its actions answer their real shape
     flags = client.get("/api/v1/feature-flags", headers=admin).json()
     keys = {row["key"] for row in flags} if isinstance(flags, list) else set(flags.get("items", []))
     opened: list[str] = []
-    for flag in ("phase2.enabled", "ai.enabled"):
+    for flag in ("ai.enabled",):
         if client.patch(f"/api/v1/feature-flags/{flag}", json={"enabled": True}, headers=admin).status_code == 200:
             opened.append(flag)
         else:
