@@ -102,7 +102,8 @@ async function runUser(browser: Browser, email: string, full: Mode): Promise<Use
   return result;
 }
 
-test("browser load — critical circuit, all modules live, no phase gate anywhere", async ({}, testInfo) => {
+test("browser load — critical circuit, all modules live, no phase gate anywhere", async (fixtures, testInfo) => {
+  void fixtures; // the circuit launches its own contexts; the default page fixture stays unused
   test.skip(testInfo.project.name !== "desktop", "one viewport is enough for a load circuit");
   test.setTimeout(15 * 60_000);
   const browser = await chromium.launch(
