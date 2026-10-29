@@ -102,13 +102,15 @@ async function runUser(browser: Browser, email: string, full: Mode): Promise<Use
   return result;
 }
 
-test("browser load — critical circuit, all modules live, no phase gate anywhere", async (fixtures, testInfo) => {
-  void fixtures; // the circuit launches its own contexts; the default page fixture stays unused
+test("browser load — critical circuit, all modules live, no phase gate anywhere", async ({ browser: fixtureBrowser }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "one viewport is enough for a load circuit");
   test.setTimeout(15 * 60_000);
-  const browser = await chromium.launch(
-    process.env.LOAD_CHROMIUM_EXE ? { executablePath: process.env.LOAD_CHROMIUM_EXE, args: ["--no-sandbox"] } : {},
-  );
+  // CI uses the suite's own browser; a sandbox without the Playwright download can point
+  // LOAD_CHROMIUM_EXE at any Chromium binary instead.
+  const own = process.env.LOAD_CHROMIUM_EXE
+    ? await chromium.launch({ executablePath: process.env.LOAD_CHROMIUM_EXE, args: ["--no-sandbox"] })
+    : null;
+  const browser: Browser = own ?? fixtureBrowser;
   // One distinct account per context: two contexts sharing one account rotate each other's
   // refresh token away (the S3 lesson), which reads as random step timeouts, not load.
   const ALL: { email: string; full: Mode }[] = [
@@ -124,7 +126,7 @@ test("browser load — critical circuit, all modules live, no phase gate anywher
   const plan = ALL.slice(0, Math.min(USERS, ALL.length));
   const started = Date.now();
   const results = await Promise.all(plan.map((u) => runUser(browser, u.email, u.full)));
-  await browser.close();
+  await own?.close();
 
   const steps = results.flatMap((r) => r.steps);
   const failed = steps.filter((s) => !s.ok);
