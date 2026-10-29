@@ -223,44 +223,51 @@ async def sales_performance(session: AsyncSession, scope: Scope, *, today: date 
     if not owner_of:
         return []
 
-    policies = (
-        (
-            await session.execute(
-                with_scope(select(Policy), scope, "policy").where(
-                    Policy.status == PolicyStatus.ISSUED,
-                    Policy.issued_at.is_not(None),
-                    Policy.issued_at >= month_start_dt,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    receipts = (
-        (
-            await session.execute(
-                with_scope(select(LedgerEntry), scope, "ledger").where(
-                    LedgerEntry.status == LedgerStatus.POSTED,
-                    LedgerEntry.direction == LedgerDirection.IN,
-                    LedgerEntry.posted_at >= month_start_dt,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-
+    # Grouped aggregates, not full-row loads: this used to hydrate every MTD receipt as an ORM object
+    # (with joined relations) and add it up in Python — the measured cost of /executive/dashboard at
+    # 50k ledger rows. Grouping by client keeps the owner attribution (visible clients only) identical.
     stats: dict[UUID | None, dict[str, Any]] = {}
 
     def bucket(owner: UUID | None) -> dict[str, Any]:
         return stats.setdefault(owner, {"policies_issued_mtd": 0, "premium_mtd": Decimal(0), "collected_mtd": Decimal(0)})
 
-    for policy in policies:
-        row = bucket(owner_of.get(policy.client_id))
-        row["policies_issued_mtd"] += 1
-        row["premium_mtd"] += Decimal(str(policy.premium_amount or 0))
-    for receipt in receipts:
-        bucket(owner_of.get(receipt.client_id) if receipt.client_id else None)["collected_mtd"] += Decimal(str(receipt.amount))
+    policy_rows = (
+        await session.execute(
+            with_scope(
+                select(Policy.client_id, func.count(), func.coalesce(func.sum(Policy.premium_amount), 0))
+                .select_from(Policy)
+                .group_by(Policy.client_id),
+                scope,
+                "policy",
+            ).where(
+                Policy.status == PolicyStatus.ISSUED,
+                Policy.issued_at.is_not(None),
+                Policy.issued_at >= month_start_dt,
+            )
+        )
+    ).all()
+    for client_id, count, premium in policy_rows:
+        row = bucket(owner_of.get(client_id))
+        row["policies_issued_mtd"] += int(count)
+        row["premium_mtd"] += Decimal(str(premium or 0))
+
+    receipt_rows = (
+        await session.execute(
+            with_scope(
+                select(LedgerEntry.client_id, func.coalesce(func.sum(LedgerEntry.amount), 0))
+                .select_from(LedgerEntry)
+                .group_by(LedgerEntry.client_id),
+                scope,
+                "ledger",
+            ).where(
+                LedgerEntry.status == LedgerStatus.POSTED,
+                LedgerEntry.direction == LedgerDirection.IN,
+                LedgerEntry.posted_at >= month_start_dt,
+            )
+        )
+    ).all()
+    for client_id, total in receipt_rows:
+        bucket(owner_of.get(client_id) if client_id else None)["collected_mtd"] += Decimal(str(total or 0))
 
     owners = {row for row in stats if row is not None}
     names: dict[UUID, str] = {}

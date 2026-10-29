@@ -42,6 +42,7 @@ SettingsManage = Annotated[User, Depends(require_perm(P.SETTINGS_MANAGE))]
 FinanceView = Annotated[User, Depends(require_perm(P.FINANCE_VIEW))]
 FinancePost = Annotated[User, Depends(require_perm(P.FINANCE_POST))]
 FinanceVoid = Annotated[User, Depends(require_perm(P.FINANCE_VOID))]
+FinancePeriodClose = Annotated[User, Depends(require_perm(P.FINANCE_PERIOD_CLOSE))]
 CommissionsManage = Annotated[User, Depends(require_perm(P.COMMISSIONS_MANAGE))]
 ReportsExecutive = Annotated[User, Depends(require_perm(P.REPORTS_EXECUTIVE))]
 
@@ -52,6 +53,7 @@ __all__ = [
     "CommissionsManage",
     "CurrentUser",
     "DbSession",
+    "FinancePeriodClose",
     "FinancePost",
     "FinanceView",
     "FinanceVoid",

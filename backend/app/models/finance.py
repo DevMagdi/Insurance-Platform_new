@@ -130,4 +130,30 @@ class CommissionSettlement(UUIDPkMixin, TimestampMixin, Base):
     ledger_entry: Mapped[LedgerEntry | None] = relationship(foreign_keys=[ledger_entry_id], lazy="joined")
 
 
-__all__ = ["CommissionSettlement", "LedgerEntry"]
+class CashboxOpening(UUIDPkMixin, TimestampMixin, Base):
+    """The counted drawer at a moment in time (ADR-033). A control record, never a ledger movement."""
+
+    __tablename__ = "cashbox_openings"
+    __table_args__ = (
+        sa.CheckConstraint("amount >= 0", name="ck_cashbox_opening_nonnegative"),
+        sa.Index("ix_cashbox_openings_effective", "effective_at"),
+    )
+
+    amount: Mapped[Decimal] = mapped_column(sa.Numeric(14, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(sa.String(8), default="EGP", nullable=False)
+    effective_at: Mapped[datetime] = mapped_column(TZDateTime(), nullable=False)
+    note: Mapped[str | None] = mapped_column(sa.Text)
+    created_by: Mapped[UUID | None] = mapped_column(sa.Uuid(), sa.ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class FinancePeriodClose(UUIDPkMixin, TimestampMixin, Base):
+    """A closed finance month (`YYYY-MM`). Posting into it needs `finance.period_close` (ADR-033)."""
+
+    __tablename__ = "finance_period_closes"
+
+    period_key: Mapped[str] = mapped_column(sa.String(7), unique=True, nullable=False)
+    note: Mapped[str | None] = mapped_column(sa.Text)
+    closed_by: Mapped[UUID | None] = mapped_column(sa.Uuid(), sa.ForeignKey("users.id", ondelete="SET NULL"))
+
+
+__all__ = ["CashboxOpening", "CommissionSettlement", "FinancePeriodClose", "LedgerEntry"]

@@ -797,6 +797,9 @@ class CashboxOut(Open):
     as_of: datetime
     is_net_movements_only: bool = True
     balance_note: str = "net_movements_only"
+    #: Score-8 (ADR-033): the counted opening the balance stands on, when one has been set
+    opening_balance: float = 0.0
+    opening_effective_at: datetime | None = None
     #: the earliest posted cash movement — the balance is the net movement from here to `as_of`
     since: datetime | None = None
     balance: float

@@ -267,6 +267,30 @@ def _workbook(sheet: str, columns: list[Column], rows: list[dict[str, Any]]) -> 
     return buffer.getvalue()
 
 
+def period_workbook(data: dict[str, Any]) -> bytes:
+    """The ERP period report (ADR-033/E2): totals + per-type in/out/net, from the same aggregate the
+    screen reads — numbers are computed by the server once, never re-added by the frontend."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Period"
+    ws.sheet_view.rightToLeft = True
+    ws.append(["ERP period report — ERP تشغيلي للمكتب (ليس دفاتر ضريبية رسمية)"])
+    ws.append(["period", data.get("label"), str(data.get("start")), str(data.get("end"))])
+    ws.append(["total_in", data.get("total_in")])
+    ws.append(["total_out", data.get("total_out")])
+    ws.append(["net", data.get("net")])
+    ws.append([])
+    ws.append(["entry_type", "in_total", "out_total", "net"])
+    for row in data.get("by_type", []):
+        ws.append([row.get("entry_type"), row.get("in_total"), row.get("out_total"), row.get("net")])
+    for cell in ws[7]:
+        cell.font = Font(bold=True)
+        cell.fill = _HEADER_FILL
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
 async def build(
     kind: ExportKind,
     session: AsyncSession,

@@ -783,6 +783,23 @@
             "title": "Movements",
             "type": "array"
           },
+          "opening_balance": {
+            "default": 0.0,
+            "title": "Opening Balance",
+            "type": "number"
+          },
+          "opening_effective_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Effective At"
+          },
           "since": {
             "anyOf": [
               {
@@ -5334,6 +5351,37 @@
         "title": "NoteCreate",
         "type": "object"
       },
+      "OpeningBalanceIn": {
+        "properties": {
+          "amount": {
+            "minimum": 0.0,
+            "title": "Amount",
+            "type": "number"
+          },
+          "effective_at": {
+            "description": "ISO datetime the counted drawer applies from",
+            "title": "Effective At"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "amount",
+          "effective_at"
+        ],
+        "title": "OpeningBalanceIn",
+        "type": "object"
+      },
       "PageOut": {
         "additionalProperties": true,
         "properties": {
@@ -5404,6 +5452,33 @@
           "pages"
         ],
         "title": "Page[Any]",
+        "type": "object"
+      },
+      "PeriodCloseIn": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "period": {
+            "description": "YYYY-MM",
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "Period",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period"
+        ],
+        "title": "PeriodCloseIn",
         "type": "object"
       },
       "PermissionOut": {
@@ -11006,6 +11081,29 @@
         ]
       }
     },
+    "/api/v1/dashboard/today": {
+      "get": {
+        "operationId": "getApiV1DashboardToday",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Getapiv1Dashboardtoday",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "«اليوم»: overdue SLA, lead follow-ups, installments due (A5)",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/api/v1/dev/sim/call": {
       "post": {
         "operationId": "postApiV1DevSimCall",
@@ -11477,6 +11575,47 @@
           }
         },
         "summary": "The office cashbox (posted cash rows only)",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/cashbox/opening": {
+      "post": {
+        "operationId": "postApiV1FinanceCashboxOpening",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpeningBalanceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Postapiv1Financecashboxopening"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set the cashbox opening balance (finance.post)",
         "tags": [
           "finance"
         ]
@@ -12031,6 +12170,108 @@
         ]
       }
     },
+    "/api/v1/finance/period-closes": {
+      "get": {
+        "operationId": "getApiV1FinancePeriod-Closes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Getapiv1Financeperiod-Closes"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Closed finance months (ADR-033)",
+        "tags": [
+          "finance"
+        ]
+      },
+      "post": {
+        "operationId": "postApiV1FinancePeriod-Closes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeriodCloseIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Postapiv1Financeperiod-Closes"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close a finance month (finance.period_close)",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/period-closes/{period}": {
+      "delete": {
+        "operationId": "deleteApiV1FinancePeriod-ClosesPeriod",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "period",
+            "required": true,
+            "schema": {
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Deleteapiv1Financeperiod-Closesperiod"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reopen a closed finance month (finance.period_close)",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
     "/api/v1/finance/spend-by-period": {
       "get": {
         "operationId": "getApiV1FinanceSpend-By-Period",
@@ -12075,6 +12316,55 @@
           }
         },
         "summary": "ERP hub: posted in/out totals for a period",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/spend-by-period/export.xlsx": {
+      "get": {
+        "operationId": "getApiV1FinanceSpend-By-PeriodExport.Xlsx",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "month",
+              "enum": [
+                "month",
+                "quarter",
+                "semiannual",
+                "year"
+              ],
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Getapiv1Financespend-By-Periodexport.Xlsx"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "ERP hub: the period report as Excel (server-computed)",
         "tags": [
           "finance"
         ]
@@ -13582,6 +13872,28 @@
         "summary": "Read One",
         "tags": [
           "dashboard"
+        ]
+      }
+    },
+    "/api/v1/ops/summary": {
+      "get": {
+        "description": "One screen's worth of «is it alive»: readiness, each channel's connection state + last webhook,\nand object-storage usage. Staff-only (`settings.manage`) — it names integration errors.",
+        "operationId": "getApiV1OpsSummary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Getapiv1Opssummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Operations health: DB, integrations, storage (B3)",
+        "tags": [
+          "health"
         ]
       }
     },

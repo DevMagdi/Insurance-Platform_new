@@ -99,6 +99,7 @@ export const api = {
     request<T>(path, { method: "POST", body, query }),
   patch: <T,>(path: keyof paths | string, body?: unknown) => request<T>(path, { method: "PATCH", body }),
   put: <T,>(path: keyof paths | string, body?: unknown) => request<T>(path, { method: "PUT", body }),
+  del: <T,>(path: keyof paths | string) => request<T>(path, { method: "DELETE" }),
   upload: <T,>(path: keyof paths | string, form: FormData) =>
     request<T>(path, { method: "POST", body: form }),
 };

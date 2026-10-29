@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, NotFound, ValidationFailed
 from app.core.pagination import Page, PageParams
-from app.core.scope import Scope
+from app.core.scope import Scope, build_scope
 from app.domain.enums import (
     CommissionStatus,
     InstallmentStatus,
@@ -43,9 +43,10 @@ from app.domain.enums import (
     PolicyStatus,
     SettlementStatus,
 )
+from app.domain.permissions import FINANCE_PERIOD_CLOSE
 from app.models.auth import User
 from app.models.clients import Client
-from app.models.finance import CommissionSettlement, LedgerEntry
+from app.models.finance import CashboxOpening, CommissionSettlement, FinancePeriodClose, LedgerEntry
 from app.models.phase2 import Commission, Installment, Policy
 from app.models.requests import RequestNumberCounter
 from app.repositories.scope_filters import row_visible, with_scope
@@ -131,6 +132,15 @@ async def post_entry(
     user_agent: str | None = None,
 ) -> LedgerEntry:
     """Write one movement. Validates the sign, the direction and the installment's single receipt."""
+    # ADR-033: a closed month refuses new postings; only `finance.period_close` holders may post into
+    # it, and that exception is audited under its own action so it can be found later.
+    when = posted_at or datetime.now(UTC)
+    closed = await period_close_for(session, when)
+    if closed is not None and not (actor is not None and build_scope(actor).can(FINANCE_PERIOD_CLOSE)):
+        raise Conflict(
+            "This finance period is closed",
+            details={"period": closed.period_key, "closed_by": str(closed.closed_by) if closed.closed_by else None},
+        )
     value = money(amount)
     if value <= 0:
         # the API rejects this at the schema (422); the service rejects it too, because the seed, the
@@ -167,7 +177,7 @@ async def post_entry(
         user_id=user_id,
         method=method,
         note=note,
-        posted_at=posted_at or datetime.now(UTC),
+        posted_at=when,
         posted_by=actor.id if actor else None,
     )
     session.add(entry)
@@ -175,7 +185,7 @@ async def post_entry(
     await audit.write(
         session,
         actor=actor,
-        action="ledger.posted",
+        action="ledger.posted_in_closed_period" if closed is not None else "ledger.posted",
         entity_type="ledger_entry",
         entity_id=entry.id,
         after={
@@ -225,6 +235,13 @@ async def void_entry(
     if entry is None:
         raise NotFound("Ledger entry not found")
     entry = cast("LedgerEntry", entry)
+    # ADR-033: voiding rewrites a closed month's totals, so it follows the same rule as posting.
+    closed = await period_close_for(session, entry.posted_at)
+    if closed is not None and not build_scope(actor).can(FINANCE_PERIOD_CLOSE):
+        raise Conflict(
+            "This finance period is closed",
+            details={"period": closed.period_key, "closed_by": str(closed.closed_by) if closed.closed_by else None},
+        )
     if entry.status == LedgerStatus.VOID:
         raise Conflict("This entry was already voided", details={"entry_no": entry.entry_no, "voided_at": str(entry.voided_at)})
 
@@ -520,6 +537,106 @@ async def _sum(
     return money((await session.execute(stmt)).scalar_one())
 
 
+# ------------------------------------------------------------- period close + opening (ADR-033) --
+def period_key_of(moment: datetime) -> str:
+    return f"{moment.year:04d}-{moment.month:02d}"
+
+
+async def period_close_for(session: AsyncSession, moment: datetime) -> FinancePeriodClose | None:
+    return (
+        await session.execute(select(FinancePeriodClose).where(FinancePeriodClose.period_key == period_key_of(moment)))
+    ).scalar_one_or_none()
+
+
+async def list_period_closes(session: AsyncSession) -> list[dict[str, Any]]:
+    rows = (await session.execute(select(FinancePeriodClose).order_by(FinancePeriodClose.period_key.desc()))).scalars().all()
+    return [{"period": row.period_key, "note": row.note, "closed_by": row.closed_by, "closed_at": row.created_at} for row in rows]
+
+
+async def close_period(
+    session: AsyncSession, actor: User, period_key: str, *, note: str | None = None, ip: str | None = None
+) -> dict[str, Any]:
+    import re
+
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period_key or ""):
+        raise ValidationFailed("Period must be YYYY-MM", details={"field": "period"})
+    existing = (await session.execute(select(FinancePeriodClose).where(FinancePeriodClose.period_key == period_key))).scalar_one_or_none()
+    if existing is not None:
+        raise Conflict("This finance period is already closed", details={"period": period_key})
+    row = FinancePeriodClose(period_key=period_key, note=note, closed_by=actor.id)
+    session.add(row)
+    await session.flush()
+    await audit.write(
+        session,
+        actor=actor,
+        action="finance.period_closed",
+        entity_type="finance_period",
+        entity_id=row.id,
+        after={"period": period_key, "note": note},
+        ip=ip,
+    )
+    return {"period": period_key, "note": note, "closed_by": actor.id, "closed_at": row.created_at}
+
+
+async def reopen_period(session: AsyncSession, actor: User, period_key: str, *, ip: str | None = None) -> dict[str, Any]:
+    row = (await session.execute(select(FinancePeriodClose).where(FinancePeriodClose.period_key == period_key))).scalar_one_or_none()
+    if row is None:
+        raise NotFound("This finance period is not closed")
+    await audit.write(
+        session,
+        actor=actor,
+        action="finance.period_reopened",
+        entity_type="finance_period",
+        entity_id=row.id,
+        before={"period": period_key},
+        ip=ip,
+    )
+    await session.delete(row)
+    await session.flush()
+    return {"period": period_key, "reopened": True}
+
+
+async def set_opening_balance(
+    session: AsyncSession,
+    actor: User,
+    *,
+    amount: Any,
+    effective_at: datetime,
+    note: str | None = None,
+    ip: str | None = None,
+) -> dict[str, Any]:
+    value = money(amount)
+    if value < 0:
+        raise ValidationFailed("Opening balance cannot be negative", details={"field": "amount"})
+    row = CashboxOpening(amount=value, effective_at=effective_at, note=note, created_by=actor.id)
+    session.add(row)
+    await session.flush()
+    await audit.write(
+        session,
+        actor=actor,
+        action="cashbox.opening_set",
+        entity_type="cashbox_opening",
+        entity_id=row.id,
+        after={"amount": float(value), "effective_at": effective_at.isoformat(), "note": note},
+        ip=ip,
+    )
+    return {"id": row.id, "amount": float(value), "currency": row.currency, "effective_at": effective_at, "note": note}
+
+
+async def _latest_opening(session: AsyncSession, as_of: datetime) -> CashboxOpening | None:
+    return (
+        (
+            await session.execute(
+                select(CashboxOpening)
+                .where(CashboxOpening.effective_at <= as_of)
+                .order_by(CashboxOpening.effective_at.desc(), CashboxOpening.created_at.desc())
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
 async def cashbox(session: AsyncSession, scope: Scope, *, as_of: datetime | None = None) -> dict[str, Any]:
     """The office's cash position: posted **cash** rows only, in minus out.
 
@@ -528,24 +645,49 @@ async def cashbox(session: AsyncSession, scope: Scope, *, as_of: datetime | None
     a number that cannot be counted at closing time.
     """
     moment = as_of or datetime.now(UTC)
-    cash = LedgerEntry.method == PaymentMethod.CASH
-    cash_in = await _sum(session, scope, cash, LedgerEntry.direction == LedgerDirection.IN)
-    cash_out = await _sum(session, scope, cash, LedgerEntry.direction == LedgerDirection.OUT)
     today_start = datetime.combine(moment.date(), datetime.min.time(), tzinfo=UTC)
     month_start = datetime.combine(moment.date().replace(day=1), datetime.min.time(), tzinfo=UTC)
+    opening = await _latest_opening(session, moment)
+    opening_at = opening.effective_at if opening is not None else None
+
+    # One grouped aggregate for every total this screen prints (C1): method × direction, plus the
+    # cash-only today/month windows via conditional sums — instead of ten separate SUM round-trips.
+    def _window_sum(start: datetime) -> Any:
+        return func.coalesce(func.sum(sa.case((LedgerEntry.posted_at >= start, LedgerEntry.amount), else_=0)), 0)
+
+    agg = with_scope(
+        select(
+            LedgerEntry.method,
+            LedgerEntry.direction,
+            func.coalesce(func.sum(LedgerEntry.amount), 0),
+            _window_sum(today_start),
+            _window_sum(month_start),
+        ).select_from(LedgerEntry),
+        scope,
+        "ledger",
+    ).where(LedgerEntry.status == LedgerStatus.POSTED, LedgerEntry.posted_at <= moment)
+    if opening_at is not None:
+        agg = agg.where(LedgerEntry.posted_at >= opening_at)
+    agg = agg.group_by(LedgerEntry.method, LedgerEntry.direction)
+    totals: dict[tuple[str, str], tuple[Decimal, Decimal, Decimal]] = {}
+    for method, direction, total, today_total, month_total in (await session.execute(agg)).all():
+        if method is None:
+            continue
+        totals[(method.value, direction.value)] = (money(total), money(today_total), money(month_total))
+
+    def _t(method: PaymentMethod, direction: LedgerDirection) -> tuple[Decimal, Decimal, Decimal]:
+        return totals.get((method.value, direction.value), (Decimal("0"), Decimal("0"), Decimal("0")))
 
     by_method: list[dict[str, Any]] = []
     for method in (PaymentMethod.CASH, PaymentMethod.BANK, PaymentMethod.WALLET, PaymentMethod.OTHER):
-        in_total = await _sum(session, scope, LedgerEntry.method == method, LedgerEntry.direction == LedgerDirection.IN)
-        out_total = await _sum(session, scope, LedgerEntry.method == method, LedgerEntry.direction == LedgerDirection.OUT)
+        in_total, _, _ = _t(method, LedgerDirection.IN)
+        out_total, _, _ = _t(method, LedgerDirection.OUT)
         by_method.append(
-            {
-                "method": method.value,
-                "in_total": float(in_total),
-                "out_total": float(out_total),
-                "balance": float(in_total - out_total),
-            }
+            {"method": method.value, "in_total": float(in_total), "out_total": float(out_total), "balance": float(in_total - out_total)}
         )
+    cash_in, cash_today_in, cash_month_in = _t(PaymentMethod.CASH, LedgerDirection.IN)
+    cash_out, cash_today_out, cash_month_out = _t(PaymentMethod.CASH, LedgerDirection.OUT)
+    opening_amount = money(opening.amount) if opening is not None else Decimal("0")
 
     movements = (
         (
@@ -572,25 +714,20 @@ async def cashbox(session: AsyncSession, scope: Scope, *, as_of: datetime | None
     return {
         "currency": "EGP",
         "as_of": moment,
-        # Transparency (ADR-031): this is net posted movements only — no opening balance, no daily close.
-        "is_net_movements_only": True,
-        "balance_note": "net_movements_only",
-        "since": since,
-        "balance": float(cash_in - cash_out),
+        # Transparency (ADR-033/E4): with an opening counted, the balance is opening ± movements since
+        # it; until then the screen keeps saying, in so many words, that this is net movements only.
+        "is_net_movements_only": opening is None,
+        "balance_note": "opening_plus_movements" if opening is not None else "net_movements_only",
+        "opening_balance": float(opening_amount),
+        "opening_effective_at": opening_at,
+        "since": opening_at or since,
+        "balance": float(opening_amount + cash_in - cash_out),
         "cash_in_total": float(cash_in),
         "cash_out_total": float(cash_out),
-        "today_in": float(
-            await _sum(session, scope, cash, LedgerEntry.direction == LedgerDirection.IN, LedgerEntry.posted_at >= today_start)
-        ),
-        "today_out": float(
-            await _sum(session, scope, cash, LedgerEntry.direction == LedgerDirection.OUT, LedgerEntry.posted_at >= today_start)
-        ),
-        "month_in": float(
-            await _sum(session, scope, cash, LedgerEntry.direction == LedgerDirection.IN, LedgerEntry.posted_at >= month_start)
-        ),
-        "month_out": float(
-            await _sum(session, scope, cash, LedgerEntry.direction == LedgerDirection.OUT, LedgerEntry.posted_at >= month_start)
-        ),
+        "today_in": float(cash_today_in),
+        "today_out": float(cash_today_out),
+        "month_in": float(cash_month_in),
+        "month_out": float(cash_month_out),
         "by_method": by_method,
         "movements": [entry_brief(row) for row in movements],
     }

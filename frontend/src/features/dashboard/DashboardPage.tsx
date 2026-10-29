@@ -60,6 +60,12 @@ const CHANNEL_COLOR: Record<(typeof CHANNELS)[number], string> = {
   manual: "var(--line-2)",
 };
 
+interface TodayBoard {
+  overdue_requests: { count: number; items: RecentRow[] };
+  lead_followups: { count: number; items: { id: string; name: string; mobile: string | null; next_followup_at: string | null }[] };
+  installments_due: { count: number; items: { id: string; policy_no: string | null; due_date: string; amount: number }[] };
+}
+
 export default function DashboardPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -74,6 +80,7 @@ export default function DashboardPage() {
     queryKey: ["dashboard", "status-breakdown"],
     queryFn: () => api.get<StatusRow[]>("/dashboard/status-breakdown"),
   });
+  const today = useQuery({ queryKey: ["dashboard", "today"], queryFn: () => api.get<TodayBoard>("/dashboard/today") });
   const recent = useQuery({
     queryKey: ["dashboard", "recent"],
     queryFn: () => api.get<RecentRow[]>("/dashboard/recent-requests", { limit: 8 }),
@@ -119,6 +126,47 @@ export default function DashboardPage() {
           </Button>
         }
       />
+
+      {today.data ? (
+        <Card className="mb-5">
+          <SectionTitle>{t("today.title")}</SectionTitle>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <div className="mb-1 text-[13px] font-bold text-ink">
+                {t("today.overdue")} · {today.data.overdue_requests?.count ?? 0}
+              </div>
+              {today.data.overdue_requests?.items?.length ?? 0 === 0 ? <p className="text-[12.5px] text-muted">{t("today.empty")}</p> : null}
+              {(today.data.overdue_requests?.items ?? []).map((row) => (
+                <Link key={row.id} to={`/inbox/${row.id}`} className="block py-1 text-[13px] text-primary">
+                  #{row.number} — {row.subject}
+                </Link>
+              ))}
+            </div>
+            <div>
+              <div className="mb-1 text-[13px] font-bold text-ink">
+                {t("today.followups")} · {today.data.lead_followups?.count ?? 0}
+              </div>
+              {today.data.lead_followups?.items?.length ?? 0 === 0 ? <p className="text-[12.5px] text-muted">{t("today.empty")}</p> : null}
+              {(today.data.lead_followups?.items ?? []).map((lead) => (
+                <Link key={lead.id} to={`/leads/${lead.id}`} className="block py-1 text-[13px] text-primary">
+                  {lead.name} — {lead.mobile ?? ""}
+                </Link>
+              ))}
+            </div>
+            <div>
+              <div className="mb-1 text-[13px] font-bold text-ink">
+                {t("today.installments")} · {today.data.installments_due?.count ?? 0}
+              </div>
+              {today.data.installments_due?.items?.length ?? 0 === 0 ? <p className="text-[12.5px] text-muted">{t("today.empty")}</p> : null}
+              {(today.data.installments_due?.items ?? []).map((inst) => (
+                <div key={inst.id} className="py-1 text-[13px] text-ink">
+                  {inst.policy_no ?? "—"} — {inst.due_date}
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {forbidden ? (
         <StateBlock kind="forbidden" />

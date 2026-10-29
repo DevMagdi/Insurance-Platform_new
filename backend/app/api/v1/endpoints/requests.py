@@ -79,10 +79,10 @@ async def list_requests(
         q=q,
         params=params,
     )
-    briefs = []
-    for row in items:
-        first = await repo.messages(session, row.id)
-        briefs.append(request_brief(row, first_message=_snippet(first)))
+    latest_by_request = await repo.latest_messages(session, [row.id for row in items])
+    briefs = [
+        request_brief(row, first_message=_snippet([latest_by_request[row.id]] if row.id in latest_by_request else [])) for row in items
+    ]
     return Page.build(briefs, total, params)  # type: ignore[arg-type]
 
 

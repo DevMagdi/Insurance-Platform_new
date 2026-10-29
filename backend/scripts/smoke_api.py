@@ -127,12 +127,15 @@ def _params_for(client: Any, headers: dict[str, str], known: dict[str, str]) -> 
         "role_id": _first_id(client, headers, "/api/v1/roles"),
         "notification_id": _first_id(client, headers, "/api/v1/notifications"),
         "provider": "whatsapp",
+        "period": "2020-01",
         "key": "phase2.enabled",
         "kind": "insurer-performance",
     }
     request_id = table["request_id"]
     if request_id:
         table["call_id"] = _first_id(client, headers, f"/api/v1/requests/{request_id}/calls")
+    # the period-close DELETE needs a month that is actually closed (Score-8): close a throwaway one
+    client.post("/api/v1/finance/period-closes", headers=headers, json={"period": "2020-01", "note": "smoke"})
     # an attachment id must belong to the same request (download-url checks the pairing), and the seed
     # ships no attachments — upload one through the real staff endpoint, which also smokes the upload
     for row in _items(client, headers, "/api/v1/requests?page_size=25"):
