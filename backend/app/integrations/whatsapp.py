@@ -37,8 +37,17 @@ def _client(timeout: float = 15.0) -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=timeout, transport=_transport)
 
 
+def graph_base() -> str:
+    """The single place the Graph API version lives (Settings.WHATSAPP_GRAPH_VERSION).
+
+    Meta retires versions on a fixed schedule, so the version is configuration, not a string
+    pasted into callers — `_test_whatsapp` and the template fetch read this too.
+    """
+    return f"https://graph.facebook.com/{get_settings().WHATSAPP_GRAPH_VERSION}"
+
+
 class WhatsAppMeta:
-    """Meta WhatsApp Business Cloud API (v21+).
+    """Meta WhatsApp Business Cloud API.
 
     Credentials arrive from `integrations/registry.py`, which reads the saved settings row and falls back
     to the environment — so the repo and the container env stay secret-free either way. An empty
@@ -46,7 +55,6 @@ class WhatsAppMeta:
     """
 
     name = "meta"
-    BASE = "https://graph.facebook.com/v21.0"
 
     def __init__(self, token: str, phone_number_id: str, app_secret: str = "") -> None:
         self.token = token
@@ -59,7 +67,7 @@ class WhatsAppMeta:
     async def send_text(self, *, to: str, body: str) -> dict[str, Any]:
         async with _client() as client:
             response = await client.post(
-                f"{self.BASE}/{self.phone_number_id}/messages",
+                f"{graph_base()}/{self.phone_number_id}/messages",
                 headers={"Authorization": f"Bearer {self.token}"},
                 json={"messaging_product": "whatsapp", "to": to.lstrip("+"), "type": "text", "text": {"body": body}},
             )
@@ -81,7 +89,7 @@ class WhatsAppMeta:
         }
         async with _client() as client:
             response = await client.post(
-                f"{self.BASE}/{self.phone_number_id}/messages",
+                f"{graph_base()}/{self.phone_number_id}/messages",
                 headers={"Authorization": f"Bearer {self.token}"},
                 json=payload,
             )
@@ -93,7 +101,7 @@ class WhatsAppMeta:
         """Upload-then-send a document (Graph media upload → messages/document). Failure is returned, never raised silently."""
         async with _client(timeout=30) as client:
             upload = await client.post(
-                f"{self.BASE}/{self.phone_number_id}/media",
+                f"{graph_base()}/{self.phone_number_id}/media",
                 headers={"Authorization": f"Bearer {self.token}"},
                 data={"messaging_product": "whatsapp", "type": mime},
                 files={"file": (filename, content, mime)},
@@ -102,7 +110,7 @@ class WhatsAppMeta:
                 return ProviderResult(ok=False, detail=f"media upload: {upload.text[:200]}").as_dict()
             media_id = upload.json().get("id")
             response = await client.post(
-                f"{self.BASE}/{self.phone_number_id}/messages",
+                f"{graph_base()}/{self.phone_number_id}/messages",
                 headers={"Authorization": f"Bearer {self.token}"},
                 json={
                     "messaging_product": "whatsapp",
@@ -118,9 +126,16 @@ class WhatsAppMeta:
 
     async def fetch_media(self, media_id: str) -> tuple[bytes, str]:
         async with _client(timeout=30) as client:
-            meta = (await client.get(f"{self.BASE}/{media_id}", headers={"Authorization": f"Bearer {self.token}"})).json()
+            meta_response = await client.get(f"{graph_base()}/{media_id}", headers={"Authorization": f"Bearer {self.token}"})
+            if meta_response.status_code >= 400:
+                raise RuntimeError(f"Meta media lookup failed ({meta_response.status_code}): {meta_response.text[:200]}")
+            meta = meta_response.json()
             url = meta.get("url", "")
+            if not url:
+                raise RuntimeError("Meta media lookup returned no download URL")
             media = await client.get(url, headers={"Authorization": f"Bearer {self.token}"})
+            if media.status_code >= 400:
+                raise RuntimeError(f"Meta media download failed ({media.status_code}): {media.text[:200]}")
         return media.content, meta.get("mime_type", "application/octet-stream")
 
 

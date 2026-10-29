@@ -207,14 +207,20 @@ ADR-016)، وبعد أي حفظ تُشغَّل `registry.prime()` — أي أن 
    (و`message_template_status_update` إن كنت تستخدم القوالب). Meta تُرسل `GET` أولاً:
    - `hub.mode=subscribe`، `hub.verify_token`، `hub.challenge`؛ نردّ نص الـchallenge كما هو.
    - أي فشل يُكتب في `webhook_events` كـ`event_type=verification, status=rejected` مع السبب.
-7. **الحقول في الشاشة**: Phone Number ID، WABA ID، Access Token (سري، يُخزَّن مشفّراً ولا يُعاد)، Verify
-   Token (سري)، App Secret (سري). الشهادة بجانب البطاقة: `Live` / «جاهز» / «غير مُعد».
-8. **اختبار الاتصال** يضرب `graph.facebook.com/debug_token` بالتوكن المحفوظ ويقول إن كان صالحاً ولمن.
+7. **الحقول في الشاشة**: App ID (معرّف التطبيق من Meta — ليس سرًا)، Phone Number ID، WABA ID،
+   Access Token (سري، يُخزَّن مشفّراً ولا يُعاد)، Verify Token (سري)، App Secret (سري، من
+   *إعدادات التطبيق > الأساسيات* في Meta). الشهادة بجانب البطاقة: `Live` / «جاهز» / «غير مُعد».
+8. **اختبار الاتصال** ينادي `debug_token` بتوكن تطبيق `{App ID}|{App Secret}` (من غيره تردّ
+   Meta بخطأ ‎(#100) حتى مع توكن صالح)، فيتحقق من صلاحية التوكن ومن أن `App ID` المحفوظ
+   يطابق تطبيق التوكن، ثم يفحص الرقم نفسه (`display_phone_number, verified_name`) ويعرض اسمه
+   الموثّق. يرفض الاختبار مبكراً — بلا أي نداء شبكة — إن كان الـApp Secret المحفوظ قيمة
+   تطوير افتراضية، ويحذّر إن كان التوكن مؤقتاً قارب الانتهاء (يلزم توكن دائم من System User).
+   إصدار Graph API مركزي في `WHATSAPP_GRAPH_VERSION` (افتراضي `v25.0`).
 
 اختبار سريع للرد الخارجي (بعد حفظ الأسرار، و`INTEGRATIONS_DRIVER=live`):
 
 ```bash
-curl -sS -X POST "https://graph.facebook.com/v21.0/<PHONE_NUMBER_ID>/messages" \
+curl -sS -X POST "https://graph.facebook.com/v25.0/<PHONE_NUMBER_ID>/messages" \
   -H "Authorization: Bearer <ACCESS_TOKEN>" -H "Content-Type: application/json" \
   -d '{"messaging_product":"whatsapp","to":"201012345678","type":"text","text":{"body":"اختبار من وسيط"}}'
 # المتوقع: {"messages":[{"id":"wamid...", ...}]} — وهذا الـwamid هو ما يظهر في خيط الطلب كـexternal_id
@@ -313,7 +319,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/v1/settings
 
 **ما لا يُدّعى:** لا يوجد في هذه الجولة حساب Meta ولا حساب مزوّد مكالمات موبايل حقيقي ولا رقم مرخّص،
 فالاتصال الفعلي بمزود خارجي **لم يُجرَّب**. ما يلزم من المشغّل قبل أول مكالمة/رسالة حقيقية:
-`WHATSAPP_ACCESS_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` + `WHATSAPP_APP_SECRET` + `WHATSAPP_VERIFY_TOKEN`،
+`WHATSAPP_ACCESS_TOKEN` + `WHATSAPP_APP_ID` + `WHATSAPP_PHONE_NUMBER_ID` + `WHATSAPP_APP_SECRET` + `WHATSAPP_VERIFY_TOKEN` (و`WHATSAPP_GRAPH_VERSION` عند الحاجة لتثبيت إصدار Graph)،
 و`TELEPHONY_WEBHOOK_SECRET` + `TELEPHONY_WEBHOOK_URL` + رقم الموبايل. بلا هذه القيم في `ENV=prod` لا تقلع
 العملية أصلًا (R9). المثبت أن مسار `live` كامل ومختبَر بعقد: توقيع HMAC على البايتات الخام، رفض التوقيع
 الخاطئ، منع التكرار (idempotency)، وحصر مضيف التسجيل (SSRF) — `tests/test_live_channels.py` و

@@ -129,7 +129,19 @@ async def whatsapp_webhook(request: Request, session: DbSession, background: Bac
         # Inbound media is copied into our own bucket, so playback never depends on the
         # provider keeping the file (and the portal/rep URLs stay short-lived & signed).
         media_id = event.get("media_id") if receive_media else None
-        media_key, media_mime, media_size = await stage_inbound_media(provider, storage_backend, str(event["external_id"]), media_id)
+        try:
+            media_key, media_mime, media_size = await stage_inbound_media(provider, storage_backend, str(event["external_id"]), media_id)
+        except Exception as exc:  # a media failure must never 500 the webhook and drop the whole batch
+            await integrations_settings.record_event(
+                session,
+                provider="whatsapp",
+                event_type="media_fetch_failed",
+                status="error",
+                external_id=str(event["external_id"]),
+                detail=f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
+            await session.commit()
+            media_key, media_mime, media_size = None, None, 0
         results.append(
             await intake.ingest_whatsapp_message(
                 session,
