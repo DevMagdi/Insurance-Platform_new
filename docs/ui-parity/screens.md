@@ -138,7 +138,7 @@
 | ألوان أداء الشركات ≥90 أخضر / 80–89 كهرماني / <80 أحمر | `#10B981` / `#F59E0B` / `#F04438` حرفياً | ✅ |
 | تصدير Excel | `POST /api/v1/exports/insurer-performance` ← نفس `services/reports.py` الذي تقرأه الشاشة، سقف 5000 صّف، `X-Export-Truncated`، وصف `audit_logs` | ✅ |
 | تصدير PDF | زر معطّل بالسبب `phase2.exportPdfPending` | ⚠ فارق 5 |
-| هذه الشاشات «غير مفعّلة بعد» | بوابة `feature_flag` في `features/phase2/phase2Gate.tsx` | ✅ |
+| لا بوابة مرحلة — الشاشات لايف بالصلاحيات فقط (ADR-034) | الشاشات مباشرة داخل `StaffRoute`، والـAPI بلا أي شرط علم | ✅ |
 
 5. XLSX مُنفَّذ ومختبَر؛ PDF مؤجَّل بقرار موثّق في `decisions/010-exports.md` (تشكيل العربية + خط مضمّن)، والزر يعرض السبب بدل أن يكون زراً كاذباً.
 

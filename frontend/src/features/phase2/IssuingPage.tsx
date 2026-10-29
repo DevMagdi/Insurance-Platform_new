@@ -1,6 +1,5 @@
 /**
- * Screen 13 — the issuing pipeline: agreement → documents → sent → issued → delivered,
- * with the insurer's required-document checklist on each card (Phase 2, flag-gated).
+ * Screen 13 — issuing pipeline, live and RBAC-only (ADR-034).
  */
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, CircleDashed, FileCheck2, Send } from "lucide-react";
@@ -10,7 +9,6 @@ import { Badge, Button, Card, PageHeader, SectionTitle, StateBlock } from "@/com
 import { api } from "@/lib/api/client";
 import { formatMoney, formatNumber } from "@/lib/format";
 import type { IssuingCase } from "@/lib/api/views";
-import { Phase2Screen } from "./phase2Gate";
 
 const STAGES = [
   { key: "agreement", label: "phase2.steps.agreement", icon: FileCheck2 },
@@ -21,11 +19,7 @@ const STAGES = [
 ] as const;
 
 export default function IssuingPage() {
-  return (
-    <Phase2Screen>
-      <IssuingContent />
-    </Phase2Screen>
-  );
+  return <IssuingContent />;
 }
 
 function IssuingContent() {

@@ -170,7 +170,7 @@ async def integration_events(
     return await integrations.recent_events(session, provider, limit=limit)
 
 
-@router.get("/settings/policies", summary="Underwriting defaults (Phase 2)", response_model=UnderwritingDefaultsOut)
+@router.get("/settings/policies", summary="Underwriting defaults", response_model=UnderwritingDefaultsOut)
 async def get_underwriting(session: DbSession, _actor: SettingsManage) -> dict[str, Any]:
     return await policy_settings.get_defaults(session)
 

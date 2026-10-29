@@ -192,7 +192,7 @@ async def seed(session: AsyncSession, *, reset: bool = False) -> dict[str, int]:
             )
         )
     for key, enabled, description in (
-        ("phase2.enabled", False, "الوثائق والأقساط والتقارير والذكاء الاصطناعي (Phase 2)"),
+        ("phase2.enabled", True, "صف توافق قديم — الوحدات لايف دائمًا ولا قارئ لهذا العلم (ADR-034)"),
         ("ai.enabled", False, "AI provider (transcription, summaries, suggested replies)"),
         ("whatsapp.enabled", True, "WhatsApp Cloud API integration"),
         ("telephony.enabled", True, "Call centre integration"),

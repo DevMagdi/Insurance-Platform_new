@@ -1,4 +1,4 @@
-"""Dashboard KPIs are scoped, and Phase 2 stays behind a flag (spec §6, §8.5, §9.13)."""
+"""Dashboard KPIs are scoped; shipped modules are live with RBAC only (ADR-034)."""
 
 from __future__ import annotations
 
@@ -83,24 +83,22 @@ async def test_seeded_scope_limits_the_queue(client, ids: dict[str, dict[str, st
     assert "طلب مقيد النطاق" not in subjects
 
 
-async def test_phase2_is_flag_gated_and_flag_changes_are_audited(client, ids: dict[str, dict[str, str]]) -> None:
+async def test_modules_are_live_without_the_flag_and_flag_changes_stay_audited(client, ids: dict[str, dict[str, str]]) -> None:
+    """ADR-034: a legacy `phase2.enabled=False` row must not gate anything — RBAC only."""
     from app.models.masters import FeatureFlag
 
     maker = get_sessionmaker()
     async with maker() as session:
-        session.add(FeatureFlag(key="phase2.enabled", enabled=False, description="Phase 2 screens"))
+        session.add(FeatureFlag(key="phase2.enabled", enabled=False, description="legacy row, no reader"))
         await session.commit()
 
     async with login(client, MANAGER) as auth:
-        blocked = await client.get("/api/v1/policies", headers=auth)
-        assert blocked.status_code == 503
-        assert blocked.json()["code"] == "feature_disabled"
-        assert blocked.json()["details"] == {"flag": "phase2.enabled"}
-
-        # the gate is enforced for every phase-2 read, not just policies
+        policies = await client.get("/api/v1/policies", headers=auth)
+        assert policies.status_code == 200, policies.text
+        assert policies.json()["total"] == 0
         for path in ("/api/v1/commissions", "/api/v1/issuing-cases", "/api/v1/reports/insurer-performance"):
             response = await client.get(path, headers=auth)
-            assert response.status_code == 503, path
+            assert response.status_code == 200, path
 
     async with login(client, REP_A) as rep_auth:
         denied = await client.patch("/api/v1/feature-flags/phase2.enabled", json={"enabled": True}, headers=rep_auth)
@@ -109,14 +107,11 @@ async def test_phase2_is_flag_gated_and_flag_changes_are_audited(client, ids: di
     async with login(client, ADMIN) as auth:
         enabled = await client.patch("/api/v1/feature-flags/phase2.enabled", json={"enabled": True}, headers=auth)
         assert enabled.status_code == 200, enabled.text
-        policies = await client.get("/api/v1/policies", headers=auth)
-        assert policies.status_code == 200
-        assert policies.json()["total"] == 0
         unknown = await client.patch("/api/v1/feature-flags/nope.enabled", json={"enabled": True}, headers=auth)
         assert unknown.status_code == 404
         await client.patch("/api/v1/feature-flags/phase2.enabled", json={"enabled": False}, headers=auth)
-        off_again = await client.get("/api/v1/policies", headers=auth)
-    assert off_again.status_code == 503
+        still_live = await client.get("/api/v1/policies", headers=auth)
+    assert still_live.status_code == 200  # off again — and nothing closes (ADR-034)
 
     async with maker() as session:
         rows = (

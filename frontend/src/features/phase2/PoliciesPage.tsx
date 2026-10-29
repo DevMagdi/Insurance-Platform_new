@@ -1,7 +1,4 @@
-/**
- * Screen 12 — policies, payment plan and commissions (Phase 2). Shipped in full but gated
- * by `phase2.enabled`, so the data path is real as soon as the flag is on.
- */
+/** Screen 12 — policies, payment plan and commissions. Live module, RBAC-only (ADR-034). */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Banknote, CalendarClock, CheckCircle2, Download, FileCheck2, FilePlus2, TriangleAlert } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -17,17 +14,12 @@ import { daysUntil, formatDate, formatMoney, formatNumber } from "@/lib/format";
 import type { AnyPage, InstallmentPlan } from "@/lib/api/views";
 import type { components } from "@/lib/api/schema";
 import { NewPolicyDialog } from "./NewPolicyDialog";
-import { Phase2Screen } from "./phase2Gate";
 
 type PolicyRow = components["schemas"]["PolicyOut"];
 type PolicyKpis = components["schemas"]["PolicyKpisOut"];
 
 export default function PoliciesPage() {
-  return (
-    <Phase2Screen>
-      <PoliciesContent />
-    </Phase2Screen>
-  );
+  return <PoliciesContent />;
 }
 
 /** What the API answers from `POST /policies/{id}/issue` (the number that was printed + the file). */

@@ -16,7 +16,6 @@ import { api } from "@/lib/api/client";
 import { downloadFile, saveFile } from "@/lib/api/download";
 import { formatNumber, formatPercent } from "@/lib/format";
 import type { DashboardChannel, DashboardSummary, InsurerPerformance } from "@/lib/api/views";
-import { Phase2Screen } from "./phase2Gate";
 
 const COMPLIANCE_COLORS = { good: "#10B981", mid: "#F59E0B", bad: "#F04438" } as const;
 
@@ -28,11 +27,7 @@ function complianceColor(pct: number | null | undefined): string {
 }
 
 export default function ReportsPage() {
-  return (
-    <Phase2Screen>
-      <ReportsContent />
-    </Phase2Screen>
-  );
+  return <ReportsContent />;
 }
 
 function ReportsContent() {

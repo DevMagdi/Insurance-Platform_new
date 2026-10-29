@@ -67,20 +67,16 @@ async def _seed_cases() -> tuple[str, str]:
         return str(case_a.id), str(case_b.id)
 
 
-async def test_phase2_flag_gates_both_new_routes(client) -> None:
-    """A disabled phase answers 503 on every read of the module, including the new ones (ADR-008)."""
+async def test_issuing_routes_are_live_without_any_flag(client) -> None:
+    """ADR-034: detail + checklist answer 200 with no flag ever enabled — RBAC only."""
     case_id, _ = await _seed_cases()
     async with login(client, ADMIN) as auth:
         for path in (f"/api/v1/issuing-cases/{case_id}", f"/api/v1/issuing-cases/{case_id}/documents"):
             response = await client.get(path, headers=auth)
-            if response.status_code == 200:  # another test already opened the flag
-                break
-            assert response.status_code == 503, path
-            assert response.json()["code"] == "feature_disabled"
+            assert response.status_code == 200, path
 
 
-async def test_detail_and_checklist_after_enabling_the_flag(client) -> None:
-    await _enable_phase2()
+async def test_detail_and_checklist(client) -> None:
     case_id, _ = await _seed_cases()
     async with login(client, ADMIN) as auth:
         detail = await client.get(f"/api/v1/issuing-cases/{case_id}", headers=auth)

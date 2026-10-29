@@ -72,7 +72,7 @@ class TooLarge(AppError):
 
 
 class FeatureDisabled(AppError):
-    """Feature flag off (Phase 2 screens)."""
+    """An external provider switch is off (ai.enabled; ADR-034 — never a shipped-module gate)."""
 
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "feature_disabled"

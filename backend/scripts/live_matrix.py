@@ -525,7 +525,13 @@ async def main() -> int:
             await c.patch("/api/v1/feature-flags/phase2.enabled", headers=admin, json={"enabled": False}),
             200,
         )
-        check("settings", "GET /policies with the flag off → 503 feature_disabled", await get("/api/v1/policies", mgr), 503)
+        check(
+            "settings",
+            "GET /policies with the legacy flag off → still 200 (ADR-034: no reader)",
+            await get("/api/v1/policies", mgr),
+            200,
+            p0=True,
+        )
         check(
             "settings", "PATCH phase2 on", await c.patch("/api/v1/feature-flags/phase2.enabled", headers=admin, json={"enabled": True}), 200
         )
@@ -1332,7 +1338,7 @@ async def main() -> int:
         # ------------------------------------------------------------------ 4.12 crawl
         # Every GET route in the OpenAPI document, as manager and as admin, with real ids where we have
         # one. The point is not the status code — a 403 or 404 is a legitimate answer — but that no route
-        # can be talked into a 5xx. `503 feature_disabled` is the documented Phase-2 gate, not a crash.
+        # can be talked into a 5xx. `503 feature_disabled` is only ever the ai-provider switch (ADR-034), never a module gate.
         ids = {
             "lead_id": lead_id or ZERO_UUID,
             "client_id": client_id or ZERO_UUID,

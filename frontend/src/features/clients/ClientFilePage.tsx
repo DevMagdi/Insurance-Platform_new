@@ -14,7 +14,6 @@ import { formatDuration, formatMoney, formatNumber, relativeTime } from "@/lib/f
 import type { ClientOverview, InsuredList, RequestPage } from "@/lib/api/views";
 import type { components } from "@/lib/api/schema";
 import { NewPolicyDialog } from "@/features/phase2/NewPolicyDialog";
-import { usePhase2 } from "@/features/phase2/usePhase2";
 import { PortalAccountsCard } from "./PortalAccountsCard";
 
 type Tab = "overview" | "requests" | "staff" | "documents" | "calls";
@@ -308,7 +307,6 @@ function StaffTab({ clientId, onOpenAll }: { clientId: string; onOpenAll: () => 
 
 function DocumentsTab({ clientId }: { clientId: string }) {
   const { t } = useTranslation();
-  const { enabled: phase2 } = usePhase2();
   const [creating, setCreating] = useState(false);
   const docs = useQuery({
     queryKey: ["clients", clientId, "documents"],
@@ -319,13 +317,11 @@ function DocumentsTab({ clientId }: { clientId: string }) {
       <div className="px-[20px] pt-[18px]">
         <SectionTitle
           action={
-            // the second door to the same dialog: a policy is booked where the client is (R7). It only
-            // appears when the flag is on, because POST /policies answers 503 while Phase 2 is closed.
-            phase2 ? (
-              <Button size="sm" icon={<Plus size={14} strokeWidth={1.8} />} onClick={() => setCreating(true)}>
-                {t("phase2.newPolicy")}
-              </Button>
-            ) : undefined
+            // the second door to the same dialog: a policy is booked where the client is (R7).
+            // Live for anyone the route admitted (ADR-034) — the API's RBAC answers for the rest.
+            <Button size="sm" icon={<Plus size={14} strokeWidth={1.8} />} onClick={() => setCreating(true)}>
+              {t("phase2.newPolicy")}
+            </Button>
           }
         >
           {t("portal.documents")}
