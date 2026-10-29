@@ -51,20 +51,16 @@ async function open(page: Page, screen: Screen) {
 }
 
 test.describe("screen grid (spec §9)", () => {
-  test("the Phase-2 screens stay gated until the flag is on", async ({ page, request }) => {
+  test("the policy screens are live with no flag anywhere (ADR-034)", async ({ page, request }) => {
+    // even with the legacy row switched off, nothing may close: RBAC is the only gate
     const auth = await apiLogin(request, "admin@brokerhub.test");
-    const before = await request.patch("/api/v1/feature-flags/phase2.enabled", { headers: auth, data: { enabled: false } });
-    expect(before.status(), await before.text()).toBe(200);
+    const off = await request.patch("/api/v1/feature-flags/phase2.enabled", { headers: auth, data: { enabled: false } });
+    expect(off.status(), await off.text()).toBe(200);
 
     await login(page, MANAGER);
     await page.goto("/policies");
-    await expect(page.getByText(/غير مفعّلة بعد/)).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator("table tbody tr")).toHaveCount(0);
-
-    const after = await request.patch("/api/v1/feature-flags/phase2.enabled", { headers: auth, data: { enabled: true } });
-    expect(after.status()).toBe(200);
-    await page.reload();
     await expect(page.getByRole("heading", { name: /الوثائق والأقساط/ })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/غير مفعّلة بعد/)).toHaveCount(0);
   });
 
   for (const screen of SCREENS) {

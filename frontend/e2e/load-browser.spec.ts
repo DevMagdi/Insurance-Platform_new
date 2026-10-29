@@ -13,7 +13,8 @@ import { chromium, expect, test, type Browser, type Page } from "@playwright/tes
  * Env: LOAD_WEB_URL (default http://127.0.0.1:5176), LOAD_USERS (10), LOAD_CYCLES (3),
  * LOAD_CHROMIUM_EXE (optional executable path), LOAD_REPORT_OUT (/tmp/browser-load-all-live.json).
  */
-const BASE = process.env.LOAD_WEB_URL ?? `http://127.0.0.1:${process.env.E2E_WEB_PORT ?? "5176"}`;
+/** Set inside the test from the runner's own baseURL (LOAD_WEB_URL wins when given). */
+let BASE = process.env.LOAD_WEB_URL ?? "http://127.0.0.1:5176";
 const USERS = Number(process.env.LOAD_USERS ?? "10");
 const CYCLES = Number(process.env.LOAD_CYCLES ?? "3");
 const OUT = process.env.LOAD_REPORT_OUT ?? "/tmp/browser-load-all-live.json";
@@ -102,8 +103,9 @@ async function runUser(browser: Browser, email: string, full: Mode): Promise<Use
   return result;
 }
 
-test("browser load — critical circuit, all modules live, no phase gate anywhere", async ({ browser: fixtureBrowser }, testInfo) => {
+test("browser load — critical circuit, all modules live, no phase gate anywhere", async ({ browser: fixtureBrowser, baseURL }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "one viewport is enough for a load circuit");
+  if (!process.env.LOAD_WEB_URL && baseURL) BASE = baseURL.replace(/\/$/, "");
   test.setTimeout(15 * 60_000);
   // CI uses the suite's own browser; a sandbox without the Playwright download can point
   // LOAD_CHROMIUM_EXE at any Chromium binary instead.
