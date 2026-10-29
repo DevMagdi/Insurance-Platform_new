@@ -25,6 +25,7 @@ from sqlalchemy import select
 from app.api.v1.deps import (
     CommissionsManage,
     DbSession,
+    FinancePeriodClose,
     FinancePost,
     FinanceView,
     FinanceVoid,
@@ -192,6 +193,68 @@ async def spend_by_period(
     period: Literal["month", "quarter", "semiannual", "year"] = Query(default="month"),
 ) -> Any:
     return await svc.spend_by_period(session, scope, period)
+
+
+class PeriodCloseIn(BaseModel):
+    period: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="YYYY-MM")
+    note: str | None = Field(default=None, max_length=500)
+
+
+class OpeningBalanceIn(BaseModel):
+    amount: float = Field(ge=0)
+    effective_at: Any = Field(description="ISO datetime the counted drawer applies from")
+    note: str | None = Field(default=None, max_length=500)
+
+
+@router.get("/period-closes", summary="Closed finance months (ADR-033)")
+async def period_closes(session: DbSession, scope: ScopeDep, actor: FinanceView) -> Any:
+    return {"items": await svc.list_period_closes(session)}
+
+
+@router.post("/period-closes", status_code=201, summary="Close a finance month (finance.period_close)")
+async def close_period(body: PeriodCloseIn, request: Request, session: DbSession, scope: ScopeDep, actor: FinancePeriodClose) -> Any:
+    result = await svc.close_period(session, actor, body.period, note=body.note, ip=request.client.host if request.client else None)
+    await session.commit()
+    return result
+
+
+@router.delete("/period-closes/{period}", summary="Reopen a closed finance month (finance.period_close)")
+async def reopen_period(period: str, request: Request, session: DbSession, scope: ScopeDep, actor: FinancePeriodClose) -> Any:
+    result = await svc.reopen_period(session, actor, period, ip=request.client.host if request.client else None)
+    await session.commit()
+    return result
+
+
+@router.post("/cashbox/opening", status_code=201, summary="Set the cashbox opening balance (finance.post)")
+async def set_opening(body: OpeningBalanceIn, request: Request, session: DbSession, scope: ScopeDep, actor: FinancePost) -> Any:
+    from datetime import datetime as _dt
+
+    effective = body.effective_at if isinstance(body.effective_at, _dt) else _dt.fromisoformat(str(body.effective_at))
+    result = await svc.set_opening_balance(
+        session, actor, amount=body.amount, effective_at=effective, note=body.note, ip=request.client.host if request.client else None
+    )
+    await session.commit()
+    return result
+
+
+@router.get("/spend-by-period/export.xlsx", summary="ERP hub: the period report as Excel (server-computed)")
+async def spend_export(
+    session: DbSession,
+    scope: ScopeDep,
+    actor: FinanceView,
+    period: Literal["month", "quarter", "semiannual", "year"] = Query(default="month"),
+) -> Any:
+    from fastapi.responses import Response
+
+    from app.services.exports import period_workbook
+
+    data = await svc.spend_by_period(session, scope, period)
+    content = period_workbook(data)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="erp-period-{data["label"]}.xlsx"'},
+    )
 
 
 # ------------------------------------------------------------------ AR ------------------------------

@@ -3,17 +3,21 @@
  * `GET /finance/spend-by-period` (posted rows); module cards deep-link to the existing screens.
  */
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Gauge, HandCoins, Landmark, ReceiptText, Vault } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BookOpen, Download, Gauge, HandCoins, Landmark, Lock, LockOpen, ReceiptText, Vault } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 import { Button, Card, DataTable, Kpi, PageHeader, SectionTitle, StateBlock } from "@/components/ui";
+import { useToast } from "@/components/Toast";
 import { ApiError_, api } from "@/lib/api/client";
+import { downloadFile, saveFile } from "@/lib/api/download";
+import { useAuth } from "@/lib/auth";
 import { formatDate, formatMoney } from "@/lib/format";
 import type { components } from "@/lib/api/schema";
 
 type Spend = components["schemas"]["SpendByPeriodOut"];
+type Closes = { items: { period: string; note: string | null; closed_by: string | null; closed_at: string }[] };
 export type ErpPeriod = "month" | "quarter" | "semiannual" | "year";
 const PERIODS: ErpPeriod[] = ["month", "quarter", "semiannual", "year"];
 
@@ -27,15 +31,47 @@ const MODULES = [
 
 export default function ErpPage() {
   const { t } = useTranslation();
+  const toast = useToast();
+  const { can } = useAuth();
+  const queryClient = useQueryClient();
   const [period, setPeriod] = useState<ErpPeriod>("month");
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const spend = useQuery({
     queryKey: ["finance", "spend-by-period", period],
     queryFn: () => api.get<Spend>(`/finance/spend-by-period?period=${period}`),
   });
+  const closes = useQuery({ queryKey: ["finance", "period-closes"], queryFn: () => api.get<Closes>("/finance/period-closes") });
+  const refreshCloses = () => void queryClient.invalidateQueries({ queryKey: ["finance", "period-closes"] });
+  const closeMut = useMutation({
+    mutationFn: () => api.post("/finance/period-closes", { period: month }),
+    onSuccess: () => {
+      toast(t("erp.closed"));
+      refreshCloses();
+    },
+    onError: (e) => toast(e instanceof ApiError_ ? e.message : String(e), "error"),
+  });
+  const reopenMut = useMutation({
+    mutationFn: (p: string) => api.del(`/finance/period-closes/${p}`),
+    onSuccess: refreshCloses,
+    onError: (e) => toast(e instanceof ApiError_ ? e.message : String(e), "error"),
+  });
+  const canClose = can("finance.period_close");
 
   return (
     <>
-      <PageHeader title={t("erp.title")} subtitle={t("erp.subtitle")} />
+      <PageHeader
+        title={t("erp.title")}
+        subtitle={t("erp.subtitle")}
+        actions={
+          <Button
+            variant="ghost"
+            onClick={() => void downloadFile(`/finance/spend-by-period/export.xlsx?period=${period}`).then(saveFile).catch(() => toast(t("common.error"), "error"))}
+          >
+            <Download size={15} /> {t("erp.exportXlsx")}
+          </Button>
+        }
+      />
+      <p className="mb-4 text-[12.5px] font-semibold text-muted">{t("erp.operationalNote")}</p>
       <div className="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label={t("erp.period")}>
         {PERIODS.map((p) => (
           <Button key={p} variant={p === period ? "primary" : "ghost"} aria-pressed={p === period} onClick={() => setPeriod(p)}>
@@ -81,6 +117,33 @@ export default function ErpPage() {
           </Card>
         </>
       ) : null}
+
+      <Card className="mt-4">
+        <SectionTitle>{t("erp.closes")}</SectionTitle>
+        {closes.isPending ? <StateBlock kind="loading" /> : null}
+        {closes.data && (closes.data.items ?? []).length === 0 ? <p className="text-[13px] text-muted">{t("erp.noCloses")}</p> : null}
+        {(closes.data?.items ?? []).map((row) => (
+          <div key={row.period} className="flex items-center justify-between border-b border-line py-2 text-[13px] last:border-0">
+            <span className="inline-flex items-center gap-2 font-semibold text-ink">
+              <Lock size={14} /> {row.period} — {t("erp.closed")}
+              {row.note ? <span className="font-normal text-muted">{row.note}</span> : null}
+            </span>
+            {canClose ? (
+              <Button variant="ghost" disabled={reopenMut.isPending} onClick={() => reopenMut.mutate(row.period)}>
+                <LockOpen size={14} /> {t("erp.reopen")}
+              </Button>
+            ) : null}
+          </div>
+        ))}
+        {canClose ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="rounded-card border border-line bg-card px-3 py-2 text-[13px]" aria-label={t("erp.closes")} />
+            <Button disabled={closeMut.isPending || !month} onClick={() => closeMut.mutate()}>
+              <Lock size={14} /> {t("erp.closeMonth")}
+            </Button>
+          </div>
+        ) : null}
+      </Card>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {MODULES.map((m) => (

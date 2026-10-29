@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   ClipboardList,
   FolderOpen,
@@ -7,6 +8,7 @@ import {
   Landmark,
   LayoutDashboard,
   LogOut,
+  Rocket,
   Settings,
   Users,
 } from "lucide-react";
@@ -41,6 +43,8 @@ const NAV: NavItem[] = [
   // API answers 403 for the same paths — the hidden item and the refusal are the same rule (ADR-030 §5).
   { to: "/erp", labelKey: "nav.erp", icon: <Landmark size={20} strokeWidth={1.8} />, perms: ["finance.view", "reports.executive"] },
   { to: "/settings", labelKey: "nav.settings", icon: <Settings size={20} strokeWidth={1.8} />, perms: ["settings.manage"] },
+  { to: "/setup", labelKey: "nav.setup", icon: <Rocket size={20} strokeWidth={1.8} />, perms: ["settings.manage"] },
+  { to: "/ops", labelKey: "nav.ops", icon: <Activity size={20} strokeWidth={1.8} />, perms: ["settings.manage"] },
 ];
 
 export function StaffShell({ children }: { children: ReactNode }) {

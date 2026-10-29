@@ -20,6 +20,8 @@ const ClientFilePage = lazy(() => import("@/features/clients/ClientFilePage"));
 const InsuredPage = lazy(() => import("@/features/clients/InsuredPage"));
 const PortalPage = lazy(() => import("@/features/portal/PortalPage"));
 const SettingsHub = lazy(() => import("@/features/settings/SettingsHub"));
+const SetupPage = lazy(() => import("@/features/settings/SetupPage"));
+const OpsPage = lazy(() => import("@/features/settings/OpsPage"));
 const PoliciesPage = lazy(() => import("@/features/phase2/PoliciesPage"));
 const IssuingPage = lazy(() => import("@/features/phase2/IssuingPage"));
 const ReportsPage = lazy(() => import("@/features/phase2/ReportsPage"));
@@ -191,6 +193,22 @@ export default function App() {
                 element={
                   <StaffRoute permit={["settings.manage"]}>
                     <SettingsHub />
+                  </StaffRoute>
+                }
+              />
+              <Route
+                path="/setup"
+                element={
+                  <StaffRoute permit={["settings.manage"]}>
+                    <SetupPage />
+                  </StaffRoute>
+                }
+              />
+              <Route
+                path="/ops"
+                element={
+                  <StaffRoute permit={["settings.manage"]}>
+                    <OpsPage />
                   </StaffRoute>
                 }
               />

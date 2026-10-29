@@ -41,6 +41,11 @@ async def recent(
     return await dashboard.recent_requests(session, scope, limit=limit)
 
 
+@router.get("/dashboard/today", summary="«اليوم»: overdue SLA, lead follow-ups, installments due (A5)")
+async def today(session: DbSession, scope: ScopeDep, actor: RequestsView) -> dict[str, Any]:
+    return await dashboard.today_board(session, scope)
+
+
 @router.get("/notifications", summary="In-app bell")
 async def notifications(session: DbSession, scope: ScopeDep, actor: CurrentUser, unread_only: bool = False) -> list[dict[str, Any]]:
     stmt = select(Notification).where(Notification.user_id == actor.id).order_by(Notification.created_at.desc()).limit(50)

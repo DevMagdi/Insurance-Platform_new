@@ -27,6 +27,8 @@ REPORTS_EXPORT: Final = "reports.export"
 FINANCE_VIEW: Final = "finance.view"
 FINANCE_POST: Final = "finance.post"
 FINANCE_VOID: Final = "finance.void"
+#: Score-8 (ADR-033): closing/reopening a finance month, and posting into one once closed
+FINANCE_PERIOD_CLOSE: Final = "finance.period_close"
 COMMISSIONS_MANAGE: Final = "commissions.manage"
 REPORTS_EXECUTIVE: Final = "reports.executive"
 USERS_MANAGE: Final = "users.manage"
@@ -55,6 +57,7 @@ ALL_PERMISSIONS: Final[tuple[str, ...]] = (
     FINANCE_VIEW,
     FINANCE_POST,
     FINANCE_VOID,
+    FINANCE_PERIOD_CLOSE,
     COMMISSIONS_MANAGE,
     REPORTS_EXECUTIVE,
     USERS_MANAGE,
@@ -81,6 +84,7 @@ ROLE_PERMISSIONS: Final[dict[str, tuple[str, ...]]] = {
         FINANCE_VIEW,
         FINANCE_POST,
         FINANCE_VOID,
+        FINANCE_PERIOD_CLOSE,
         COMMISSIONS_MANAGE,
         REPORTS_EXECUTIVE,
         SETTINGS_MANAGE,

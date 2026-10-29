@@ -21,6 +21,17 @@ test.describe("ERP accounting hub", () => {
     await expect(page).toHaveURL(/\/finance\/ledger$/);
   });
 
+  test("manager exports the period Excel and sees the closes card (Score-8)", async ({ page }) => {
+    await login(page, MANAGER);
+    await page.goto("/erp");
+    await expect(page.getByRole("heading", { name: "ERP المحاسبي" })).toBeVisible();
+    await expect(page.getByText("إقفال الفترات", { exact: false })).toBeVisible();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: /تصدير Excel/ }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toContain(".xlsx");
+  });
+
   test("a rep does not see the ERP item and /erp is refused", async ({ page }) => {
     await login(page, REPS.sara);
     await expect(page.getByRole("link", { name: /ERP المحاسبي/ })).toHaveCount(0);

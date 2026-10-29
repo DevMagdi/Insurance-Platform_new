@@ -508,6 +508,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dashboard/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** «اليوم»: overdue SLA, lead follow-ups, installments due (A5) */
+        get: operations["getApiV1DashboardToday"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dev/sim/call": {
         parameters: {
             query?: never;
@@ -695,6 +712,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/finance/cashbox/opening": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set the cashbox opening balance (finance.post) */
+        post: operations["postApiV1FinanceCashboxOpening"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/finance/commissions": {
         parameters: {
             query?: never;
@@ -784,6 +818,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/finance/period-closes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Closed finance months (ADR-033) */
+        get: operations["getApiV1FinancePeriod-Closes"];
+        put?: never;
+        /** Close a finance month (finance.period_close) */
+        post: operations["postApiV1FinancePeriod-Closes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/finance/period-closes/{period}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Reopen a closed finance month (finance.period_close) */
+        delete: operations["deleteApiV1FinancePeriod-ClosesPeriod"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/finance/spend-by-period": {
         parameters: {
             query?: never;
@@ -793,6 +862,23 @@ export interface paths {
         };
         /** ERP hub: posted in/out totals for a period */
         get: operations["getApiV1FinanceSpend-By-Period"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/finance/spend-by-period/export.xlsx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ERP hub: the period report as Excel (server-computed) */
+        get: operations["getApiV1FinanceSpend-By-PeriodExport.Xlsx"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1289,6 +1375,27 @@ export interface paths {
         put?: never;
         /** Read One */
         post: operations["postApiV1NotificationsNotificationIdRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ops/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operations health: DB, integrations, storage (B3)
+         * @description One screen's worth of «is it alive»: readiness, each channel's connection state + last webhook,
+         *     and object-storage usage. Staff-only (`settings.manage`) — it names integration errors.
+         */
+        get: operations["getApiV1OpsSummary"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2548,6 +2655,13 @@ export interface components {
             month_out: number;
             /** Movements */
             movements?: components["schemas"]["LedgerEntryOut"][];
+            /**
+             * Opening Balance
+             * @default 0
+             */
+            opening_balance: number;
+            /** Opening Effective At */
+            opening_effective_at?: string | null;
             /** Since */
             since?: string | null;
             /** Today In */
@@ -4235,6 +4349,18 @@ export interface components {
             /** Body */
             body: string;
         };
+        /** OpeningBalanceIn */
+        OpeningBalanceIn: {
+            /** Amount */
+            amount: number;
+            /**
+             * Effective At
+             * @description ISO datetime the counted drawer applies from
+             */
+            effective_at: unknown;
+            /** Note */
+            note?: string | null;
+        };
         /** PageOut */
         PageOut: {
             /** Items */
@@ -4271,6 +4397,16 @@ export interface components {
             pages: number;
             /** Total */
             total: number;
+        };
+        /** PeriodCloseIn */
+        PeriodCloseIn: {
+            /** Note */
+            note?: string | null;
+            /**
+             * Period
+             * @description YYYY-MM
+             */
+            period: string;
         };
         /** PermissionOut */
         PermissionOut: {
@@ -6751,6 +6887,28 @@ export interface operations {
             };
         };
     };
+    getApiV1DashboardToday: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     postApiV1DevSimCall: {
         parameters: {
             query?: never;
@@ -7061,6 +7219,39 @@ export interface operations {
             };
         };
     };
+    postApiV1FinanceCashboxOpening: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpeningBalanceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getApiV1FinanceCommissions: {
         parameters: {
             query?: {
@@ -7276,6 +7467,90 @@ export interface operations {
             };
         };
     };
+    "getApiV1FinancePeriod-Closes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    "postApiV1FinancePeriod-Closes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeriodCloseIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "deleteApiV1FinancePeriod-ClosesPeriod": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                period: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     "getApiV1FinanceSpend-By-Period": {
         parameters: {
             query?: {
@@ -7294,6 +7569,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpendByPeriodOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "getApiV1FinanceSpend-By-PeriodExport.Xlsx": {
+        parameters: {
+            query?: {
+                period?: "month" | "quarter" | "semiannual" | "year";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -8279,6 +8585,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getApiV1OpsSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

@@ -3,12 +3,15 @@
  * is not in the drawer at closing time, and a cashbox total that silently includes it cannot be counted.
  * Every other method is reported next to it, so nothing is hidden — it is just not called cash (ADR-030 §5).
  */
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Info, Vault } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Badge, Button, Card, DataTable, Kpi, PageHeader, SectionTitle, StateBlock } from "@/components/ui";
-import { api } from "@/lib/api/client";
+import { useToast } from "@/components/Toast";
+import { ApiError_, api } from "@/lib/api/client";
+import { useAuth } from "@/lib/auth";
 import { formatDate, formatMoney } from "@/lib/format";
 import type { components } from "@/lib/api/schema";
 
@@ -16,7 +19,25 @@ type Cashbox = components["schemas"]["CashboxOut"];
 
 export default function CashboxPage() {
   const { t } = useTranslation();
+  const toast = useToast();
+  const { can } = useAuth();
+  const queryClient = useQueryClient();
+  const [openingAmount, setOpeningAmount] = useState("");
+  const [openingNote, setOpeningNote] = useState("");
   const cashbox = useQuery({ queryKey: ["finance", "cashbox"], queryFn: () => api.get<Cashbox>("/finance/cashbox") });
+  const openingMut = useMutation({
+    mutationFn: () =>
+      api.post("/finance/cashbox/opening", {
+        amount: Number(openingAmount),
+        effective_at: new Date().toISOString(),
+        note: openingNote || null,
+      }),
+    onSuccess: () => {
+      toast(t("erp.opening"));
+      void queryClient.invalidateQueries({ queryKey: ["finance", "cashbox"] });
+    },
+    onError: (e) => toast(e instanceof ApiError_ ? e.message : String(e), "error"),
+  });
 
   if (cashbox.isPending) return <StateBlock kind="loading" />;
   if (cashbox.isError)
@@ -60,6 +81,42 @@ export default function CashboxPage() {
             : t("finance.cashboxBasisNoHistory")}
         </p>
       </Card>
+
+      {!data.is_net_movements_only && data.opening_effective_at ? (
+        <div role="note" className="mb-4 rounded-card border border-line bg-card px-4 py-3 text-[13px] font-semibold text-ink">
+          {t("erp.openingCurrent", { amount: formatMoney(data.opening_balance), date: formatDate(data.opening_effective_at) })}
+        </div>
+      ) : null}
+
+      {can("finance.post") ? (
+        <Card className="mb-4">
+          <SectionTitle>{t("erp.opening")}</SectionTitle>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-[13px] text-muted">
+              {t("erp.openingAmount")}
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={openingAmount}
+                onChange={(e) => setOpeningAmount(e.target.value)}
+                className="mt-1 block rounded-card border border-line bg-card px-3 py-2 text-ink"
+              />
+            </label>
+            <label className="text-[13px] text-muted">
+              {t("erp.openingNote")}
+              <input
+                value={openingNote}
+                onChange={(e) => setOpeningNote(e.target.value)}
+                className="mt-1 block rounded-card border border-line bg-card px-3 py-2 text-ink"
+              />
+            </label>
+            <Button disabled={openingMut.isPending || !openingAmount} onClick={() => openingMut.mutate()}>
+              {t("erp.openingSet")}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
