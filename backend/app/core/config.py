@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     # WhatsApp Business Cloud API
     WHATSAPP_ACCESS_TOKEN: str = ""
     WHATSAPP_PHONE_NUMBER_ID: str = ""
+    WHATSAPP_APP_ID: str = ""
+    # Meta retires Graph versions on a schedule (v21.0 dies 2027-01-21); one env knob moves every caller.
+    WHATSAPP_GRAPH_VERSION: str = "v25.0"
     WHATSAPP_APP_SECRET: str = "dev-app-secret"
     WHATSAPP_VERIFY_TOKEN: str = "dev-verify-token"
     WHATSAPP_BUSINESS_ACCOUNT_ID: str = ""

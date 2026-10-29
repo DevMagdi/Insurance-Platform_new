@@ -79,6 +79,7 @@ class FieldSpec:
 #: the signed-URL TTL are deliberately **not** — see ADR-016 §8.
 PROVIDER_FIELDS: dict[str, tuple[FieldSpec, ...]] = {
     "whatsapp": (
+        FieldSpec("app_id"),
         FieldSpec("phone_number_id", required_for_live=True),
         FieldSpec("business_account_id"),
         FieldSpec("receive_media", "bool", True),
@@ -124,6 +125,7 @@ PROVIDER_SECRETS: dict[str, tuple[str, ...]] = {
 #: which environment variable each field falls back to (ADR-016 §4)
 ENV_FALLBACK: dict[str, dict[str, str]] = {
     "whatsapp": {
+        "app_id": "WHATSAPP_APP_ID",
         "access_token": "WHATSAPP_ACCESS_TOKEN",
         "app_secret": "WHATSAPP_APP_SECRET",
         "verify_token": "WHATSAPP_VERIFY_TOKEN",
@@ -371,7 +373,11 @@ async def state(session: AsyncSession, provider: str) -> State:
         .first()
     )
     out.last_webhook_at = latest_ok.occurred_at.astimezone(UTC).isoformat() if latest_ok else None
-    out.last_error = (latest_err.detail or latest_err.status) if latest_err else None
+    # a stale error must not outlive a later success: only show it while it is the newest word
+    if latest_err and (latest_ok is None or latest_err.occurred_at > latest_ok.occurred_at):
+        out.last_error = latest_err.detail or latest_err.status
+    else:
+        out.last_error = None
     out.connection_status = "error" if out.last_test_status == "failed" else ("connected" if not missing else "not_connected")
     return out
 
@@ -542,6 +548,7 @@ def _mask_dict(provider: str, values: dict[str, Any]) -> dict[str, Any]:
 #: message is read by people too (a curl, a log, a support ticket), and "missing: phone_number_id" helps
 #: nobody at 2 a.m.
 FIELD_LABELS: dict[str, str] = {
+    "app_id": "معرّف تطبيق ميتا (App ID)",
     "phone_number_id": "معرّف رقم واتساب (Phone Number ID)",
     "business_account_id": "معرّف حساب واتساب للأعمال (WABA ID)",
     "access_token": "توكين الوصول (Access Token)",
@@ -916,16 +923,37 @@ def _assert_provider(provider: str) -> None:
 
 
 async def _test_whatsapp(resolved: ResolvedIntegration) -> TestOutcome:
-    """Meta's own token introspection: proves the credential is alive without messaging a customer."""
+    """Meta's own token introspection: proves the credential is alive without messaging a customer.
+
+    `debug_token` needs an *app* access token (`{app_id}|{app_secret}`) — calling it with only
+    `input_token` makes Meta answer (#100) even for a perfectly valid token.
+    """
     import httpx
+
+    from app.core.config import DEV_PLACEHOLDER_SECRETS
+    from app.integrations.whatsapp import _client, graph_base
 
     token = resolved.secret("access_token")
     phone_id = resolved.value("phone_number_id")
     if not token or not phone_id:
         return TestOutcome(False, "ناقص: access_token وphone_number_id مطلوبان في الوضع الحيّ")
+    app_id = resolved.value("app_id")
+    app_secret = resolved.secret("app_secret")
+    if app_secret in DEV_PLACEHOLDER_SECRETS.values():
+        return TestOutcome(
+            False,
+            "الـApp Secret المحفوظ قيمة تطوير افتراضية وليست السر الحقيقي — احفظ App Secret الحقيقي "
+            "من Meta (إعدادات التطبيق > الأساسيات) ثم أعد الاختبار",
+        )
+    access_token = f"{app_id}|{app_secret}" if app_id and app_secret else token
+    if not access_token:
+        return TestOutcome(
+            False,
+            "لا يوجد توكين فحص صالح — احفظ App Secret الحقيقي من Meta (إعدادات التطبيق > الأساسيات) وأعد الاختبار",
+        )
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.get("https://graph.facebook.com/v21.0/debug_token", params={"input_token": token})
+        async with _client(timeout=15) as client:
+            response = await client.get(f"{graph_base()}/debug_token", params={"input_token": token, "access_token": access_token})
     except httpx.HTTPError as exc:
         return TestOutcome(False, f"تعذّر الوصول إلى graph.facebook.com: {type(exc).__name__}")
     if response.status_code >= 400:
@@ -933,11 +961,32 @@ async def _test_whatsapp(resolved: ResolvedIntegration) -> TestOutcome:
     data = (response.json() or {}).get("data") or {}
     if not data.get("is_valid"):
         return TestOutcome(False, "الـToken غير صالح — منتهي أو ملغى من App dashboard")
-    if data.get("phone_number_id") and str(data["phone_number_id"]) != str(phone_id):
-        return TestOutcome(False, f"الـToken يخصّ رقمًا آخر: {data['phone_number_id']} ≠ {phone_id}")
+    if app_id and data.get("app_id") and str(data["app_id"]) != str(app_id):
+        return TestOutcome(False, f"الـToken يخص تطبيقًا آخر: التطبيق المحفوظ {app_id} ≠ تطبيق التوكن {data['app_id']}")
+    try:
+        async with _client(timeout=15) as client:
+            probe = await client.get(
+                f"{graph_base()}/{phone_id}",
+                params={"fields": "display_phone_number,verified_name"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        return TestOutcome(False, f"تعذّر الوصول إلى graph.facebook.com: {type(exc).__name__}")
+    if probe.status_code >= 400:
+        return TestOutcome(False, f"Meta رفض فحص الرقم ({probe.status_code}): {probe.text[:220]}")
+    phone = probe.json() or {}
+    verified_name = phone.get("verified_name") or ""
     app_name = data.get("application") or {}
     label = app_name.get("name") if isinstance(app_name, dict) else str(app_name)
-    return TestOutcome(True, f"الاتصال سليم — Number ID {phone_id}" + (f"، التطبيق {label}" if label else ""))
+    detail = (
+        f"الاتصال سليم — Number ID {phone_id}"
+        + (f"، الاسم الموثّق {verified_name}" if verified_name else "")
+        + (f"، التطبيق {label}" if label else "")
+    )
+    expires_at = data.get("expires_at") or 0
+    if expires_at and 0 < int(expires_at) - int(time.time()) < 7 * 24 * 3600:
+        detail += " — تنبيه: هذا التوكن مؤقت وقارب على الانتهاء؛ يلزم توكين دائم من System User في Meta قبل الانتهاء"
+    return TestOutcome(True, detail)
 
 
 async def _test_mobile_calls(resolved: ResolvedIntegration) -> TestOutcome:
@@ -1028,10 +1077,12 @@ def _smtp_probe(
 async def _fetch_meta_templates(account: str, token: str) -> tuple[list[dict[str, Any]], str]:
     import httpx
 
+    from app.integrations.whatsapp import _client, graph_base
+
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with _client(timeout=20) as client:
             response = await client.get(
-                f"https://graph.facebook.com/v21.0/{account}/message_templates",
+                f"{graph_base()}/{account}/message_templates",
                 params={"fields": "name,language,status,category", "limit": 100},
                 headers={"Authorization": f"Bearer {token}"},
             )

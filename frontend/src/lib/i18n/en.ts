@@ -633,6 +633,7 @@ export const en: Messages = {
     },
     status: { live: "Live", ready: "Ready", unset: "Not configured", error: "Last test failed" },
     field: {
+      app_id: "Meta App ID",
       phone_number_id: "Phone Number ID",
       business_account_id: "Business Account ID",
       receive_media: "Receive media (voice notes and attachments)",

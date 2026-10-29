@@ -643,6 +643,7 @@ export const ar = {
     },
     status: { live: "Live", ready: "جاهز", unset: "غير مُعد", error: "فشل آخر اختبار" },
     field: {
+      app_id: "معرّف تطبيق ميتا (App ID)",
       phone_number_id: "Phone Number ID",
       business_account_id: "Business Account ID",
       receive_media: "استقبال الوسائط (رسائل صوتية ومرفقات)",
