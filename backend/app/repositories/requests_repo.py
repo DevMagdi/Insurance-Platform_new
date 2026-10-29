@@ -52,6 +52,32 @@ def _base() -> Select[Any]:
     )
 
 
+def _list_base() -> Select[Any]:
+    """List pages: many-to-one relations as JOINs in the page query itself, not five extra
+    selectin round-trips per page (perf gate, product-score8 follow-up).
+
+    The brief serializer reads only names off the joined rows, so the eager collections
+    hanging off them (client contacts, the assignee's scopes/permissions/portal link, the
+    client's account owner chain) are `noload`-ed: without this they fired one selectin
+    query per relation per page for data the list never renders."""
+    from sqlalchemy.orm import joinedload
+
+    from app.models.auth import Role, User
+    from app.models.clients import Client
+
+    return select(ServiceRequest).options(
+        joinedload(ServiceRequest.client).noload(Client.contacts),
+        joinedload(ServiceRequest.client).noload(Client.account_owner),
+        joinedload(ServiceRequest.client).noload(Client.source_lead),
+        joinedload(ServiceRequest.insured_person),
+        joinedload(ServiceRequest.insurer),
+        joinedload(ServiceRequest.insurance_type),
+        joinedload(ServiceRequest.assignee).noload(User.scopes),
+        joinedload(ServiceRequest.assignee).noload(User.portal_link),
+        joinedload(ServiceRequest.assignee).joinedload(User.role).noload(Role.permissions),
+    )
+
+
 async def get_by_id(session: AsyncSession, request_id: UUID, scope: Scope) -> ServiceRequest | None:
     return (await session.execute(with_scope(_base().where(ServiceRequest.id == request_id), scope, "request"))).scalar_one_or_none()
 
@@ -93,7 +119,7 @@ async def list_page(
             )
         )
 
-    stmt = with_scope(_base(), scope, "request")
+    stmt = with_scope(_list_base(), scope, "request")
     count_stmt = with_scope(select(func.count(ServiceRequest.id)), scope, "request")
     if conds:
         stmt, count_stmt = stmt.where(and_(*conds)), count_stmt.where(and_(*conds))
@@ -106,6 +132,21 @@ async def list_page(
 async def messages(session: AsyncSession, request_id: UUID) -> list[RequestMessage]:
     stmt = select(RequestMessage).where(RequestMessage.request_id == request_id).order_by(RequestMessage.created_at.asc())
     return list((await session.execute(stmt)).scalars())
+
+
+async def latest_messages(session: AsyncSession, request_ids: list[UUID]) -> dict[UUID, RequestMessage]:
+    """Latest message per request for a whole page, in ONE window-function query.
+
+    The list endpoint used to run `messages()` once per row — 25 queries per page, each loading a
+    full thread just to render a one-line snippet (`_snippet` reads the newest body). That was the
+    measured cost of the inbox list."""
+    if not request_ids:
+        return {}
+    rn = func.row_number().over(partition_by=RequestMessage.request_id, order_by=RequestMessage.created_at.desc()).label("rn")
+    ranked = select(RequestMessage.id.label("mid"), rn).where(RequestMessage.request_id.in_(request_ids)).subquery()
+    stmt = select(RequestMessage).join(ranked, sa.and_(RequestMessage.id == ranked.c.mid, ranked.c.rn == 1))
+    rows = (await session.execute(stmt)).scalars().all()
+    return {row.request_id: row for row in rows}
 
 
 async def notes(session: AsyncSession, request_id: UUID) -> list[InternalNote]:
