@@ -14,16 +14,13 @@ from fastapi import APIRouter, Path, Response
 from fastapi.responses import JSONResponse
 
 from app.api.v1.deps import DbSession, ReportsExport, ScopeDep
-from app.core.errors import FeatureDisabled
 from app.domain.enums import RequestStatus
 from app.schemas.exports import ExportRequest
 from app.services import audit, exports
-from app.services.feature_flags import PHASE2_FLAG, flag_enabled
 
 router = APIRouter(tags=["exports"])
 
 _MEDIA_TYPE = exports.XLSX_MEDIA_TYPE
-_FLAGGED = {exports.ExportKind.INSURER_PERFORMANCE}
 
 
 @router.post(
@@ -44,9 +41,6 @@ async def export_table(
     actor: ReportsExport,
     body: ExportRequest | None = None,
 ) -> Response:
-    if kind in _FLAGGED and not await flag_enabled(session, PHASE2_FLAG):
-        raise FeatureDisabled("This report belongs to Phase 2, which is not enabled yet", details={"flag": PHASE2_FLAG})
-
     payload = body or ExportRequest()
     result = await exports.build(
         kind,
@@ -111,7 +105,7 @@ async def export_kinds() -> dict[str, Any]:
                 "kind": kind.value,
                 "sheet": exports.SHEET_TITLE[kind],
                 "columns": [column.header for column in exports.COLUMNS[kind]],
-                "requires_flag": (kind in _FLAGGED and PHASE2_FLAG) or None,
+                "requires_flag": None,
             }
             for kind in exports.ExportKind
         ],

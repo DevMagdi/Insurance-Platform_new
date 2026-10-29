@@ -18,7 +18,7 @@ from app.schemas.ai import AIClassifyIn, AIClassifyOut, AIStatusOut, AISummarize
 from app.services import ai_svc
 from app.services.feature_flags import AI_FLAG
 
-router = APIRouter(tags=["ai (phase 2)"])
+router = APIRouter(tags=["ai"])
 
 
 async def _require_enabled(session: Any) -> None:

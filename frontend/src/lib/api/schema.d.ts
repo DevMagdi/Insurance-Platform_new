@@ -996,7 +996,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Issuing pipeline (Phase 2 · screen 13) */
+        /** Issuing pipeline (screen 13) */
         get: operations["getApiV1Issuing-Cases"];
         put?: never;
         post?: never;
@@ -1013,7 +1013,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** One issuing case (Phase 2) */
+        /** One issuing case */
         get: operations["getApiV1Issuing-CasesCaseId"];
         put?: never;
         post?: never;
@@ -1030,7 +1030,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Document checklist for one issuing case (Phase 2 · §7) */
+        /** Document checklist for one issuing case (§7) */
         get: operations["getApiV1Issuing-CasesCaseIdDocuments"];
         put?: never;
         post?: never;
@@ -1426,16 +1426,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Active policies (Phase 2 · screen 12) */
+        /** Active policies (screen 12) */
         get: operations["getApiV1Policies"];
         put?: never;
         /**
-         * Issue a policy → installments + commission row (Phase 2)
+         * Issue a policy → installments + commission row
          * @description One transaction, three writes: the policy, its schedule, its commission accrual.
          *
-         *     Gated twice, in the same order as `/commissions`: the permission first (a rep is not "blocked by a
-         *     flag", they simply do not issue policies), then the Phase-2 flag — which is what keeps a
-         *     half-configured workspace from booking policies its insurer channels cannot service yet (spec §2).
+         *     Permission-gated only (ADR-034): a rep does not issue policies at all — that is an RBAC
+         *     fact, not a deployment switch.
          */
         post: operations["postApiV1Policies"];
         delete?: never;
@@ -1451,7 +1450,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Phase-2 KPI row (policies, installments, commission) */
+        /** Policy KPI row (policies, installments, commission) */
         get: operations["getApiV1PoliciesKpis"];
         put?: never;
         post?: never;
@@ -1534,11 +1533,11 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Issue a policy → number + PDF document (Phase 2)
+         * Issue a policy → number + PDF document
          * @description `draft → issued` once, with the file written in the same transaction (ADR-021).
          *
-         *     Permission before flag, exactly like `POST /policies`: a rep is not "blocked by a flag", they do not
-         *     issue policies at all. A second call on the same policy is a `409`, not a second document.
+         *     Permission only, exactly like `POST /policies` (ADR-034). A second call on the same policy
+         *     is a `409`, not a second document.
          */
         post: operations["postApiV1PoliciesPolicyIdIssue"];
         delete?: never;
@@ -1698,7 +1697,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Reports (Phase 2 · screen 14) */
+        /** Reports (screen 14) */
         get: operations["getApiV1ReportsInsurer-Performance"];
         put?: never;
         post?: never;
@@ -2096,7 +2095,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Underwriting defaults (Phase 2) */
+        /** Underwriting defaults */
         get: operations["getApiV1SettingsPolicies"];
         /** Save underwriting defaults */
         put: operations["putApiV1SettingsPolicies"];

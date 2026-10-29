@@ -22,15 +22,14 @@ from app.core.middleware import client_ip, install
 log = get_logger("app")
 
 DESCRIPTION = """
-Broker Hub — insurance brokerage platform (Phase 1: service desk + leads + client files + portal).
+Broker Hub — insurance brokerage platform (service desk + leads + client files + portal + policies).
 
 * All list and detail endpoints are **data-scoped on the server**: a sales rep only ever sees their
   own leads (`assigned_to`) and clients (`account_owner_id`); an id outside the caller's scope is
   answered with **404**, never 403.
 * Arabic-first API messages are the client's job; codes are stable machine keys.
 * Every non-2xx body is the uniform `ErrorResponse` envelope `{code, message, details}`.
-* Phase 2 groups (`/policies`, `/commissions`, `/issuing-cases`, `/reports/*`) answer
-  `503 feature_disabled` until the `phase2.enabled` flag is on.
+* Policies/commissions/issuing/reports groups are live modules, RBAC-only (ADR-034).
 """
 
 

@@ -7,9 +7,8 @@ Gating is per-verb and deliberate (ADR-030 §5):
 * posting needs `finance.post`, voiding needs `finance.void` (taking history back is the rarer power);
 * approving and paying a commission needs `commissions.manage`.
 
-Not flag-gated. Phase 2's `phase2.enabled` guards *issuance* because a half-configured workspace must not
-book policies; the ledger is the office's book of record and must not be switchable off silently — the
-permission is the gate.
+Not flag-gated (ADR-034): no shipped module is. The ledger is the office's book of record and
+must not be switchable off silently — the permission is the gate.
 """
 
 from __future__ import annotations

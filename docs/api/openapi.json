@@ -9438,7 +9438,7 @@
     }
   },
   "info": {
-    "description": "\nBroker Hub — insurance brokerage platform (Phase 1: service desk + leads + client files + portal).\n\n* All list and detail endpoints are **data-scoped on the server**: a sales rep only ever sees their\n  own leads (`assigned_to`) and clients (`account_owner_id`); an id outside the caller's scope is\n  answered with **404**, never 403.\n* Arabic-first API messages are the client's job; codes are stable machine keys.\n* Every non-2xx body is the uniform `ErrorResponse` envelope `{code, message, details}`.\n* Phase 2 groups (`/policies`, `/commissions`, `/issuing-cases`, `/reports/*`) answer\n  `503 feature_disabled` until the `phase2.enabled` flag is on.\n",
+    "description": "\nBroker Hub — insurance brokerage platform (service desk + leads + client files + portal + policies).\n\n* All list and detail endpoints are **data-scoped on the server**: a sales rep only ever sees their\n  own leads (`assigned_to`) and clients (`account_owner_id`); an id outside the caller's scope is\n  answered with **404**, never 403.\n* Arabic-first API messages are the client's job; codes are stable machine keys.\n* Every non-2xx body is the uniform `ErrorResponse` envelope `{code, message, details}`.\n* Policies/commissions/issuing/reports groups are live modules, RBAC-only (ADR-034).\n",
     "title": "Broker Hub API",
     "version": "0.6.0"
   },
@@ -9493,7 +9493,7 @@
         },
         "summary": "Transcribe",
         "tags": [
-          "ai (phase 2)"
+          "ai"
         ]
       }
     },
@@ -9534,7 +9534,7 @@
         },
         "summary": "Suggested triage for free text (nothing is stored)",
         "tags": [
-          "ai (phase 2)"
+          "ai"
         ]
       }
     },
@@ -9577,7 +9577,7 @@
         },
         "summary": "Summarize",
         "tags": [
-          "ai (phase 2)"
+          "ai"
         ]
       }
     },
@@ -9598,7 +9598,7 @@
         },
         "summary": "Whether the AI features are on for this deployment",
         "tags": [
-          "ai (phase 2)"
+          "ai"
         ]
       }
     },
@@ -10933,7 +10933,7 @@
         },
         "summary": "Brokerage commission ledger",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       }
     },
@@ -12623,9 +12623,9 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Issuing pipeline (Phase 2 · screen 13)",
+        "summary": "Issuing pipeline (screen 13)",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       }
     },
@@ -12666,9 +12666,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "One issuing case (Phase 2)",
+        "summary": "One issuing case ",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       }
     },
@@ -12713,9 +12713,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Document checklist for one issuing case (Phase 2 · §7)",
+        "summary": "Document checklist for one issuing case (§7)",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       }
     },
@@ -13999,13 +13999,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Active policies (Phase 2 · screen 12)",
+        "summary": "Active policies (screen 12)",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       },
       "post": {
-        "description": "One transaction, three writes: the policy, its schedule, its commission accrual.\n\nGated twice, in the same order as `/commissions`: the permission first (a rep is not \"blocked by a\nflag\", they simply do not issue policies), then the Phase-2 flag — which is what keeps a\nhalf-configured workspace from booking policies its insurer channels cannot service yet (spec §2).",
+        "description": "One transaction, three writes: the policy, its schedule, its commission accrual.\n\nPermission-gated only (ADR-034): a rep does not issue policies at all — that is an RBAC\nfact, not a deployment switch.",
         "operationId": "postApiV1Policies",
         "requestBody": {
           "content": {
@@ -14041,9 +14041,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Issue a policy → installments + commission row (Phase 2)",
+        "summary": "Issue a policy → installments + commission row ",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       }
     },
@@ -14062,9 +14062,9 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Phase-2 KPI row (policies, installments, commission)",
+        "summary": "Policy KPI row (policies, installments, commission)",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       }
     },
@@ -14108,7 +14108,7 @@
         },
         "summary": "Download the issued policy PDF",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       }
     },
@@ -14152,7 +14152,7 @@
         },
         "summary": "Installments",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       }
     },
@@ -14225,13 +14225,13 @@
         },
         "summary": "Record a payment on one installment",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       }
     },
     "/api/v1/policies/{policy_id}/issue": {
       "post": {
-        "description": "`draft → issued` once, with the file written in the same transaction (ADR-021).\n\nPermission before flag, exactly like `POST /policies`: a rep is not \"blocked by a flag\", they do not\nissue policies at all. A second call on the same policy is a `409`, not a second document.",
+        "description": "`draft → issued` once, with the file written in the same transaction (ADR-021).\n\nPermission only, exactly like `POST /policies` (ADR-034). A second call on the same policy\nis a `409`, not a second document.",
         "operationId": "postApiV1PoliciesPolicyIdIssue",
         "parameters": [
           {
@@ -14269,9 +14269,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Issue a policy → number + PDF document (Phase 2)",
+        "summary": "Issue a policy → number + PDF document ",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       }
     },
@@ -14610,9 +14610,9 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Reports (Phase 2 · screen 14)",
+        "summary": "Reports (screen 14)",
         "tags": [
-          "phase 2 (flagged)"
+          "policies · issuing · reports"
         ]
       }
     },
@@ -16066,7 +16066,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Underwriting defaults (Phase 2)",
+        "summary": "Underwriting defaults",
         "tags": [
           "settings"
         ]

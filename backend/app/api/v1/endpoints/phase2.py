@@ -1,4 +1,5 @@
-"""Phase 2 routes (screens 12/13/14). Flag-gated: 503 feature_disabled until enabled (spec §2)."""
+"""Policies, installments, issuing and reports routes. Live modules: access is RBAC-only
+(ADR-034) — no feature flag gates any of these paths."""
 
 from __future__ import annotations
 
@@ -13,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.serializers import policy_brief
 from app.api.v1.deps import CurrentUser, DbSession, PageQuery, PoliciesView, ReportsView, ScopeDep
-from app.core.errors import FeatureDisabled
 from app.core.scope import Scope
 from app.domain import permissions as P
 from app.models.clients import Client
@@ -28,16 +28,9 @@ from app.schemas.out import (
     PageOut,
     PolicyKpisOut,
 )
-from app.services.feature_flags import PHASE2_FLAG as _FLAG
-from app.services.feature_flags import flag_enabled
 from app.services.reports import insurer_performance
 
-router = APIRouter(tags=["phase 2 (flagged)"])
-
-
-async def _flag(session: AsyncSession) -> bool:
-    """The single flag that gates this module (ADR-008). The lookup itself lives in `services.feature_flags`."""
-    return await flag_enabled(session, _FLAG)
+router = APIRouter(tags=["policies · issuing · reports"])
 
 
 class PolicyCreateIn(BaseModel):
@@ -57,20 +50,17 @@ class PolicyCreateIn(BaseModel):
     notes: str | None = None
 
 
-@router.post("/policies", status_code=201, summary="Issue a policy → installments + commission row (Phase 2)")
+@router.post("/policies", status_code=201, summary="Issue a policy → installments + commission row ")
 async def create_policy(request: Request, body: PolicyCreateIn, session: DbSession, scope: ScopeDep, actor: CurrentUser) -> dict[str, Any]:
     """One transaction, three writes: the policy, its schedule, its commission accrual.
 
-    Gated twice, in the same order as `/commissions`: the permission first (a rep is not "blocked by a
-    flag", they simply do not issue policies), then the Phase-2 flag — which is what keeps a
-    half-configured workspace from booking policies its insurer channels cannot service yet (spec §2).
+    Permission-gated only (ADR-034): a rep does not issue policies at all — that is an RBAC
+    fact, not a deployment switch.
     """
     if P.POLICIES_MANAGE not in scope.perms:
         from app.core.errors import Forbidden
 
         raise Forbidden("Not allowed", details={"missing": [P.POLICIES_MANAGE]})
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     from app.services.policies import create_policy as _create
 
     return await _create(
@@ -83,10 +73,8 @@ async def create_policy(request: Request, body: PolicyCreateIn, session: DbSessi
     )
 
 
-@router.get("/policies", summary="Active policies (Phase 2 · screen 12)", response_model=PageOut)
+@router.get("/policies", summary="Active policies (screen 12)", response_model=PageOut)
 async def policies(session: DbSession, scope: ScopeDep, params: PageQuery, actor: PoliciesView) -> Any:
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     stmt = with_scope(select(Policy), scope, "policy").order_by(Policy.created_at.desc())
     rows = list((await session.execute(stmt.offset(params.offset).limit(params.page_size))).scalars().unique())
     total = int((await session.execute(with_scope(select(func.count(Policy.id)), scope, "policy"))).scalar_one())
@@ -95,10 +83,8 @@ async def policies(session: DbSession, scope: ScopeDep, params: PageQuery, actor
     return Page.build([policy_brief(r) for r in rows], total, params)  # type: ignore[arg-type]
 
 
-@router.get("/policies/kpis", summary="Phase-2 KPI row (policies, installments, commission)", response_model=PolicyKpisOut)
+@router.get("/policies/kpis", summary="Policy KPI row (policies, installments, commission)", response_model=PolicyKpisOut)
 async def policy_kpis(session: DbSession, scope: ScopeDep, actor: PoliciesView) -> Any:
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     from datetime import date, timedelta
 
     from app.domain.enums import InstallmentStatus, PolicyStatus
@@ -155,8 +141,6 @@ async def installments(policy_id: UUID, session: DbSession, scope: ScopeDep, act
     The commit is deliberate: `plan()` moves overdue rows to `late`, and a derived write that is rolled back
     at the end of the request would leave the next reader disagreeing with this one.
     """
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     from app.services import installments as installments_svc
 
     result = await installments_svc.plan(session, scope, policy_id)
@@ -185,8 +169,6 @@ async def pay_installment(
 
     if P.POLICIES_MANAGE not in scope.perms:
         raise Forbidden("Not allowed", details={"missing": [P.POLICIES_MANAGE]})
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     from app.domain.enums import PaymentMethod
     from app.services import installments as installments_svc
 
@@ -205,19 +187,17 @@ async def pay_installment(
     return result
 
 
-@router.post("/policies/{policy_id}/issue", summary="Issue a policy → number + PDF document (Phase 2)")
+@router.post("/policies/{policy_id}/issue", summary="Issue a policy → number + PDF document ")
 async def issue_policy(policy_id: UUID, request: Request, session: DbSession, scope: ScopeDep, actor: PoliciesView) -> dict[str, Any]:
     """`draft → issued` once, with the file written in the same transaction (ADR-021).
 
-    Permission before flag, exactly like `POST /policies`: a rep is not "blocked by a flag", they do not
-    issue policies at all. A second call on the same policy is a `409`, not a second document.
+    Permission only, exactly like `POST /policies` (ADR-034). A second call on the same policy
+    is a `409`, not a second document.
     """
     from app.core.errors import Forbidden
 
     if P.POLICIES_MANAGE not in scope.perms:
         raise Forbidden("Not allowed", details={"missing": [P.POLICIES_MANAGE]})
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     from app.services import policy_issue
 
     result = await policy_issue.issue(
@@ -240,8 +220,6 @@ async def policy_document(policy_id: UUID, session: DbSession, scope: ScopeDep, 
     from app.integrations.storage import storage
     from app.services import policy_issue
 
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     _, document = await policy_issue.latest_document(session, scope, policy_id)
     from app.core.errors import NotFound
 
@@ -269,8 +247,6 @@ async def commissions(session: DbSession, scope: ScopeDep, actor: CurrentUser) -
         from app.core.errors import Forbidden
 
         raise Forbidden("Not allowed")
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     rows = (
         await session.execute(
             select(Commission, Policy, Client.name)
@@ -334,30 +310,24 @@ async def _visible_case(session: AsyncSession, scope: Scope, case_id: UUID) -> I
     return row
 
 
-@router.get("/issuing-cases", summary="Issuing pipeline (Phase 2 · screen 13)", response_model=list[IssuingCaseOut])
+@router.get("/issuing-cases", summary="Issuing pipeline (screen 13)", response_model=list[IssuingCaseOut])
 async def issuing_cases(session: DbSession, scope: ScopeDep, actor: PoliciesView) -> Any:
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     stmt = with_scope(select(IssuingCase).order_by(IssuingCase.created_at.desc()), scope, "issuing_case").limit(100)
     rows = (await session.execute(stmt)).scalars().unique().all()
     return [_case_row(c) for c in rows]
 
 
-@router.get("/issuing-cases/{case_id}", summary="One issuing case (Phase 2)", response_model=IssuingCaseDetailOut)
+@router.get("/issuing-cases/{case_id}", summary="One issuing case ", response_model=IssuingCaseDetailOut)
 async def issuing_case(case_id: UUID, session: DbSession, scope: ScopeDep, actor: PoliciesView) -> Any:
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     return _case_detail(await _visible_case(session, scope, case_id))
 
 
 @router.get(
     "/issuing-cases/{case_id}/documents",
-    summary="Document checklist for one issuing case (Phase 2 · §7)",
+    summary="Document checklist for one issuing case (§7)",
     response_model=list[IssuingDocumentDetailOut],
 )
 async def issuing_case_documents(case_id: UUID, session: DbSession, scope: ScopeDep, actor: PoliciesView) -> Any:
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     case = await _visible_case(session, scope, case_id)
     return [
         {
@@ -371,10 +341,8 @@ async def issuing_case_documents(case_id: UUID, session: DbSession, scope: Scope
     ]
 
 
-@router.get("/reports/insurer-performance", summary="Reports (Phase 2 · screen 14)", response_model=list[InsurerPerformanceOut])
+@router.get("/reports/insurer-performance", summary="Reports (screen 14)", response_model=list[InsurerPerformanceOut])
 async def insurer_report(session: DbSession, scope: ScopeDep, actor: ReportsView) -> Any:
-    if not await _flag(session):
-        raise FeatureDisabled("Phase 2 is not enabled yet", details={"flag": _FLAG})
     # Shared with `POST /exports/insurer-performance`, so the downloaded file can never disagree with
     # the screen — and so scope predicates (spec §6) apply to both paths at once.
     return await insurer_performance(session, scope)
