@@ -101,18 +101,15 @@ async def test_a_rep_cannot_issue_and_a_stranger_cannot_read_the_file(client, id
         assert (await client.get(f"/api/v1/policies/{policy['id']}/document", headers=rep)).status_code in (403, 404)
 
 
-async def test_the_document_paths_are_closed_while_phase2_is_off(client, ids) -> None:
+async def test_the_document_paths_are_live_even_with_a_disabled_legacy_flag(client, ids) -> None:
+    """ADR-034: flipping the legacy row off closes nothing — issue + document both answer."""
     async with login(client, ADMIN) as admin, login(client, MANAGER) as mgr:
-        await _enable_phase2(admin, client)
         policy = await _new_policy(client, mgr, client_id=ids["clients"]["ألف"])
         await client.patch("/api/v1/feature-flags/phase2.enabled", headers=admin, json={"enabled": False})
-        try:
-            blocked = await client.post(f"/api/v1/policies/{policy['id']}/issue", headers=mgr)
-            assert blocked.status_code == 503
-            assert blocked.json()["code"] == "feature_disabled"
-            assert (await client.get(f"/api/v1/policies/{policy['id']}/document", headers=mgr)).status_code == 503
-        finally:
-            await client.patch("/api/v1/feature-flags/phase2.enabled", headers=admin, json={"enabled": True})
+        issued = await client.post(f"/api/v1/policies/{policy['id']}/issue", headers=mgr)
+        assert issued.status_code == 200, issued.text
+        document = await client.get(f"/api/v1/policies/{policy['id']}/document", headers=mgr)
+        assert document.status_code == 200, document.text
 
 
 async def test_an_unknown_policy_is_a_404_on_both_paths(client) -> None:

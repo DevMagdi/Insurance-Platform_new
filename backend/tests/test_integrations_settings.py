@@ -308,17 +308,17 @@ async def test_underwriting_defaults_round_trip_and_seed_a_new_policy(client: An
     assert [i["status"] for i in items] == expected
 
 
-async def test_policy_creation_is_gated_on_the_phase2_flag_and_the_permission(client: Any, ids: dict) -> None:
+async def test_policy_creation_needs_the_permission_only(client: Any, ids: dict) -> None:
+    """ADR-034: policies are live — a manager creates one with no flag anywhere; a rep cannot."""
     from tests.helpers import login
 
     async with login(client, MANAGER) as h:
-        blocked = await client.post(
+        created = await client.post(
             "/api/v1/policies",
             headers=h,
             json={"client_id": ids["clients"]["ألف"], "start_date": "2026-01-01", "premium_amount": 100},
         )
-        assert blocked.status_code == 503, blocked.text
-        assert blocked.json()["code"] == "feature_disabled"
+        assert created.status_code == 201, created.text
 
     async with login(client, REP) as h:
         forbidden = await client.post(

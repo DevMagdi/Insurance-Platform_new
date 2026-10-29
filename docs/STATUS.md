@@ -1,5 +1,19 @@
 # STATUS — منصة إدارة الوساطة التأمينية (Broker Hub)
 
+## No Phase Gates — All Live — 2026-10-29 (ADR-034)
+
+| البند | الحكم | الدليل |
+|---|---|---|
+| لا API يردّ `feature_disabled`/503 لوحدة مشحونة | ✅ | حذف شرط `phase2.enabled` من `endpoints/phase2.py` (وثائق/أقساط/إصدار/تقارير/عمولات) و`endpoints/exports.py`؛ `tests/test_no_phase_gates.py`: صف العلم معطّل مزروعًا → 200/201 بالصلاحية، 403 بدونها، صفر 503 |
+| لا UI «مرحلة ثانية/غير مفعّلة بعد/تشغيل (تجربة)» | ✅ | حذف مكوّن بوابة المرحلة وخطافها (phase2Gate / usePhase2) نهائيًا؛ الشاشات الثلاث داخل `StaffRoute` فقط؛ زر «وثيقة جديدة» في ملف العميل ظاهر دائمًا؛ تنظيف نصوص ar/en (بقيت مساحة الاسم الداخلية `phase2.*` كنصوص تشغيلية بلا لغة مراحل) |
+| الوصول RBAC فقط (مصفوفة) | ✅ | `test_no_phase_gates.py` + إعادة كتابة 4 اختبارات كانت تتوقع 503 (`test_dashboard_phase2`, `test_exports`, `test_issuing_cases`, `test_integrations_settings`, `test_policy_issue`) إلى 200 بالصلاحية/403 بدونها — لم يُخفَّف اختبار؛ تغيّر المتوقَّع بتعريف ADR-034. تبديل الأعلام العام نفسه ما زال مُدقَّقًا (اختبار AuditLog قائم) |
+| ثبات وظيفي (B1–B8) | ✅ | `pytest` كاملة خضراء (تشمل دخول الأدوار الأربع، inbox رد/حالة، leads تحويل وعزل، ملف عميل، وثيقة+أقساط بلا علم، تقارير+Excel، ERP أربع فترات/صندوق/دفتر، خصوصية البوابة) · `vitest` ‏133 · typecheck/lint/build |
+| Browser load (C) | ✅ | `e2e/load-browser.spec.ts`: ‏8 جلسات مميزة الحسابات × 6 دورات، 138 خطوة، **0 فشل، 0 ‏5xx، 0 نص بوابة**؛ التقرير `perf/browser-load-all-live-2026-10-29.md` والخام `perf/raw-browser-load-all-live.json`؛ يعمل أيضًا تحت إعداد e2e الافتراضي (خوادم CI الذاتية) |
+
+أوامر التحقق: `pytest` (كاملة) · `pytest tests/test_no_phase_gates.py` · `npm run test` ‏133 ·
+`npx playwright test e2e/load-browser.spec.ts` · خام الحمل في التقرير أعلاه.
+يبقى `FeatureDisabled` لعلم `ai.enabled` فقط — مفتاح مزوّد خارجي لا يخفي شاشة مشحونة (ADR-034 §4).
+
 ## Product Scorecard Sprint — 2026-10-29 (ADR-033)
 
 | البُعد | قبل | بعد (مقدّرة بدليل) | الدليل |

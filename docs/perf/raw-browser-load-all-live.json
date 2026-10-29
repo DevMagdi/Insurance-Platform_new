@@ -1,0 +1,50 @@
+{
+  "scenario": "browser load — all live (ADR-034)",
+  "web_url": "http://127.0.0.1:5176",
+  "users": 8,
+  "cycles_per_user": 6,
+  "duration_s": 44,
+  "steps": 138,
+  "steps_failed": 0,
+  "failed_detail": [],
+  "server_5xx": [],
+  "pageerrors": [],
+  "gate_hits": [],
+  "by_step": {
+    "dashboard": {
+      "n": 18,
+      "failed": 0,
+      "p95": 2871
+    },
+    "inbox": {
+      "n": 24,
+      "failed": 0,
+      "p95": 2822
+    },
+    "erp-periods": {
+      "n": 18,
+      "failed": 0,
+      "p95": 5829
+    },
+    "policies-live": {
+      "n": 18,
+      "failed": 0,
+      "p95": 704
+    },
+    "reports-live": {
+      "n": 18,
+      "failed": 0,
+      "p95": 854
+    },
+    "issuing-live": {
+      "n": 18,
+      "failed": 0,
+      "p95": 1302
+    },
+    "leads-kanban": {
+      "n": 24,
+      "failed": 0,
+      "p95": 2004
+    }
+  }
+}

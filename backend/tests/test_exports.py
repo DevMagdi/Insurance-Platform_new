@@ -81,27 +81,19 @@ async def test_row_filters_are_honoured(client) -> None:
     assert overdue_rows <= all_rows
 
 
-async def test_report_export_is_flag_gated_and_equals_the_screen(client) -> None:
-    """`insurer-performance` is Phase 2: 503 while the flag is off, then the same rows as the screen."""
+async def test_report_export_equals_the_screen_without_any_flag(client) -> None:
+    """ADR-034: `insurer-performance` is a live report — no flag read, and it equals the screen."""
     from app.core.db import get_sessionmaker
     from app.models.masters import FeatureFlag
 
     maker = get_sessionmaker()
     async with maker() as session:
-        session.add(FeatureFlag(key="phase2.enabled", enabled=False, description="Phase 2 screens"))
+        session.add(FeatureFlag(key="phase2.enabled", enabled=False, description="legacy row, no reader"))
         await session.commit()
 
-    async with login(client, MANAGER) as auth, login(client, ADMIN) as admin:
-        blocked = await client.post("/api/v1/exports/insurer-performance", headers=auth, json={})
-        assert blocked.status_code == 503
-        assert blocked.json()["code"] == "feature_disabled"
-
-        await client.patch("/api/v1/feature-flags/phase2.enabled", json={"enabled": True}, headers=admin)
-        try:
-            exported = await client.post("/api/v1/exports/insurer-performance", headers=auth, json={})
-            screen = (await client.get("/api/v1/reports/insurer-performance", headers=auth)).json()
-        finally:
-            await client.patch("/api/v1/feature-flags/phase2.enabled", json={"enabled": False}, headers=admin)
+    async with login(client, MANAGER) as auth:
+        exported = await client.post("/api/v1/exports/insurer-performance", headers=auth, json={})
+        screen = (await client.get("/api/v1/reports/insurer-performance", headers=auth)).json()
 
     assert exported.status_code == 200, exported.text
     rows = _sheet(exported.content)
