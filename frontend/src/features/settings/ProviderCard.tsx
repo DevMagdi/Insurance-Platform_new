@@ -39,6 +39,7 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
   const [config, setConfig] = useState<Record<string, unknown>>({});
   const [secrets, setSecrets] = useState<Record<string, SecretDraft>>({});
   const [lastTest, setLastTest] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [showInboundCheck, setShowInboundCheck] = useState(false);
   const [templates, setTemplates] = useState<TemplateRow[] | null>(null);
 
   // re-seed from the row whenever it changes, so a save by someone else does not leave a stale form
@@ -218,6 +219,41 @@ export function ProviderCard({ state, webhookUrl }: { state: ProviderState; webh
           data-testid={`test-result-${state.provider}`}
         >
           {lastTest.detail}
+        </div>
+      ) : null}
+
+      {/* A temporary-token warning must be visible on the card, not buried in the test detail text. */}
+      {state.last_test_detail && (state.last_test_detail.includes("توكن مؤقت") || state.last_test_detail.includes("temporary")) ? (
+        <div className="mt-3 rounded-btn px-3 py-2 text-[12px]" style={{ background: "var(--a-bg)", color: "var(--a-ink)" }} role="alert" data-testid={`temp-token-warning-${providerKey}`}>
+          {t("settings.tempTokenWarning")}
+        </div>
+      ) : null}
+
+      {/* Inbound health: «متصل» only proves we can send. This strip is the receiving truth. */}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]" data-testid={`inbound-health-${providerKey}`}>
+        <span className="font-semibold text-muted">{t("settings.inbound." + (state.inbound_health ?? "never"))}</span>
+        {state.inbound_health === "stale" ? (
+          <span style={{ color: "var(--a-ink)" }}>
+            {t("settings.inboundStaleHint", { hours: state.last_webhook_at ? Math.max(1, Math.round((Date.now() - new Date(state.last_webhook_at).getTime()) / 3_600_000)) : 24 })}
+          </span>
+        ) : null}
+        {state.inbound_health === "never" ? <span style={{ color: "var(--a-ink)" }}>{t("settings.inboundNeverHint")}</span> : null}
+        {state.inbound_health === "failing" ? <span style={{ color: "var(--r-ink)" }}>{t("settings.inboundFailingHint")}</span> : null}
+        {state.provider === "whatsapp" ? (
+          <button type="button" className="font-semibold text-[var(--primary)] hover:underline" onClick={() => setShowInboundCheck((value) => !value)}>
+            {t("settings.inboundTest")}
+          </button>
+        ) : null}
+      </div>
+      {showInboundCheck && state.provider === "whatsapp" ? (
+        <div className="mt-2 rounded-btn border border-dashed border-line p-3 text-[12px] text-ink" data-testid="inbound-checklist">
+          <div className="mb-1 font-semibold text-muted">{t("settings.inboundChecklistTitle")}</div>
+          <ul className="list-inside list-disc space-y-1">
+            <li>{t("settings.inboundCheck1")}</li>
+            <li>{t("settings.inboundCheck2")}</li>
+            <li>{t("settings.inboundCheck3")}</li>
+            <li>{t("settings.inboundCheck4")}</li>
+          </ul>
         </div>
       ) : null}
 
