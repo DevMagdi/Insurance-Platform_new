@@ -56,6 +56,9 @@ class _SimWhatsApp(BaseModel):
 async def sim_whatsapp(body: _SimWhatsApp, session: DbSession) -> dict[str, Any]:
     require_simulation_allowed("Simulator API")
     external_id = body.external_id or f"wamid.sim_{datetime.now(UTC).timestamp():.6f}"
+    media_key: str | None
+    media_mime: str | None
+    media_size: int
     if body.media_id and body.media_id.startswith("sim-media-"):
         # Panel-generated fake media must never be fetched from a live provider: a live Meta
         # driver would 400 on the invented id and the panel would 500 (item 2). Store the fake
