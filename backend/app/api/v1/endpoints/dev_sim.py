@@ -25,7 +25,7 @@ from app.api.v1.endpoints.webhooks import stage_inbound_media
 from app.integrations.registry import whatsapp_provider
 from app.integrations.sims import require_simulation_allowed
 from app.integrations.storage import storage
-from app.services import intake
+from app.services import intake, integrations_settings
 
 router = APIRouter(tags=["simulator (dev/test only)"])
 
@@ -51,8 +51,32 @@ class _SimWhatsApp(BaseModel):
 async def sim_whatsapp(body: _SimWhatsApp, session: DbSession) -> dict[str, Any]:
     require_simulation_allowed("Simulator API")
     external_id = body.external_id or f"wamid.sim_{datetime.now(UTC).timestamp():.6f}"
-    provider = whatsapp_provider()
-    media_key, media_mime, media_size = await stage_inbound_media(provider, storage(), external_id, body.media_id)
+    if body.media_id and body.media_id.startswith("sim-media-"):
+        # Panel-generated fake media must never be fetched from a live provider: a live Meta
+        # driver would 400 on the invented id and the panel would 500 (item 2). Store the fake
+        # bytes ourselves, exactly where real inbound media lands.
+        import re
+
+        safe_external = re.sub(r"[^A-Za-z0-9_.-]", "_", external_id)[:80]
+        media_key = f"media/{safe_external}/{body.media_id}"
+        storage().put_object(media_key, b"SIM-AUDIO", "audio/ogg")
+        media_mime, media_size = "audio/ogg", len(b"SIM-AUDIO")
+    elif body.media_id:
+        try:
+            media_key, media_mime, media_size = await stage_inbound_media(whatsapp_provider(), storage(), external_id, body.media_id)
+        except Exception as exc:  # mirror webhooks.whatsapp_webhook: never 500, ingest the text
+            await integrations_settings.record_event(
+                session,
+                provider="whatsapp",
+                event_type="media_fetch_failed",
+                status="error",
+                external_id=external_id,
+                detail=f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
+            await session.commit()
+            media_key, media_mime, media_size = None, None, 0
+    else:
+        media_key, media_mime, media_size = None, None, 0
     result = await intake.ingest_whatsapp_message(
         session,
         external_id=external_id,
