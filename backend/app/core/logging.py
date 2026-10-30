@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from contextvars import ContextVar
 from typing import Any, cast
@@ -19,6 +20,7 @@ def setup_logging(level: str = "INFO", json_logs: bool = True) -> None:
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         _add_correlation_id,
         RedactPhones(),
+        RedactSecrets(),
     ]
     structlog.configure(
         processors=[
@@ -32,6 +34,10 @@ def setup_logging(level: str = "INFO", json_logs: bool = True) -> None:
         cache_logger_on_first_use=True,
     )
     logging.basicConfig(level=getattr(logging, level.upper(), 20), format="%(message)s", force=True)
+    # httpx/httpcore log full request URLs at INFO, and a URL can carry credentials
+    # (debug_token's input_token/access_token) — they stay at WARNING regardless of app level.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def _add_correlation_id(_logger: Any, _method: str, event_dict: dict[str, Any]) -> dict[str, Any]:
@@ -60,6 +66,28 @@ class RedactPhones:
         if len(digits) < 5:
             return value
         return "".join(out)
+
+
+class RedactSecrets:
+    """Mask credential material in any log value: named query params and Bearer tokens.
+
+    Defense in depth: `debug_token` only accepts its tokens as query params (Meta's contract),
+    so any URL that reaches a log line — ours or a library's — must have those values masked.
+    """
+
+    _PARAMS = re.compile(r"([?&](?:access_token|input_token|app_secret|client_secret|token)=)[^&\s\"']+")
+    _BEARER = re.compile(r"(Bearer\s+)[^\s\"',]+")
+
+    def __call__(self, _logger: Any, _method: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+        for key, value in list(event_dict.items()):
+            if isinstance(value, str) and ("token" in value or "secret" in value or "Bearer " in value):
+                event_dict[key] = self.mask(value)
+        return event_dict
+
+    @classmethod
+    def mask(cls, value: str) -> str:
+        value = cls._PARAMS.sub(r"\1•••", value)
+        return cls._BEARER.sub(r"\1•••", value)
 
 
 def get_logger(name: str = "app") -> structlog.stdlib.BoundLogger:
