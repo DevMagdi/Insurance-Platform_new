@@ -43,6 +43,7 @@ class ProviderStateOut(BaseModel):
     missing_fields: list[str] = Field(default_factory=list, description="named credentials still missing")
     last_webhook_at: str | None = None
     last_error: str | None = None
+    inbound_health: str = Field(default="never", description="receiving | stale | never | failing — inbound webhook health")
     last_tested_at: str | None = None
     last_test_status: str | None = None
     last_test_detail: str | None = None

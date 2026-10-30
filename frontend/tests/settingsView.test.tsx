@@ -46,6 +46,7 @@ const providerState = vi.hoisted(() => (overrides: Partial<ProviderState> = {}):
   missing_fields: [],
   last_webhook_at: null,
   last_error: null,
+  inbound_health: "never",
   last_tested_at: null,
   last_test_status: null,
   last_test_detail: null,

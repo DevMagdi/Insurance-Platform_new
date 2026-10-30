@@ -248,6 +248,11 @@ class State:
     missing_fields: list[str] = field(default_factory=list)
     last_webhook_at: str | None = None
     last_error: str | None = None
+    #: Inbound (receiving) health, derived from the webhook-event ledger by `state()`, never stored:
+    #: `receiving` (a verified delivery within 24h) | `stale` (> 24h) | `never` (none ever) |
+    #: `failing` (the newest event is a rejected/errored delivery newer than the newest ok). The
+    #: «متصل» badge only proves the credentials can *send*; this is the signal that Meta *delivers*.
+    inbound_health: str = "never"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -260,6 +265,7 @@ class State:
             "missing_fields": self.missing_fields,
             "last_webhook_at": self.last_webhook_at,
             "last_error": self.last_error,
+            "inbound_health": self.inbound_health,
             "last_tested_at": self.last_tested_at,
             "last_test_status": self.last_test_status,
             "last_test_detail": self.last_test_detail,
@@ -378,6 +384,16 @@ async def state(session: AsyncSession, provider: str) -> State:
         out.last_error = latest_err.detail or latest_err.status
     else:
         out.last_error = None
+    # Inbound health from the same ledger: a rejection newer than the last good delivery means the
+    # channel is failing *now*; otherwise recency of the last good delivery decides receiving/stale.
+    if latest_err and (latest_ok is None or latest_err.occurred_at > latest_ok.occurred_at):
+        out.inbound_health = "failing"
+    elif latest_ok is None:
+        out.inbound_health = "never"
+    elif latest_ok.occurred_at.astimezone(UTC) >= datetime.now(UTC) - timedelta(hours=24):
+        out.inbound_health = "receiving"
+    else:
+        out.inbound_health = "stale"
     out.connection_status = "error" if out.last_test_status == "failed" else ("connected" if not missing else "not_connected")
     return out
 
@@ -986,6 +1002,30 @@ async def _test_whatsapp(resolved: ResolvedIntegration) -> TestOutcome:
     expires_at = data.get("expires_at") or 0
     if expires_at and 0 < int(expires_at) - int(time.time()) < 7 * 24 * 3600:
         detail += " — تنبيه: هذا التوكن مؤقت وقارب على الانتهاء؛ يلزم توكين دائم من System User في Meta قبل الانتهاء"
+    # Best-effort webhook-subscription probe: a token that can send still receives nothing until the
+    # app is subscribed to the WABA (`POST /{waba}/subscribed_apps`). Any failure here is a warning
+    # appended to the detail — it must never fail an otherwise healthy test.
+    waba = resolved.value("business_account_id")
+    if waba:
+        try:
+            async with _client() as client:
+                subs = await client.get(
+                    f"{graph_base()}/{waba}/subscribed_apps",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            if subs.status_code >= 400:
+                detail += f" — تنبيه: تعذّر فحص اشتراك التطبيق في الويبوك ({subs.status_code})"
+            else:
+                rows = (subs.json() or {}).get("data") or []
+                ids = [str(row.get("id")) for row in rows if isinstance(row, dict)]
+                if app_id and app_id in ids:
+                    detail += " — التطبيق مشترك في ويبوك الحساب"
+                elif ids:
+                    detail += " — تنبيه: التطبيق غير مشترك في ويبوك هذا الحساب (اشترك من Meta: اشتراك التطبيق في حساب واتساب)"
+                else:
+                    detail += " — تنبيه: لا تطبيقات مشتركة في ويبوك هذا الحساب؛ لن تصل رسائل واردة حتى يُشترك التطبيق"
+        except httpx.HTTPError:
+            detail += " — تنبيه: تعذّر فحص اشتراك التطبيق في الويبوك"
     return TestOutcome(True, detail)
 
 

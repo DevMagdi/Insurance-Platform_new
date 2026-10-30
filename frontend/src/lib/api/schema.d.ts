@@ -4917,6 +4917,12 @@ export interface components {
              * @default not_connected
              */
             connection_status: string;
+            /**
+             * Inbound Health
+             * @description receiving | stale | never | failing — inbound webhook health
+             * @default never
+             */
+            inbound_health: string;
             /** Is Live */
             is_live: boolean;
             /** Last Error */

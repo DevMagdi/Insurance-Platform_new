@@ -6800,6 +6800,12 @@
             "title": "Connection Status",
             "type": "string"
           },
+          "inbound_health": {
+            "default": "never",
+            "description": "receiving | stale | never | failing — inbound webhook health",
+            "title": "Inbound Health",
+            "type": "string"
+          },
           "is_live": {
             "title": "Is Live",
             "type": "boolean"

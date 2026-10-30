@@ -22,10 +22,11 @@ from pydantic import BaseModel, Field
 
 from app.api.v1.deps import DbSession
 from app.api.v1.endpoints.webhooks import stage_inbound_media
+from app.core.config import get_settings
 from app.integrations.registry import whatsapp_provider
 from app.integrations.sims import require_simulation_allowed
 from app.integrations.storage import storage
-from app.services import intake
+from app.services import intake, integrations_settings
 
 router = APIRouter(tags=["simulator (dev/test only)"])
 
@@ -33,8 +34,12 @@ _PANEL_HTML_PATH = Path(__file__).with_name("sim_panel.html")
 
 
 def _panel_html() -> str:
-    """The markup sits in a sibling file so the CSS lines stay readable."""
-    return _PANEL_HTML_PATH.read_text(encoding="utf-8")
+    """The markup sits in a sibling file so the CSS lines stay readable.
+
+    The panel is served by the API origin, so its «افتح في التطبيق» link must be built from
+    `FRONTEND_URL` — a relative `/inbox/...` would land on :8000 and 404.
+    """
+    return _PANEL_HTML_PATH.read_text(encoding="utf-8").replace("__FRONTEND_URL__", get_settings().FRONTEND_URL.rstrip("/"))
 
 
 class _SimWhatsApp(BaseModel):
@@ -51,8 +56,35 @@ class _SimWhatsApp(BaseModel):
 async def sim_whatsapp(body: _SimWhatsApp, session: DbSession) -> dict[str, Any]:
     require_simulation_allowed("Simulator API")
     external_id = body.external_id or f"wamid.sim_{datetime.now(UTC).timestamp():.6f}"
-    provider = whatsapp_provider()
-    media_key, media_mime, media_size = await stage_inbound_media(provider, storage(), external_id, body.media_id)
+    media_key: str | None
+    media_mime: str | None
+    media_size: int
+    if body.media_id and body.media_id.startswith("sim-media-"):
+        # Panel-generated fake media must never be fetched from a live provider: a live Meta
+        # driver would 400 on the invented id and the panel would 500 (item 2). Store the fake
+        # bytes ourselves, exactly where real inbound media lands.
+        import re
+
+        safe_external = re.sub(r"[^A-Za-z0-9_.-]", "_", external_id)[:80]
+        media_key = f"media/{safe_external}/{body.media_id}"
+        storage().put_object(media_key, b"SIM-AUDIO", "audio/ogg")
+        media_mime, media_size = "audio/ogg", len(b"SIM-AUDIO")
+    elif body.media_id:
+        try:
+            media_key, media_mime, media_size = await stage_inbound_media(whatsapp_provider(), storage(), external_id, body.media_id)
+        except Exception as exc:  # mirror webhooks.whatsapp_webhook: never 500, ingest the text
+            await integrations_settings.record_event(
+                session,
+                provider="whatsapp",
+                event_type="media_fetch_failed",
+                status="error",
+                external_id=external_id,
+                detail=f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
+            await session.commit()
+            media_key, media_mime, media_size = None, None, 0
+    else:
+        media_key, media_mime, media_size = None, None, 0
     result = await intake.ingest_whatsapp_message(
         session,
         external_id=external_id,

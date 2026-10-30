@@ -73,6 +73,7 @@
       duration_s: Number(val(f,"duration_s") || 45), with_recording: val(f,"with_recording") === "true"}, "مكالمة واردة");
  });
  document.getElementById("open").addEventListener("click", () => {
-  location.href = "/inbox" + (window.__requestId ? "/" + window.__requestId : "");
+  // absolute: this panel is served by the API origin, the app lives on FRONTEND_URL
+  location.href = "__FRONTEND_URL__/inbox" + (window.__requestId ? "/" + window.__requestId : "");
  });
 </script></body></html>

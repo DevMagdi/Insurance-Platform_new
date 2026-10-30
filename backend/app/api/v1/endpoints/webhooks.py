@@ -142,28 +142,34 @@ async def whatsapp_webhook(request: Request, session: DbSession, background: Bac
             )
             await session.commit()
             media_key, media_mime, media_size = None, None, 0
-        results.append(
-            await intake.ingest_whatsapp_message(
-                session,
-                external_id=str(event["external_id"]),
-                mobile=event.get("mobile"),
-                body=event.get("body"),
-                sender_name=event.get("sender_name"),
-                media_kind=event.get("media_kind"),
-                media_object_key=media_key,
-                media_mime=media_mime,
-                media_size=media_size,
-                media_filename=event.get("filename"),
-                duration_s=event.get("duration_s"),
-            )
+        outcome = await intake.ingest_whatsapp_message(
+            session,
+            external_id=str(event["external_id"]),
+            mobile=event.get("mobile"),
+            body=event.get("body"),
+            sender_name=event.get("sender_name"),
+            media_kind=event.get("media_kind"),
+            media_object_key=media_key,
+            media_mime=media_mime,
+            media_size=media_size,
+            media_filename=event.get("filename"),
+            duration_s=event.get("duration_s"),
         )
+        results.append(outcome)
+        # The outcome belongs on the event row itself: "200 but no new request" is otherwise
+        # indistinguishable from a lost message — it is a Lead activity, an open-thread append,
+        # or a duplicate redelivery, and the ledger must say which (matching rules unchanged).
         await integrations_settings.record_event(
             session,
             provider="whatsapp",
             event_type="message",
             external_id=str(event["external_id"]),
             status="ok",
-            detail=f"media={'yes' if media_key else 'no'}" if event.get("media_id") else None,
+            detail=(
+                f"outcome={outcome.get('status')} matched={outcome.get('matched_kind') or '-'}"
+                f" request={outcome.get('request_number') or '-'}"
+                + (f" media={'yes' if media_key else 'no'}" if event.get("media_id") else "")
+            ),
         )
     await session.commit()
     _ = background
