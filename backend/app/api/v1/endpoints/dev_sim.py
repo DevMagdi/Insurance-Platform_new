@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from app.api.v1.deps import DbSession
 from app.api.v1.endpoints.webhooks import stage_inbound_media
+from app.core.config import get_settings
 from app.integrations.registry import whatsapp_provider
 from app.integrations.sims import require_simulation_allowed
 from app.integrations.storage import storage
@@ -33,8 +34,12 @@ _PANEL_HTML_PATH = Path(__file__).with_name("sim_panel.html")
 
 
 def _panel_html() -> str:
-    """The markup sits in a sibling file so the CSS lines stay readable."""
-    return _PANEL_HTML_PATH.read_text(encoding="utf-8")
+    """The markup sits in a sibling file so the CSS lines stay readable.
+
+    The panel is served by the API origin, so its «افتح في التطبيق» link must be built from
+    `FRONTEND_URL` — a relative `/inbox/...` would land on :8000 and 404.
+    """
+    return _PANEL_HTML_PATH.read_text(encoding="utf-8").replace("__FRONTEND_URL__", get_settings().FRONTEND_URL.rstrip("/"))
 
 
 class _SimWhatsApp(BaseModel):

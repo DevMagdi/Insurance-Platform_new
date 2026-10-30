@@ -78,3 +78,11 @@ async def test_real_looking_media_id_with_failing_provider_ingests_text(client, 
         events = (await session.execute(select(WebhookEvent).where(WebhookEvent.event_type == "media_fetch_failed"))).scalars().all()
     assert len(events) == 1
     assert events[0].status == "error"
+
+
+async def test_sim_panel_links_to_the_frontend_origin(client) -> None:
+    """The panel is served by the API origin: its «open in app» link must be absolute FRONTEND_URL."""
+    response = await client.get("/api/v1/dev/sim")
+    assert response.status_code == 200, response.text
+    assert "http://localhost:5173/inbox" in response.text
+    assert "__FRONTEND_URL__" not in response.text

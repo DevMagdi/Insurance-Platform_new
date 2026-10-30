@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     # write uses the current one. Clear it once the values have been re-saved — the window is not permanent.
     SECRETS_ENCRYPTION_KEY_OLD: str = ""
 
+    #: Where the operator's browser reaches the SPA. Only used to build absolute links out of
+    #: backend-served pages (the dev simulator panel's "open in app"); API clients stay relative.
+    FRONTEND_URL: str = "http://localhost:5173"
     # --- integrations ---
     # `INTEGRATIONS_DRIVER` is the *fallback*: a saved row in `integration_configs` wins over it (ADR-016),
     # so the settings screen — not a file on the server — is the normal way to go live.
