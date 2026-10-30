@@ -706,6 +706,7 @@ export const ar = {
     syncTemplates: "مزامنة القوالب",
     templates: "قوالب الرسائل",
     events: "آخر الأحداث الواردة",
+    outcome: { created: "طلب جديد", appended: "أُضيفت لطلب مفتوح", lead_activity: "نشاط على Lead — بلا طلب جديد", duplicate: "مكررة (سبق استلامها)" },
     eventsHint: "آخر 24 ساعة من سجلّ الأحداث",
     eventsEmpty: "لم يصل أي حدث بعد",
     underwritingTitle: "افتراضات الاكتتاب",

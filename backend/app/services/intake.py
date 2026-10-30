@@ -205,7 +205,9 @@ async def ingest_whatsapp_message(
     if request is not None:
         await _notify_team(session, request, NotificationType.NEW_REQUEST, f"طلب #{request.number} عبر واتساب")
     return {
-        "status": "created" if created_request_id else "appended",
+        # the outcome word is what the webhook writes into the events ledger, so a Lead match must
+        # not masquerade as "appended" — nothing was appended to any request thread
+        "status": "created" if created_request_id else ("appended" if request is not None else "lead_activity"),
         "request_id": str(request.id) if request else None,
         "request_number": request.number if request else None,
         "matched_kind": kind,

@@ -696,6 +696,7 @@ export const en: Messages = {
     syncTemplates: "Sync templates",
     templates: "Message templates",
     events: "Recent inbound events",
+    outcome: { created: "New request", appended: "Appended to an open request", lead_activity: "Lead activity — no new request", duplicate: "Duplicate (already received)" },
     eventsHint: "Last 24 hours of the event log",
     eventsEmpty: "No events have arrived yet",
     underwritingTitle: "Underwriting defaults",

@@ -117,6 +117,14 @@ function EventsCard() {
                 {event.event_type}
                 {event.external_id ? ` · ${event.external_id}` : ""}
               </span>
+              {/* The intake outcome, parsed from the ledger detail: «200 but no new request» must
+                  answer itself here (Lead activity / open-thread append / duplicate). */}
+              {event.detail?.match(/outcome=(\w+)/)?.[1] ? (
+                <span className="shrink-0 text-[12px] font-semibold text-ink">
+                  {t(`settings.outcome.${event.detail.match(/outcome=(\w+)/)?.[1]}`, { defaultValue: event.detail.match(/outcome=(\w+)/)?.[1] })}
+                  {event.detail.match(/request=(\S+)/)?.[1] && event.detail.match(/request=(\S+)/)?.[1] !== "-" ? <span dir="ltr"> #{event.detail.match(/request=(\S+)/)?.[1]}</span> : null}
+                </span>
+              ) : null}
               <span className="shrink-0 text-[12px] text-muted">{event.occurred_at ? relativeTime(event.occurred_at) : ""}</span>
               <span
                 className="shrink-0 rounded-pill px-2 py-[2px] text-[11px] font-bold"
