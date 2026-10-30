@@ -43,7 +43,12 @@ class Client(UUIDPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     address: Mapped[str | None] = mapped_column(sa.Text)
     notes: Mapped[str | None] = mapped_column(sa.Text)
 
-    account_owner: Mapped[User | None] = relationship(lazy="joined")
+    # `selectin`, not `joined`: Client is loaded inside statements that join collections
+    # (contacts / the `requests` backref / policies), and a joined many-to-one eager load on a
+    # row-multiplying statement is what produced "Multiple rows returned with uselist=False for
+    # eagerly-loaded attribute 'Client.account_owner'". One batched selectin can never multiply
+    # rows; callers that must not pay for it already `noload` it explicitly (requests list).
+    account_owner: Mapped[User | None] = relationship(lazy="selectin")
     source_lead: Mapped[Lead | None] = relationship(foreign_keys=[source_lead_id], lazy="selectin")
     contacts: Mapped[list[ClientContact]] = relationship(back_populates="client", lazy="selectin", cascade="all, delete-orphan")
 
